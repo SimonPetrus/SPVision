@@ -78,6 +78,8 @@ dotnet run --project src\SPVision
      → `PlayM4_SetDecodeEngineEx(port, 1)` (GPU) → `PlayM4_SetStreamOpenMode` →
      `PlayM4_OpenStream` (canlı 2 MB / oynatma 10 MB) → `SetDisplayBuf(15)` → `PlayM4_Play(port, hwnd)`
   4. `NET_DVR_STREAMDATA` → `PlayM4_InputData`
+  - Oynatmada SDK'ya **pencere verilmez** (`VodPara.Wnd = 0`): pencereye yalnız bizim port çizer, veri geri çağrısı akışı
+    portumuza göre ayarlar ve paket atmaz (aşağıda "Kayıt oynatma" › "Tek çizici kuralı").
 - **Kilit ve iş parçacığı kuralı (21.10.2026, canlıda "Seçili kamerayı kaydet" UI'yi kalıcı donduruyordu):**
   `HikLivePlayer.StartSave` oynatıcı kilidini tutarken `NET_DVR_SaveRealData_V30`'u çağırıyordu; SDK bu çağrıda veri
   callback iş parçacığını bekler, o da `OnRealData`'da her pakette aynı kilidi bekliyordu (kilit sırası kilitlenmesi).
@@ -226,7 +228,7 @@ dotnet run --project src\SPVision
   göstermez (SDK'nın istenen başlangıçtan tahmini; pencere verilmezse hata 12 döner), bu yüzden sapma düzeltmesi hiç
   görmedi. `NET_DVR_PLAYSETTIME` (26) çalışan tutamaçta görünür bir şey değiştirmedi. **Kural:** SDK karesinin zamanı
   **daima** kendi portumuzdan `PlayM4_GetSystemTime` (akıştaki mutlak zaman = kameranın OSD'si, ms'li, yerel çağrı) ile
-  okunur; `PLAYGETTIME` yalnız yedektir. İlk karenin zamanı bilinince kare
+  okunur; `PLAYGETTIME` artık hiç kullanılmaz (SDK'ya pencere verilmiyor, bkz. "Tek çizici kuralı"). İlk karenin zamanı bilinince kare
   [`PlaybackStart.IsWrong`](src/SPVision.Core/PlaybackSync.cs) ile denetlenir: istenenden 30 sn'den erken ise yanlış başlangıçtır,
   kare hemen (ortak saatin ilerlediği kadar ileriye) yeniden açılır ("Konum düzeltiliyor…", en çok 2 kez). Doğru bir açılış da
   istenen saatten **önceki anahtar kareden** başlar (sondada 00:00:00 için 23:59:56,19 = 3,8 sn önce; 12:30:00 için 12:29:57,75;
@@ -238,11 +240,10 @@ dotnet run --project src\SPVision
   açılana kadar görünüyordu. **Şimdi (SDK yolu):** her açılışta (`SeekCore` → `OpenHik`: takvim, çizelge, ±30 sn, "Saate git",
   sapma düzeltmesi, Durdur sonrası Oynat) `HikVideoHost` **`Visibility.Hidden`** olur (HWND ve boyutu kalır, PlayCtrl çizmeye
   devam eder, kullanıcı görmez; başlıkta "Bağlanıyor…"). `Started` → karenin `_sdkGate` kuyruğunda `HikPlaybackPlayer.CatchUp`:
-  5 ms'de bir yerel `PlayM4_GetSystemTime` (bizim port + `NET_DVR_GetPlayBackPlayerIndex` ile SDK'nın aynı pencereye çizen kendi
-  portu), karar saf Core [`PlaybackCatchUp.Decide`](src/SPVision.Core/PlaybackSync.cs) (birim testli): istenen saatten 1 sn'den
+  5 ms'de bir yerel `PlayM4_GetSystemTime` (bizim port = pencerenin tek çizicisi), karar saf Core [`PlaybackCatchUp.Decide`](src/SPVision.Core/PlaybackSync.cs) (birim testli): istenen saatten 1 sn'den
   (`SlowLead`) fazla gerideyse **4×** (`Steps` = 2: kayıt cihazına 2 × `PLAYFAST` + portumuza 2 × `PlayM4_Fast`; **8× ve üstünde
   kayıt cihazı yalnız anahtar kare gönderir** — sondada 23:59:56 → 00:00:02,9 → 00:00:09,6 atladı — bu yüzden 4×), son saniye
-  normal hızda (yavaşlatma ~250 ms geç işler: 4×'te 1,1 sn kayıt), **iki port da istenen saat + 120 ms'yi** (`Margin`) geçince
+  normal hızda (yavaşlatma ~250 ms geç işler: 4×'te 1,1 sn kayıt), **portumuz istenen saat + 120 ms'yi** (`Margin`) geçince
   paylaşılan hız/duraklat uygulanır (duraklatılmışsa duraklatma burada), pencere gösterilir (`OnCatchUpDone`; ardından
   `PlayM4_RefreshPlay` — duraklatılmış görüntü yeniden gösterilen pencerede siyah kalmasın), kare `Playing` olur ve ancak o
   zaman `CurrentTime` verir. Ölçüm: 3,8 sn geride → ~1,0–1,3 sn gizli, 2,2 sn → ~0,9 sn; görünen ilk kare T+0,5–0,6 sn, sonra
@@ -254,13 +255,42 @@ dotnet run --project src\SPVision
   `PlaybackCatchUp.MayFollow` (≥ taban) ise izler, böylece saat/çizelge/"Saate git" istenen saatten öncesini hiç göstermez.
   **Flyleaf (şifresiz RTSP) yolunda bu yapılamaz:** FFmpeg karelerin mutlak zamanını vermez (zaman `_openedAt + CurTime`
   tahminidir), kayıt cihazının anahtar kareden başlattığı birkaç saniye OSD'de görünebilir; saat yine tabanın altına inmez.
-  **Bilinen yan durum (sondada görüldü, eskiden de vardı):** pencereye iki çizici çizer (bizim port + SDK'nın portu); her hız
-  değişiminden sonra aralarında ~0,1–0,4 sn fark kalabilir. Tamamen gidermek için SDK'ya ayrı gizli bir pencere vermek gerekir
-  (`VodPara.Wnd`); yapılmadı.
+- **Tek çizici kuralı (21.10.2026, oynatmada OSD saniyesi ileri-geri atlıyor / görüntü takılıyordu; 4 kanallı okuma
+  sondasıyla doğrulandı, uygulamada elle denenmedi):** Kullanıcı: 4'lü oynatmada normal hızda **dört karenin hepsinde aynı
+  anda** OSD saati (ss:dd:sn) ileri-geri atlıyor, görüntü takılıyordu. Sebep: `NET_DVR_PlayBackByTime_V40`'a pencere
+  (`VodPara.Wnd`) veriliyordu; SDK oynatmayı **kendi PlayCtrl portuyla da** aynı pencereye çözüp çiziyordu (anahtarı da
+  çözüyordu), bizim port da çiziyordu: tek pencerede iki çizici, kareler sırayla birinden ve ötekinden geliyordu. Her hız
+  değişiminden sonra (`PLAYSLOW` + `PlayM4_Slow`) ikisi ayrışır: sondada her aç-yakala (4× → 1×) sonrası 4 kanaldan 3'ünde
+  bizim port SDK portundan **0,25–0,53 sn ileride**, örneklerin %99'unda > 80 ms (2+ kare) fark — yani her açılışta, tüm
+  karelerde aynı anda; her hızlandır-yavaşlat (dürtme, kullanıcı) ~+0,3 sn ekler; 8× → 1× sonrası fark **9–30 sn**. Dürtme
+  tek başına salınmıyordu (başlama 2 sn / bitiş 0,5 sn eşiği vardı) ama her dürtme bu ayrışmayı büyütüyordu. **Şimdi:**
+  SDK'ya **pencere verilmez** (`VodPara.Wnd = 0`; SDK portu açılmaz: `GetPlayBackPlayerIndex` = −1, ikinci GPU çözümü de
+  gider), pencereye yalnız bizim port çizer. Pencere olmayınca SDK akışı hızlandırmaz/yavaşlatmaz: kayıt cihazı ağın
+  izin verdiği hızda gönderir (sondada 45 sn'de 156 yerine 727 paket) ve eski "100 ms dene, sonra paketi at" girişi
+  **paket düşürüyordu** (158 düşen paket = bulanık görüntü). Bu yüzden veri geri çağrısı akışı bizim porta göre ayarlar
+  (`HikPlaybackPlayer.QueueAhead` = 3 MB): portta 3 MB'tan fazla oynatılmamış veri varken bekler
+  (`PlayM4_GetSourceBufferRemain`), sonra `PlayM4_InputData` kabul edene kadar dener — **paket asla atılmaz**; `Stop`
+  önce `_playHandle = -1` yapar, bekleyen geri çağrı çıkar, sonra `NET_DVR_StopPlayBack`. Duraklatmada geri çağrı duraklatma
+  boyunca bekler (sondada 60 sn ve 300 sn duraklatma: istisna yok, devamda temiz). Ölçüm (4 kanal, sonda): 1,00×, en uzun
+  donma 1 kare (~42 ms), geri giden zaman 0, düşen paket 0; 4× yakalama, duraklat/devam, dürtmeler ve 8× normal çalışır
+  (`PLAYFAST/SLOW/PAUSE/RESTART` pencere olmadan da "OK"). Düzeltilmiş `HikPlaybackPlayer` ile 4 karelik sonda: yakalama
+  sonrası ilk görünen kare T+0,13–0,19 sn (eskiden T+0,5–0,6), istenen saatten önceki zaman 0 kez, dürtmeler sonrası 1,00×,
+  duraklatılmış 4 oynatıcının `Stop`'u 54 ms, oynatırken `Dispose` 30 ms; `PlayBackByTime_V40` 2,4 sn yerine 0,5 sn'de döner
+  (ilk kare zamanı ~2,2 sn'de, eskiden 2,5–2,8 sn). Hareket kutuları, anlık görüntü (`PlayM4_GetJPEG`),
+  `RefreshPlay`, zaman (`PlayM4_GetSystemTime`) ve klip portu (`HikFrameRecorder`, aynı paketler) zaten bizim porttaydı.
+  `PLAYGETTIME` yedeği kaldırıldı (pencere yokken hata 12). Kayıt sonu sinyali iki modda da aynı (sondada ne veri tipi 12 ne
+  istisna geldi; kayıt sonu yine sapma döngüsünün park kuralıyla yakalanır). Bilinen durum (eskiden de vardı, iki modda da
+  ölçüldü): 8×'ten normal hıza dönünce kayıt cihazının 8×'te yalnız anahtar kare gönderdiği tamponlu kısım birkaç saniye hızlı
+  akar. Canlı izlemede (`RealPlay`'e de pencere verilir) iki çizici durumu sürer ama orada hız değişimi olmadığı için ayrışma
+  ölçülmedi; gerekirse aynı düzeltme uygulanabilir.
 - Sapma: SDK karelerinde [`PlaybackSync.Decide`](src/SPVision.Core/PlaybackSync.cs) (dürtme aşırı yüklemesi) birkaç saniyelik
   farkı **yeniden açmadan** düzeltir: geride → bir hız adımı hızlı (`CatchUp`), önde → duraklat (`Hold`), 0,5 sn içine
-  gelince eski hız (`Resume`); her tik (250 ms) denetlenir. 20 sn'den (1× üstünde hızla orantılı) fazla fark ya da 25 sn'de
-  sonuç vermeyen dürtme yeniden açılır. Odaklı kare (referans) ve Flyleaf kareleri dürtülmez (eski kural: 2 sn → yeniden aç).
+  gelince eski hız (`Resume`); dürtülen kare her tik (250 ms), dürtülmeyen 5 sn'de bir denetlenir. Histerezis: dürtme 2 sn'den
+  (1× üstünde hızla orantılı) fazla farkta başlar, 0,5 sn içinde biter; ayrıca bir karenin dürtmesi **1 sn'den sık değişmez**
+  (`MinNudgeHold`; `PlaybackTile.SinceNudgeChange` = son başlama/bitişten beri geçen süre — hız değişimi ~250 ms geç işlese
+  de aç-kapa salınımı olmaz; birim testli, 250 ms'lik tik benzetimi: 3 sn geride kare tam bir `CatchUp` + bir `Resume` alır).
+  20 sn'den (1× üstünde hızla orantılı) fazla fark ya da 25 sn'de sonuç vermeyen dürtme yeniden açılır (1 sn kuralından önce).
+  Odaklı kare (referans) ve Flyleaf kareleri dürtülmez (eski kural: 2 sn → yeniden aç).
   Kullanıcı hız/duraklat/arama yapınca dürtme biter. Yakalama süren (gizli, `Connecting`) kare denetlenmez.
 - **Durdur düğmesi (21.10.2026, cihazda denenmedi):** kontrol çubuğunda Oynat'ın hemen sağında, aynı stil
   (`PlayerAccentButton` 30×30, 4 px aralık), simge `IconStop` (Segoe Fluent Icons E71A'nın şekli: 11×11 yuvarlak köşeli dolu
@@ -280,12 +310,11 @@ dotnet run --project src\SPVision
   kapatılır ([`HikRender`](src/SPVision/Hik/HikRender.cs)); ayar değişince açık portlara anında uygulanır. Flyleaf
   (şifresiz) yolunda böyle bir katman yoktur. Ayar `AppSettings.ShowMotionBoxes` (varsayılan açık); üst çubuktaki
   kesik çizgili kare düğmesi ve Ayarlar › Görüntü anahtarı aynı ayarı değiştirir.
-- **Oynatmada hareket kutuları (21.10.2026 düzeltmesi):** `NET_DVR_PlayBackByTime_V40`'a da pencere verilir
-  (`VodPara.Wnd`), yani SDK oynatmayı **kendi PlayCtrl portuyla** da aynı pencereye çizer — canlıdaki RealPlay
-  çizicisinin karşılığı. Eskiden yalnız bizim port kapatılıyordu, SDK'nın portu kutuları çizmeye devam ediyordu.
-  Şimdi o port `NET_DVR_GetPlayBackPlayerIndex(playHandle)` ile bulunur ve aynı `PlayM4_RenderPrivateData` anahtarı
-  ona da uygulanır (`HikRender.SetPlaybackMotionBoxes`): SYSHEAD'de port açılınca, SDK portunu geç açarsa sonraki
-  ~200 veri paketinde, `Started`'ta yeniden ve ayar değişince (karenin `_sdkGate` kuyruğunda, UI dışı). Her arama yeni
+- **Oynatmada hareket kutuları:** eskiden `NET_DVR_PlayBackByTime_V40`'a pencere verildiği için SDK'nın kendi portu da
+  çiziyordu ve kutular orada kapanmıyordu (16e8878 o portu `NET_DVR_GetPlayBackPlayerIndex` ile bulup kapatıyordu).
+  "Tek çizici kuralı"ndan beri SDK'ya pencere verilmez, SDK portu yoktur: anahtar yalnız bizim porta uygulanır — port
+  açılırken (SYSHEAD, ayar kapalıysa) ve ayar değişince (`SetMotionBoxes`, karenin `_sdkGate` kuyruğunda, UI dışı).
+  `HikRender.SetPlaybackMotionBoxes` ve `GetPlayBackPlayerIndex` bildirimi kaldırıldı. Her arama yeni
   tutamaç + yeni port = varsayılan (açık), bu yüzden her açılışta yeniden uygulanır. Flyleaf yolu FFmpeg ile yalnız video
   akışını çözer; Hikvision özel veri paketlerini çizmez (kutular orada hiç görünmez). Kutular kameranın kendisinde
   görüntüye "yakılmışsa" (kamera OSD ayarı) hiçbir istemci kaldıramaz.
@@ -381,7 +410,7 @@ dotnet run --project src\SPVision
 | `Hik/HikSession.cs` | Cihaz başına tek login; `SdkChannel()` çevirisi |
 | `Hik/HikChannelConfig.cs` | Kamera adı SDK ile (§9 "Kamera adı"): `NET_DVR_GET_PICCFG_V40` okuma, uygulamanın **tek** SDK yazması `NET_DVR_SET_PICCFG_V40` (`NET_DVR_SetDVRConfig` yalnız burada, `private` bildirilir; önce `SdkWritePolicy`). Engelleyen çağrılar: UI dışında |
 | `Hik/HikLivePlayer.cs` | Canlı SDK oturumu (RealPlay + PlayCtrl) |
-| `Hik/HikPlaybackPlayer.cs` | Oynatma SDK oturumu (PlayBackByTime + PlayCtrl + `GetTime` = `PlayM4_GetSystemTime` + `CatchUp` gizli 4× yakalama + MP4 klip + `SyncControls` hız/duraklat) |
+| `Hik/HikPlaybackPlayer.cs` | Oynatma SDK oturumu (PlayBackByTime — SDK'ya pencere yok, tek çizici bizim PlayCtrl portu, akış `QueueAhead` ile portumuza göre — + `GetTime` = `PlayM4_GetSystemTime` + `CatchUp` gizli 4× yakalama + MP4 klip + `SyncControls` hız/duraklat) |
 | `Hik/HikFrameRecorder.cs` | Kayıt/klip: ikinci PlayCtrl portu (yazılım çözücü, pencere yok) → çözülmüş YV12 → Core `VideoRecorder` (H.264 MP4) |
 | `Hik/HikException.cs` | SDK hata kodlarının Türkçe açıklamaları (`Describe`) |
 
@@ -450,6 +479,10 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
 
 ## 8. Sık karşılaşılacak tuzaklar (öğrenilmiş dersler)
 
+- **Oynatmada SDK'ya pencere verme (21.10.2026):** `VodPara.Wnd` dolu olursa SDK oynatmayı kendi PlayCtrl portuyla da
+  aynı pencereye çizer; iki çizici hız değişimlerinden sonra ayrışır ve OSD saati ileri-geri atlar (bkz. §4 "Tek çizici
+  kuralı"). Pencere vermeyince akışı veri geri çağrısı ayarlamalıdır: `PlayM4_InputData` başarısızsa paketi **atma**, bekle
+  (kısa denemeden sonra atmak bulanık görüntü = paket kaybıydı).
 - **Kapanış (21.10.2026, pencere kapanınca süreç sonlanmıyordu; cihazda denenmedi):** eski `Closing` 22 canlı + 16 oynatma
   karesinin SDK akışını **UI iş parçacığında sırayla** bırakıyordu (her biri `StopRealPlay`/`StopPlayBack`, süren bir açılışın
   ağ zaman aşımını bekleyebilir) ve çıkışı WPF'in `OnMainWindowClose` yoluna bırakıyordu: pencere kayboluyor, süreç 40+ sn ya da

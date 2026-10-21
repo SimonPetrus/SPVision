@@ -18,8 +18,9 @@ public class PlaybackNudgeTests
 
     static readonly TimeSpan Tolerance = PlaybackSync.Tolerance(PlaybackSpeed.Normal);
 
-    static SyncAction Decide(DateTime master, DateTime? tile, SyncNudge nudge = SyncNudge.None, double rate = 1, TimeSpan nudgeAge = default, bool canNudge = true) =>
-        PlaybackSync.Decide(master, tile, false, Recordings, PlaybackSync.Tolerance(PlaybackSpeed.Normal) * Math.Max(1, rate), rate, canNudge, nudge, nudgeAge);
+    // sinceChange: real time since the tile's nudge last started or ended (default: long ago).
+    static SyncAction Decide(DateTime master, DateTime? tile, SyncNudge nudge = SyncNudge.None, double rate = 1, double sinceChange = 10, bool canNudge = true) =>
+        PlaybackSync.Decide(master, tile, false, Recordings, PlaybackSync.Tolerance(PlaybackSpeed.Normal) * Math.Max(1, rate), rate, canNudge, nudge, TimeSpan.FromSeconds(sinceChange));
 
     [Fact]
     public void Key_frame_offsets_are_nudged_not_reseeked()
@@ -54,8 +55,84 @@ public class PlaybackNudgeTests
     [Fact]
     public void Stuck_nudge_becomes_a_seek()
     {
-        Assert.Equal(SyncAction.Seek, Decide(At(0, 5), At(0, 4, 55), SyncNudge.CatchUp, nudgeAge: TimeSpan.FromSeconds(30)));
-        Assert.Equal(SyncAction.None, Decide(At(0, 5), At(0, 4, 55), SyncNudge.CatchUp, nudgeAge: TimeSpan.FromSeconds(10)));
+        Assert.Equal(SyncAction.Seek, Decide(At(0, 5), At(0, 4, 55), SyncNudge.CatchUp, sinceChange: 30));
+        Assert.Equal(SyncAction.None, Decide(At(0, 5), At(0, 4, 55), SyncNudge.CatchUp, sinceChange: 10));
+    }
+
+    [Fact]
+    public void A_nudge_runs_at_least_a_second()
+    {
+        // In step again 0.4 s after the speed-up: kept until a second has passed (the speed change lands ~250 ms late).
+        var master = At(0, 1, 0);
+        Assert.Equal(SyncAction.None, Decide(master, At(0, 0, 59.8), SyncNudge.CatchUp, sinceChange: 0.4));
+        Assert.Equal(SyncAction.Resume, Decide(master, At(0, 0, 59.8), SyncNudge.CatchUp, sinceChange: 1));
+        Assert.Equal(SyncAction.None, Decide(master, At(0, 1, 0.2), SyncNudge.Hold, sinceChange: 0.9));
+        Assert.Equal(SyncAction.Resume, Decide(master, At(0, 1, 0.2), SyncNudge.Hold, sinceChange: 1.1));
+    }
+
+    [Fact]
+    public void No_new_nudge_within_a_second_of_the_last_one()
+    {
+        var master = At(0, 1, 0);
+        Assert.Equal(SyncAction.None, Decide(master, At(0, 0, 57), sinceChange: 0.3));
+        Assert.Equal(SyncAction.CatchUp, Decide(master, At(0, 0, 57), sinceChange: 1.2));
+        Assert.Equal(SyncAction.None, Decide(master, At(0, 1, 3), sinceChange: 0.5));
+        Assert.Equal(SyncAction.Hold, Decide(master, At(0, 1, 3), sinceChange: 1.5));
+    }
+
+    [Fact]
+    public void Far_off_is_reseeked_even_right_after_a_change()
+    {
+        Assert.Equal(SyncAction.Seek, Decide(At(0, 0, 47), At(0, 0, 20), SyncNudge.CatchUp, sinceChange: 0.2));
+        Assert.Equal(SyncAction.Seek, Decide(At(0, 0, 47), At(0, 0, 20), sinceChange: 0));
+    }
+
+    [Fact]
+    public void Within_the_settle_band_nothing_starts()
+    {
+        var master = At(0, 1, 0);
+        Assert.Equal(SyncAction.None, Decide(master, At(0, 0, 59.5)));
+        Assert.Equal(SyncAction.None, Decide(master, At(0, 1, 0.5)));
+        Assert.Equal(SyncAction.None, Decide(master, At(0, 0, 58.1))); // 1.9 s: still inside the 2 s start threshold
+    }
+
+    [Fact]
+    public void A_tile_behind_is_brought_in_step_with_one_speed_up_and_one_resume()
+    {
+        // Simulated 250 ms ticks: the tile starts 3 s behind, plays 2× while caught up, and every speed change lands
+        // 250 ms late (as measured). It must take exactly one CatchUp and one Resume, a second or more apart.
+        var master = At(0, 1, 0);
+        var tile = master - TimeSpan.FromSeconds(3);
+        var nudge = SyncNudge.None;
+        double rate = 1, since = 10, pendingRate = 1, pendingIn = 0;
+        var changes = new List<(SyncAction Action, double Since)>();
+        for (int tick = 0; tick < 80; tick++)
+        {
+            switch (Decide(master, tile, nudge, sinceChange: since))
+            {
+                case SyncAction.CatchUp:
+                    changes.Add((SyncAction.CatchUp, since));
+                    nudge = SyncNudge.CatchUp; since = 0; pendingRate = 2; pendingIn = 0.25;
+                    break;
+                case SyncAction.Resume:
+                    changes.Add((SyncAction.Resume, since));
+                    nudge = SyncNudge.None; since = 0; pendingRate = 1; pendingIn = 0.25;
+                    break;
+                case SyncAction.Hold or SyncAction.Seek:
+                    Assert.Fail("a tile 3 s behind is never held or reopened");
+                    break;
+            }
+            for (int ms = 0; ms < 250; ms += 50)
+            {
+                if (pendingIn > 0 && (pendingIn -= 0.05) <= 1e-9) rate = pendingRate;
+                master += TimeSpan.FromMilliseconds(50);
+                tile += TimeSpan.FromMilliseconds(50 * rate);
+            }
+            since += 0.25;
+        }
+        Assert.Equal([SyncAction.CatchUp, SyncAction.Resume], changes.Select(c => c.Action));
+        Assert.True(changes[1].Since >= PlaybackSync.MinNudgeHold.TotalSeconds);
+        Assert.True((tile - master).Duration() <= PlaybackSync.Settle);
     }
 
     [Fact]
@@ -78,7 +155,7 @@ public class PlaybackNudgeTests
     {
         var gap = Day + new TimeSpan(23, 30, 0);
         Assert.Equal(SyncAction.Park, Decide(gap, gap));
-        Assert.Equal(SyncAction.Seek, PlaybackSync.Decide(At(1, 0), null, true, Recordings, Tolerance, 1, true, SyncNudge.None, default));
+        Assert.Equal(SyncAction.Seek, PlaybackSync.Decide(At(1, 0), null, true, Recordings, Tolerance, 1, true, SyncNudge.None, TimeSpan.FromSeconds(10)));
     }
 
     [Fact]

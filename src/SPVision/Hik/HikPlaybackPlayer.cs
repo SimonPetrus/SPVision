@@ -5,10 +5,16 @@ namespace SPVision.Hik;
 
 /// <summary>
 /// One SDK playback session: NET_DVR_PlayBackByTime_V40 with the data callback fed into
-/// PlayCtrl (same SYSHEAD pipeline as live view). Timeline position is the absolute time the stream carries for the
-/// frame on screen (PlayM4_GetSystemTime on our port = the time the camera OSD shows); NET_DVR_PLAYGETTIME is only the
-/// fallback (the SDK's estimate from the requested start: it did not see a recorder that started 49 min early, and it
-/// fails without a play window). Seeks re-issue PlayBackByTime_V40 (PLAYSETTIME had no visible effect on the DS-8632NI-I8).
+/// PlayCtrl (same SYSHEAD pipeline as live view). Our PlayCtrl port is the ONLY renderer of the tile window: the SDK
+/// gets no window (<c>VodPara.Wnd</c> = 0), so it does not decode and draw the playback a second time with its own port.
+/// (It used to: two renderers in one window drifted 0.25–0.5 s apart after every open's 4× catch-up and after each speed
+/// change — 9–30 s after 8× — and the picture alternated between them: the OSD seconds jumped back and forth.) Without a
+/// window the SDK no longer paces the stream either: the recorder sends as fast as the network allows, and the data
+/// callback paces it by our port (<see cref="QueueAhead"/>; it waits instead of dropping a packet).
+/// Timeline position is the absolute time the stream carries for the frame on screen (PlayM4_GetSystemTime = the time the
+/// camera OSD shows); NET_DVR_PLAYGETTIME is not used (the SDK's estimate from the requested start, which did not see a
+/// recorder that started 49 min early, and which fails without a play window).
+/// Seeks re-issue PlayBackByTime_V40 (PLAYSETTIME had no visible effect on the DS-8632NI-I8).
 /// Speed and pause are "requested state" (<see cref="RequestedSpeedSteps"/>, <see cref="RequestedPaused"/>)
 /// that <see cref="SyncControls"/> applies idempotently: the recorder side with NET_DVR_PLAYFAST /
 /// NET_DVR_PLAYSLOW (one speed step each) and NET_DVR_PLAYPAUSE / NET_DVR_PLAYRESTART, the local
@@ -36,13 +42,18 @@ public sealed class HikPlaybackPlayer : IDisposable
     volatile bool _caughtUp;    // the requested time is on screen: snapshots and clips may start
     volatile bool _paused;
     int _appliedSteps;          // speed steps applied to the current handle (0 = normal)
-    int _sdkPortTries;          // data packets left to look for the SDK's own port of this handle (motion boxes off)
     volatile bool _showMotionBoxes = true;
     volatile bool _started;
     volatile bool _disposed;
 
-    /// <summary>Data packets after the stream header during which the SDK's own playback port is looked for.</summary>
-    const int SdkPortTries = 200;
+    /// <summary>
+    /// Most stream data queued in our port before the data callback waits (bytes). The SDK has no window, so nothing else
+    /// paces the recorder: the callback holds the SDK's data thread while the port has this much to play, which stops
+    /// the network reads (measured with 4 tiles: no dropped packet, 1× steady; a 300 s pause resumes cleanly). About as
+    /// far ahead as the SDK's own renderer used to read (~2 MB); a full 10 MB buffer would only delay the speed changes the
+    /// recorder makes itself (8×: key frames only).
+    /// </summary>
+    const uint QueueAhead = 3 * 1024 * 1024;
 
     // Catch-up modes: none = the requested speed / pause; settle = normal speed, playing; fast = PlaybackCatchUp.Steps, playing.
     const int CatchUpNone = 0;
@@ -84,7 +95,7 @@ public sealed class HikPlaybackPlayer : IDisposable
     public bool RequestedPaused { get; set; }
     public bool IsDisposed => _disposed;
 
-    /// <summary>Opens playback for an absolute time range; hWnd is the window PlayCtrl draws into.</summary>
+    /// <summary>Opens playback for an absolute time range; hWnd is the window our PlayCtrl port draws into (only it).</summary>
     public void Start(int userId, int channel, DateTime begin, DateTime end, IntPtr hWnd, string? streamKey)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -95,7 +106,6 @@ public sealed class HikPlaybackPlayer : IDisposable
             _started = false;
             _paused = false;
             _appliedSteps = 0;
-            _sdkPortTries = 0;
             _catchUpMode = CatchUpNone;
             _caughtUp = false;
             _callback = OnPlayData;
@@ -114,7 +124,8 @@ public sealed class HikPlaybackPlayer : IDisposable
                 },
                 BeginTime = HikNative.DvrTime.From(begin),
                 EndTime = HikNative.DvrTime.From(end),
-                Wnd = hWnd,
+                // No window for the SDK: with one it decodes and draws the playback itself, over our port's picture.
+                Wnd = IntPtr.Zero,
                 DrawFrame = 0,
                 StreamType = 0,     // main stream
                 UseAsync = 0,
@@ -154,7 +165,7 @@ public sealed class HikPlaybackPlayer : IDisposable
         lock (_lock)
         {
             int handle = _playHandle;
-            _playHandle = -1;
+            _playHandle = -1; // first: a data callback waiting for room in our port gives up (StopPlayBack waits for it)
             _paused = false;
             _started = false;
             _catchUpMode = CatchUpNone;
@@ -238,8 +249,8 @@ public sealed class HikPlaybackPlayer : IDisposable
     /// Brings a fresh open to the requested time before anyone sees it (<see cref="PlaybackCatchUp"/>): the tile keeps the
     /// video window hidden meanwhile. The recorder starts on the key frame before the requested time (seconds early: the
     /// previous day's OSD for a request of 00:00), so the stream is played at 4× — recorder (PLAYFAST) and our port
-    /// (PlayM4_Fast) — up to a second before it, then at normal speed until our port and the SDK's own port drawing into
-    /// the same window are past it; then <see cref="RequestedSpeedSteps"/> / <see cref="RequestedPaused"/> are applied. Call after <see cref="Started"/>, in the
+    /// (PlayM4_Fast) — up to a second before it, then at normal speed until our port (the window's only renderer) is past
+    /// it; then <see cref="RequestedSpeedSteps"/> / <see cref="RequestedPaused"/> are applied. Call after <see cref="Started"/>, in the
     /// tile's SDK queue: it blocks (polls local PlayCtrl times every 5 ms; the speed commands ask the recorder) and returns
     /// when <paramref name="cancelled"/> says a newer seek / stop / dispose superseded it. <paramref name="canReopen"/>: a
     /// start at the beginning of the recording file is reported (<see cref="CatchUpOutcome.WrongStart"/>) instead of shown.
@@ -259,9 +270,9 @@ public sealed class HikPlaybackPlayer : IDisposable
                 outcome = CatchUpOutcome.Cancelled;
                 break;
             }
-            var (frame, other) = RendererTimes();
+            var frame = GetTime();
             first ??= frame;
-            var action = PlaybackCatchUp.Decide(requested, frame, other, watch.Elapsed, canReopen);
+            var action = PlaybackCatchUp.Decide(requested, frame, watch.Elapsed, canReopen);
             if (action == CatchUpAction.Reopen)
             {
                 outcome = CatchUpOutcome.WrongStart;
@@ -321,35 +332,10 @@ public sealed class HikPlaybackPlayer : IDisposable
     }
 
     /// <summary>
-    /// Absolute frame times of our port and of the SDK's own playback port (both draw into the window); null when not
-    /// known. Local PlayCtrl calls; the lock keeps the handle and ports alive, never waited for long.
-    /// </summary>
-    (DateTime? Ours, DateTime? Sdk) RendererTimes()
-    {
-        if (!Monitor.TryEnter(_lock, 20))
-        {
-            return (null, null);
-        }
-        try
-        {
-            int port = Volatile.Read(ref _port);
-            if (_playHandle < 0 || port < 0)
-            {
-                return (null, null);
-            }
-            int sdkPort = HikNative.NET_DVR_GetPlayBackPlayerIndex(_playHandle);
-            return (FrameTime(port), sdkPort >= 0 && sdkPort != port ? FrameTime(sdkPort) : null);
-        }
-        finally
-        {
-            Monitor.Exit(_lock);
-        }
-    }
-
-    /// <summary>
-    /// Recorder wall-clock time of the frame on screen: the absolute time in the stream (PlayM4_GetSystemTime, what
-    /// the OSD shows), else NET_DVR_PLAYGETTIME. Null when not playing, or when an open or control command is in
-    /// progress (the UI asks often and must never wait for the network).
+    /// Recorder wall-clock time of the frame on screen: the absolute time in the stream (PlayM4_GetSystemTime on our
+    /// port, the window's only renderer = what the OSD shows). Null before the first frame, when not playing, or when an
+    /// open or control command is in progress (the UI asks often and must never wait for the network). Local call; the
+    /// lock only keeps the port alive.
     /// </summary>
     public DateTime? GetTime()
     {
@@ -359,26 +345,7 @@ public sealed class HikPlaybackPlayer : IDisposable
         }
         try
         {
-            if (_playHandle < 0) return null;
-            if (FrameTime(Volatile.Read(ref _port)) is { } frameTime)
-            {
-                return frameTime;
-            }
-            var time = new HikNative.DvrTime();
-            var ptr = Marshal.AllocHGlobal(Marshal.SizeOf<HikNative.DvrTime>());
-            try
-            {
-                Marshal.StructureToPtr(time, ptr, false);
-                uint len = (uint)Marshal.SizeOf<HikNative.DvrTime>();
-                if (!HikNative.NET_DVR_PlayBackControl_V40(_playHandle, HikNative.PlayGetTime, IntPtr.Zero, 0, ptr, ref len))
-                    return null;
-                time = Marshal.PtrToStructure<HikNative.DvrTime>(ptr);
-                return time.ToDateTime();
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(ptr);
-            }
+            return _playHandle < 0 ? null : FrameTime(Volatile.Read(ref _port));
         }
         finally
         {
@@ -461,9 +428,9 @@ public sealed class HikPlaybackPlayer : IDisposable
     }
 
     /// <summary>
-    /// Switches the motion / analysis boxes on the running playback: our port and the SDK's own playback port
-    /// (no-op before the ports open; the open applies <see cref="ShowMotionBoxes"/> itself). Takes the player
-    /// lock, which control commands hold while the recorder answers: call it off the UI thread.
+    /// Switches the motion / analysis boxes on the running playback: our port, the only renderer (no-op before it
+    /// opens; the open applies <see cref="ShowMotionBoxes"/> itself). Takes the player lock, which control commands
+    /// hold while the recorder answers: call it off the UI thread.
     /// </summary>
     public void SetMotionBoxes(bool show)
     {
@@ -471,17 +438,9 @@ public sealed class HikPlaybackPlayer : IDisposable
         lock (_lock)
         {
             int port = Volatile.Read(ref _port);
-            if (_disposed || _playHandle < 0)
-            {
-                return;
-            }
-            if (port >= 0)
+            if (!_disposed && _playHandle >= 0 && port >= 0)
             {
                 HikRender.SetMotionBoxes(port, -1, show);
-            }
-            if (HikRender.SetPlaybackMotionBoxes(_playHandle, port, show))
-            {
-                _sdkPortTries = 0;
             }
         }
     }
@@ -526,12 +485,6 @@ public sealed class HikPlaybackPlayer : IDisposable
                 if (!HikNative.PlayM4_Play(port, (IntPtr)hwndValue))
                     throw HikException.LastError("PlayCtrl oynatmayı başlatamadı");
 
-                // The SDK draws this playback into the same window with its own port, which also starts
-                // with the boxes on. It may open that port after this header: keep looking for a while.
-                if (!ShowMotionBoxes && !HikRender.SetPlaybackMotionBoxes(handle, port, false))
-                {
-                    _sdkPortTries = SdkPortTries;
-                }
                 _started = true;
                 Started?.Invoke();
                 return;
@@ -539,14 +492,19 @@ public sealed class HikPlaybackPlayer : IDisposable
 
             if (dataType == HikNative.StreamData && port >= 0)
             {
-                // Hot path: a plain counter check; the lookup is a local SDK call (no network).
-                if (_sdkPortTries > 0)
+                // Our port paces the stream (the SDK has no window): wait while it has QueueAhead to play, then until it
+                // takes the packet — never drop one (a lost packet is a smeared picture until the next key frame). A
+                // pause holds this thread for as long as it lasts. Stop sets _playHandle first, which ends the wait.
+                while (handle == _playHandle && !_disposed && HikNative.PlayM4_GetSourceBufferRemain(port) > QueueAhead)
                 {
-                    _sdkPortTries = !ShowMotionBoxes && !HikRender.SetPlaybackMotionBoxes(handle, port, false) ? _sdkPortTries - 1 : 0;
+                    Thread.Sleep(5);
                 }
-                for (int i = 0; i < 50; i++)
+                while (!HikNative.PlayM4_InputData(port, buffer, size))
                 {
-                    if (HikNative.PlayM4_InputData(port, buffer, size)) break;
+                    if (handle != _playHandle || _disposed)
+                    {
+                        return;
+                    }
                     Thread.Sleep(2);
                 }
                 Volatile.Read(ref _recorder)?.Input(buffer, size);

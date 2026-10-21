@@ -460,16 +460,24 @@ public static class PlaybackSync
     public static TimeSpan NudgeTimeout { get; } = TimeSpan.FromSeconds(25);
 
     /// <summary>
+    /// Shortest time (real time) between two nudge changes of a tile — start, end, start again: its speed / pause is never
+    /// flipped more than once a second, even when a speed change lands late (~250 ms) or the clocks jitter.
+    /// </summary>
+    public static TimeSpan MinNudgeHold { get; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
     /// Drift correction for tiles whose time is the real frame time (SDK path: PlayM4_GetSystemTime). The recorder
     /// starts a playback on a key frame up to a GOP (seconds) before the requested time, so re-seeking a tile that is
     /// a few seconds off would land it off again, every 5 s. Such a tile is nudged instead: one speed step faster while
     /// behind (<see cref="SyncAction.CatchUp"/>), paused while ahead (<see cref="SyncAction.Hold"/>), back to normal
     /// within <see cref="Settle"/> (<see cref="SyncAction.Resume"/>). Only a tile more than <see cref="NudgeLimit"/> off,
-    /// or a nudge older than <see cref="NudgeTimeout"/>, is re-seeked. <paramref name="canNudge"/> false (Flyleaf,
-    /// whose RTSP is paced by the recorder) = the plain rule of the other overload.
+    /// or a nudge older than <see cref="NudgeTimeout"/>, is re-seeked. Hysteresis: a nudge starts beyond the tolerance
+    /// (2 s at 1×) and ends within <see cref="Settle"/>, and nothing changes within <see cref="MinNudgeHold"/> of the last
+    /// change (<paramref name="sinceNudgeChange"/>: real time since the tile's nudge last started or ended). <paramref name="canNudge"/>
+    /// false (Flyleaf, whose RTSP is paced by the recorder) = the plain rule of the other overload.
     /// </summary>
     public static SyncAction Decide(DateTime master, DateTime? tileTime, bool parked, IReadOnlyList<RecordingSegment>? segments,
-        TimeSpan tolerance, double rate, bool canNudge, SyncNudge nudge, TimeSpan nudgeAge)
+        TimeSpan tolerance, double rate, bool canNudge, SyncNudge nudge, TimeSpan sinceNudgeChange)
     {
         var plain = Decide(master, tileTime, parked, segments, tolerance);
         if (!canNudge || parked || plain == SyncAction.Park)
@@ -482,9 +490,13 @@ public static class PlaybackSync
         }
         var scale = Math.Max(1, rate);
         var diff = time - master;
-        if (diff.Duration() > NudgeLimit * scale || (nudge != SyncNudge.None && nudgeAge > NudgeTimeout))
+        if (diff.Duration() > NudgeLimit * scale || (nudge != SyncNudge.None && sinceNudgeChange > NudgeTimeout))
         {
             return SyncAction.Seek;
+        }
+        if (sinceNudgeChange < MinNudgeHold)
+        {
+            return SyncAction.None; // changed less than a second ago: keep it (no back-and-forth)
         }
         var settle = Settle * scale;
         return nudge switch
@@ -549,8 +561,8 @@ public enum CatchUpAction
 /// 2.2 s before 12:30:00; the GOP there is ~6.7 s). The tile keeps its video window hidden while the stream plays at
 /// 4× (two PLAYFAST steps on the recorder + PlayM4_Fast on our port; 8× and above make the recorder send key frames
 /// only, which would jump past the requested time) up to <see cref="SlowLead"/> before it, then at normal speed until
-/// both renderers of the window — our port and the SDK's own playback port — are <see cref="Margin"/> past it; then
-/// the shared speed / pause is applied and the video shown. Measured: 3.8 s caught up in ~1.0 s, 2.2 s in ~0.6 s.
+/// our port — the window's only renderer (the SDK gets no window) — is <see cref="Margin"/> past it; then the shared
+/// speed / pause is applied and the video shown. Measured: 3.8 s caught up in ~1.0 s, 2.2 s in ~0.6 s.
 /// </summary>
 public static class PlaybackCatchUp
 {
@@ -564,8 +576,8 @@ public static class PlaybackCatchUp
     public static TimeSpan SlowLead { get; } = TimeSpan.FromSeconds(1);
 
     /// <summary>
-    /// How far past the requested time both renderers must be before the window is shown: a few frames, so the
-    /// last picture presented while hidden (which a renderer may show again) is already at the requested time.
+    /// How far past the requested time the frame must be before the window is shown: a few frames, so the last
+    /// picture presented while hidden (which the renderer may show again) is already at the requested time.
     /// </summary>
     public static TimeSpan Margin { get; } = TimeSpan.FromMilliseconds(120);
 
@@ -577,10 +589,9 @@ public static class PlaybackCatchUp
 
     /// <summary>
     /// <paramref name="frame"/>: absolute time of our port's current frame (null before the first one);
-    /// <paramref name="otherRenderer"/>: the SDK's own playback port drawing into the same window (null when unknown);
     /// <paramref name="elapsed"/>: since the catch-up started; <paramref name="canReopen"/>: retries of a wrong start left.
     /// </summary>
-    public static CatchUpAction Decide(DateTime requested, DateTime? frame, DateTime? otherRenderer, TimeSpan elapsed, bool canReopen)
+    public static CatchUpAction Decide(DateTime requested, DateTime? frame, TimeSpan elapsed, bool canReopen)
     {
         if (frame is not { } ours)
         {
@@ -590,8 +601,7 @@ public static class PlaybackCatchUp
         {
             return canReopen ? CatchUpAction.Reopen : CatchUpAction.Reveal; // minutes early: no catching up that
         }
-        var shown = otherRenderer is { } other && other < ours ? other : ours;
-        if (shown >= requested + Margin || elapsed >= Limit)
+        if (ours >= requested + Margin || elapsed >= Limit)
         {
             return CatchUpAction.Reveal;
         }

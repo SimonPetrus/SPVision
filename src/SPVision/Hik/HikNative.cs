@@ -26,7 +26,7 @@ public static class HikNative
     public const uint PlayFast = 5;
     public const uint PlaySlow = 6;
     public const uint PlayNormal = 7;
-    public const uint PlayGetTime = 14;   // out: NET_DVR_TIME of the frame on screen
+    public const uint PlayGetTime = 14;   // out: NET_DVR_TIME estimate; fails (12) without a play window: not used
     public const uint PlaySetTime = 26;   // in: NET_DVR_TIME absolute seek
 
     // Exception callback types
@@ -302,10 +302,6 @@ public static class HikNative
     // behind SdkWritePolicy (one allowed command: NET_DVR_SET_PICCFG_V40, name bytes only).
     [DllImport(NetSdk)] public static extern bool NET_DVR_GetDVRConfig(int userId, uint command, int channel, IntPtr outBuffer, uint outBufferSize, out uint bytesReturned);
 
-    // NET_DVR_API LONG __stdcall NET_DVR_GetPlayBackPlayerIndex(LONG lPlayHandle);
-    // The PlayCtrl port the SDK itself decodes/draws a playback with (PlayBackByTime_V40 got a window); -1 if none.
-    [DllImport(NetSdk)] public static extern int NET_DVR_GetPlayBackPlayerIndex(int playHandle);
-
     // ---- PlayCtrl ----
 
     [DllImport(PlayCtrl)] public static extern bool PlayM4_GetPort(ref int port);
@@ -315,6 +311,8 @@ public static class HikNative
     [DllImport(PlayCtrl)] public static extern bool PlayM4_OpenStream(int port, IntPtr header, uint size, uint bufPoolSize);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_CloseStream(int port);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_InputData(int port, IntPtr buffer, uint size);
+    // PLAYM4_API DWORD __stdcall PlayM4_GetSourceBufferRemain(LONG nPort): bytes given to the port and not consumed yet.
+    [DllImport(PlayCtrl)] public static extern uint PlayM4_GetSourceBufferRemain(int port);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_SetDisplayBuf(int port, uint frames);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_SetSecretKey(int port, int keyType, string key, int keyLen);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_SetDecodeEngineEx(int port, uint engine);
