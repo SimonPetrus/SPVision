@@ -64,6 +64,11 @@ public partial class SettingsView : UserControl
         BuildListHeader();
         RecorderPage.Message += text => Message?.Invoke(text);
         RecorderPage.DeviceUpdated += RecorderPage_DeviceUpdated;
+        RecorderPage.CamerasRenamed += device =>
+        {
+            App.SaveSettings();
+            CamerasRenamed?.Invoke(device);
+        };
         NavDevices.IsChecked = true;
     }
 
@@ -74,6 +79,9 @@ public partial class SettingsView : UserControl
     public event Action<Device, bool>? DeviceSaved;
 
     public event Action<Device>? DeviceRemoved;
+
+    /// <summary>Cihaz ayarları renamed cameras on the recorder (names already saved): refresh lists and tile titles.</summary>
+    public event Action<Device>? CamerasRenamed;
 
     public event Action<bool>? MotionBoxesChanged;
 

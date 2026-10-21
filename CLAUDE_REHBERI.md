@@ -3,10 +3,10 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 189/189 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 836/836 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
 > (21.10.2026'daki düzen seçici + eş zamanlı çoklu oynatma değişikliği ile cihaz düzenleyicideki HTTPS varsayılanı / HTTP'ye düşme sorusu henüz cihazda denenmedi; bkz. §4, §5.)
 > (Canlı izlemede sayfalar — §4 "Canlı izlemede sayfalar" — da henüz cihazda denenmedi.)
-> (Ayarlar › Cihaz ayarları'ndan kayıt cihazına yazma — §9, 2. aşama dahil — henüz cihazda denenmedi; okuma uç noktaları cihazda GET ile doğrulandı.)
+> (Ayarlar › Cihaz ayarları'ndan kayıt cihazına yazma — §9, 2. aşama, SDK ile kamera adı ve Ağ › Portlar dahil — henüz cihazda denenmedi; okuma uç noktaları cihazda GET / SDK Get ile doğrulandı. İlk gerçek yazmayı sahibi uygulamadan yapar; Claude cihaza **hiçbir şey yazmaz**, deneme için bile.)
 >
 > **Ad değişikliği (21.10.2026):** Uygulamanın eski adı **SP-2026 Lite** idi (proje/namespace
 > `SP2026Lite`, exe `SP-2026 Lite.exe`). Sahibinin onayıyla adı **SPVision** oldu; aşağıdaki
@@ -30,7 +30,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
 | `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SPVision.Core.Tests/` | 189 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
+| `tests/SPVision.Core.Tests/` | 836 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -41,7 +41,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ```powershell
 cd SPVision
 dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 189/189 geçer
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 836/836 geçer
 dotnet run --project src\SPVision
 ```
 
@@ -362,7 +362,7 @@ dotnet run --project src\SPVision
 | `Views/SettingsView.xaml(.cs)` | **Ayarlar**: sol menü (260 px, kenar çubuğuyla aynı). *Cihaz yönetimi*: cihaz listesi (DURUM, CİHAZ ADI, ADRES, TÜR, KAMERA; durum için sayfa açılınca ISAPI deviceInfo GET), satır tıklanınca / Enter / Boşluk ile altında düzenleme paneli açılır (akordeon, bir seferde bir tane). *Uygulama ayarları*: tema, hareket kutuları, varsayılan kalite, GPU (ayarı yok → devre dışı, "Yakında"), klasörler (`OpenFolderDialog`), son görünüm, Windows ile başlat, tam ekranda aç. *Cihaz ayarları*: [`RecorderSettingsView`](src/SPVision/Views/RecorderSettingsView.xaml.cs) (§9) |
 | `Views/RecorderSettingsView.xaml(.cs)`, `Themes/RecorderControls.xaml` | **Cihaz ayarları** sayfası (§9): cihaz seçici + "Web arayüzünü aç" (180×32), 9 eşit sekme; kartlar (başlık + açıklama · Geri al / Cihaza uygula), satırlar (etiket + yardım · 240 px denetim). Sayfanın kendi stilleri (temalı ComboBox, `SettingsToggleButton`, sekme şeridi, rozet) `RecorderControls.xaml`'da, yalnız bu sayfada birleştirilir. Rozet zeminleri `OnlineSoftBg` / `WarningSoftBg` (Light/Dark) |
 | `Views/ConfirmDialog.cs` | Adlandırılmış düğmeli tema uyumlu soru; liste aşırı yüklemesi değişiklikleri satır satır (başlıklı bölümler: UYGULANDI / UYGULANMADI) kaydırmalı kutuda gösterir; `cancel` null = tek düğme |
-| `Views/RecorderSettingsView.{Events,Network,Users,Risky}.cs` | Cihaz ayarları 2. aşama (§9 "2. aşama"): Olaylar, Ağ, Kullanıcılar sekmeleri; riskli işlemler (`RunRiskyAsync`, yeniden başlat, disk biçimlendir); `DeviceUpdated` olayı (adres / şifre değişince SettingsView kaydeder + yeniden bağlar) |
+| `Views/RecorderSettingsView.{Events,Network,Users,Risky}.cs` | Cihaz ayarları 2. aşama (§9 "2. aşama"): Olaylar, Ağ (adres + portlar), Kullanıcılar sekmeleri; riskli işlemler (`RunRiskyAsync`, yeniden başlat, disk biçimlendir); `DeviceUpdated` olayı (adres / şifre değişince SettingsView kaydeder + yeniden bağlar) |
 | `Views/RiskyConfirmDialog.cs` | Riskli işlemin **ayrı onayı** (`IRiskyConfirmation`'ın tek uygulaması): başlık, amber uyarı bandı, eski → yeni satırları, biçimlendirmede `BİÇİMLENDİR` yazma kutusu; odak Vazgeç'te, Enter onaylamaz. `DialogChrome` (tema + sayfa stilleri + uyarı bandı) burada |
 | `Views/UserFormDialog.cs` | Kullanıcı ekle / şifre değiştir formu: ad, yetki (Operatör/İzleyici), şifre ×2, SPVision hesabının şifresi (onay; kayıtlı şifreyle karşılaştırılır, yanlışsa cihaza gitmez) |
 | `Views/DeviceEditor.xaml(.cs)` | Satır altı düzenleme paneli (eski DeviceDialog'un yerine): Bağlantı (iki eşit sütun; şifre/anahtar kutusu kayıtlı değeri göstermez, boş bırakılırsa değişmez), "Bağlantıyı test et", "Cihazdan oku", **HTTPS kullan** (ipucu: ayar/bilgi trafiğini şifreler, görüntü akışını etkilemez; yeni cihaz HTTPS + 443 ile açılır, kayıtlı cihaz kendi değerleriyle; işaretleyince 80→443, kaldırınca 443→80, özel port değişmez — Core `HttpsPort.Follow`; HTTPS açıkken cihaza TCP/TLS düzeyinde hiç ulaşılamazsa (`IsapiException.ConnectionFailed`, 401 vb. yanıtlar hariç) "HTTP ile dene / İptal" sorulur ([`ConfirmDialog`](src/SPVision/Views/ConfirmDialog.cs)), kabul edilirse forma HTTP (443 ise 80) yazılır ve bir kez yeniden denenir — sessiz düşürme yok), Kameralar tablosu (LİSTEDE GÖSTER anahtarı), alt satır Cihazı kaldır · Kameraları yenile · İptal · Kaydet. Taslakla çalışır; Kaydet ayarı yazar, giriş bilgisi değiştiyse SDK oturumunu kapatır ve cihazın karelerini yeniden bağlar |
@@ -377,6 +377,7 @@ dotnet run --project src\SPVision
 | `Hik/HikRender.cs` | Hareket / akıllı analiz kutularını port (canlıda RealPlay tutamacı da) için aç/kapa |
 | `Hik/HikSdk.cs` | Init/Cleanup, exception callback, `Available` |
 | `Hik/HikSession.cs` | Cihaz başına tek login; `SdkChannel()` çevirisi |
+| `Hik/HikChannelConfig.cs` | Kamera adı SDK ile (§9 "Kamera adı"): `NET_DVR_GET_PICCFG_V40` okuma, uygulamanın **tek** SDK yazması `NET_DVR_SET_PICCFG_V40` (`NET_DVR_SetDVRConfig` yalnız burada, `private` bildirilir; önce `SdkWritePolicy`). Engelleyen çağrılar: UI dışında |
 | `Hik/HikLivePlayer.cs` | Canlı SDK oturumu (RealPlay + PlayCtrl) |
 | `Hik/HikPlaybackPlayer.cs` | Oynatma SDK oturumu (PlayBackByTime + PlayCtrl + `GetTime` = `PlayM4_GetSystemTime` + `CatchUp` gizli 4× yakalama + MP4 klip + `SyncControls` hız/duraklat) |
 | `Hik/HikFrameRecorder.cs` | Kayıt/klip: ikinci PlayCtrl portu (yazılım çözücü, pencere yok) → çözülmüş YV12 → Core `VideoRecorder` (H.264 MP4) |
@@ -400,6 +401,7 @@ Kayıt (§4 "Kayıt ve klip biçimi"): `Recording/` — `Mp4VideoWriter` (FFmpeg
 açar/çözer (depodaki `ffmpeg\` DLL'leri yoksa bu testler bir şey yapmadan geçer).
 Cihaz ayarları (§9): [`IsapiWritePolicy`](src/SPVision.Core/IsapiWritePolicy.cs) (yazma izin listesi + yasak kelimeler; riskli işlemlerin tam yol listesi),
 [`RiskyWrites.cs`](src/SPVision.Core/RiskyWrites.cs) (`RiskyWriteRequest`, `ConfirmedRiskyWrite`, `IRiskyConfirmation`, `IRiskyTransport`, `RiskyWrites` kurucuları),
+[`SdkChannelName.cs`](src/SPVision.Core/SdkChannelName.cs) (`PicCfgV40` yerleşimi, `SdkCharEncoding`, `ChannelNameCodec`, `SdkWritePolicy`, `IPicConfigTransport`, `ChannelRenameWriter` — SDK ile kamera adı),
 [`RecorderEvents.cs`](src/SPVision.Core/RecorderEvents.cs), [`RecorderNetwork.cs`](src/SPVision.Core/RecorderNetwork.cs), [`RecorderUsers.cs`](src/SPVision.Core/RecorderUsers.cs) (2. aşama ayrıştırıcıları ve planları),
 [`IsapiConfig.cs`](src/SPVision.Core/IsapiConfig.cs) (`IsapiPaths`, `IsapiResponseStatus`, `IsapiXml`, `ConfigEdit`/`SetValueEdit`,
 `ConfigWrite`, `ConfigChangeText`, `IConfigTransport`, `ConfigWriter`), [`IsapiClient.Config.cs`](src/SPVision.Core/IsapiClient.Config.cs)
@@ -472,16 +474,26 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
     sorunu yok: ordinal karşılaştırma):
     1. **Sıradan ayar:** `IsapiClient.PutConfigAsync` (yalnız PUT) → `IsapiWritePolicy.Check` (açık **izin listesi**). Security / Users /
        Network / reboot / format içeren yol bu kapıdan **asla** geçmez.
-    2. **Riskli işlem** (yeniden başlat, disk biçimlendir, ağ adresi, kullanıcı ekle/şifre/sil): yalnız `IsapiClient.SendRiskyAsync(ConfirmedRiskyWrite)`;
+    2. **Riskli işlem** (yeniden başlat, disk biçimlendir, ağ adresi, portlar, kullanıcı ekle/şifre/sil): yalnız `IsapiClient.SendRiskyAsync(ConfirmedRiskyWrite)`;
        işlem başına **tam yöntem + tam yol** (`RiskyPatterns`), belirteç yalnız ayrı onay penceresinden çıkar (§9 "2. aşama").
     - **Kalıcı yasak** (iki kapıda da, her yöntemde): encrypt, EZVIZ, HikConnect, Hik-Connect, platform, cloud, factoryReset, upgrade,
       firmware, activate, configurationData, adminAccess, certificate, SRTP, TLS, illegalLogin, loginLock, securityQuestion, ONVIF, shutdown.
+      **Tek istisna** (`IsapiWritePolicy.KeywordExemptions`, testli): `adminAccess` kelimesi yalnız `(AdminPorts, PUT, ISAPI/Security/adminAccesses)`
+      üçlüsünde (tam yol, ordinal) kalkar ve gövde **port kuralına** bağlıdır (§9 "Portlar"); başka her adminAccess yolu/yöntemi/işlemi yasak kalır.
+    - **SDK ile yazma (kamera adı, 21.10.2026):** HCNetSDK'da tek yazma `NET_DVR_SetDVRConfig(NET_DVR_SET_PICCFG_V40 = 6180)`'dir; yalnız
+      [`HikChannelConfig`](src/SPVision/Hik/HikChannelConfig.cs) içinde `private` bildirilir ve hemen önce
+      [`SdkWritePolicy.EnsureSetAllowed`](src/SPVision.Core/SdkChannelName.cs) çalışır: izinli komut listesi yalnız 6180; tampon tam 77140 bayt,
+      `dwSize` 77140; **az önce GET edilen tamponla `sChanName` (bayt 4–35) dışında tek bayt farkı yok**; ad geçerli, ad alanında sondaki baytlar 0.
+      Başka hiçbir `NET_DVR_Set*` / uzaktan kontrol çağrısı ekleme. Yeni bir SDK yazması gerekirse `SdkWritePolicy` + testleri birlikte genişletilir.
   - Okuma-değiştirme-yazma (`ConfigWriter`): güncel XML GET edilir, yalnızca değişen öğeler değiştirilir, belge bütün olarak PUT
     edilir, `ResponseStatus` kontrol edilir, yeniden okunup doğrulanır; istekler tek tek gider, ilk hatada durulur. Ayrıntı §9.
   - 2. aşama riskli işlemleri **yalnız tam yol** olarak ekledi; kalıcı yasak liste genişledi, hiç kısalmadı. Yeni bir riskli uç nokta
     gerekiyorsa `RiskyOperation` + `RiskyPatterns` + `RiskyWrites` kurucusu + testleri birlikte eklenir.
   - Başka hiçbir yerde ISAPI PUT/POST/DELETE ekleme (kayıt arama `POST ContentMgmt/search` ve takvim `POST …/dailyDistribution` salt
     okuma isteğidir, istisnadır).
+  - **Claude (geliştirici) cihaza hiçbir şey yazmaz:** deneme sondaları yalnız ISAPI GET ve SDK `Login_V40` / `Get*` / `Logout` / `Cleanup`
+    kullanır; "aynı değeri geri yazmak" da yazmadır. Yazma yolları birim testi, sahte taşıyıcı ve kod incelemesiyle doğrulanır; ilk gerçek
+    yazmayı sahibi uygulamadan yapar.
 - **Güvenlik (21.10.2026, `IsapiSecurityTests`):** bunları gevşetme.
   - **Yalnız Digest:** `IsapiClient` kimlik bilgisini yalnız `Digest` için kaydeder, `PreAuthenticate` kapalı. Eskiden `Basic` de
     vardı: 401 + `WWW-Authenticate: Basic` döndüren biri (LAN'da araya giren) yönetici şifresini açık metin alırdı. Yalnız Basic
@@ -519,7 +531,7 @@ Okunamayan değer "okunamadı", cihazın sunmadığı ayar "Bu kamera desteklemi
 | Sekme | Okuma (GET) | Yazma (PUT, izin listesinde) |
 |---|---|---|
 | Genel bakış | `System/deviceInfo`, `ContentMgmt/InputProxy/channels` (+`/status`, `/capabilities` → toplam kanal `id@max`), `System/time`, `ContentMgmt/Storage/hdd`, `System/Network/EZVIZ` (yalnızca `enabled` + `streamEncrypteEnabled`; doğrulama kodu bu sayfada okunmaz) | — |
-| Kameralar | `ContentMgmt/InputProxy/channels/{n}/video/overlays`, `Image/channels/{n}` (+`/capabilities`, `Color/*Level` min/max), `ContentMgmt/StreamingProxy/channels/{n}01` ve `{n}02` (+`/capabilities`) | kanal adı **yazılmaz** (aşağıdaki "Kamera adı" notu), OSD aynı overlays yolu (`DateTimeOverlay/enabled`, `channelNameOverlay/enabled`), görüntü `Image/channels/{n}` (`Color/brightnessLevel`, `contrastLevel`, `saturationLevel`), akış `StreamingProxy/channels/{n}0{1,2}` (`Video/videoResolutionWidth`+`Height` birlikte, `maxFrameRate` = fps×100, 0 = tam kare hızı; bit hızı VBR'de `vbrUpperCap`, CBR'de `constantBitRate`; `videoCodecType`) |
+| Kameralar | `ContentMgmt/InputProxy/channels/{n}/video/overlays`, `Image/channels/{n}` (+`/capabilities`, `Color/*Level` min/max), `ContentMgmt/StreamingProxy/channels/{n}01` ve `{n}02` (+`/capabilities`) | kanal adı ISAPI ile **yazılmaz**, **SDK ile** yazılır (aşağıdaki "Kamera adı"), OSD aynı overlays yolu (`DateTimeOverlay/enabled`, `channelNameOverlay/enabled`), görüntü `Image/channels/{n}` (`Color/brightnessLevel`, `contrastLevel`, `saturationLevel`), akış `StreamingProxy/channels/{n}0{1,2}` (`Video/videoResolutionWidth`+`Height` birlikte, `maxFrameRate` = fps×100, 0 = tam kare hızı; bit hızı VBR'de `vbrUpperCap`, CBR'de `constantBitRate`; `videoCodecType`) |
 | Hareket | `ContentMgmt/InputProxy/channels/{n}/video/motionDetection` (+`/capabilities`: `sensitivityLevel` 0–100 adım 20) | aynı yol: `enabled`, `MotionDetectionLayout/sensitivityLevel` (Düşük 20 · Orta 60 · Yüksek 80; okurken 0–20 Düşük, 40–60 Orta, 80–100 Yüksek — `MotionSensitivity`) |
 | Kayıt | `ContentMgmt/record/tracks/{n}01` | aynı yol: açık/kapalı = `CustomExtensionList/CustomExtension/enableSchedule`; mod = `TrackSchedule/ScheduleBlockList/ScheduleBlock` içindeki 7 tam gün `ScheduleAction` (`ActionRecordingMode` CMR = Sürekli, MOTION = Yalnızca hareket; eylem yok = Kapalı); `PreRecordTimeSeconds` / `PostRecordTimeSeconds`. Bunlara uymayan program **Özel program**dır, kullanıcı açıkça bir mod seçmedikçe yazılmaz |
 | Sistem | `System/deviceInfo`, `System/time`, `System/time/ntpServers`, `ContentMgmt/Storage/hdd` | cihaz adı `System/deviceInfo` (`deviceName`); "Bilgisayarla eşitle" `System/time` (`timeMode`=manual, `localTime` = bu PC'nin saati + ofseti, `timeZone` farklıysa `CST-3:00:00` biçimi — işaret ters). NTP yalnızca gösterilir; yeniden başlatma ve disk başına biçimlendirme 2. aşamada (riskli işlem) |
@@ -538,9 +550,21 @@ yeniden okunur. "Geri al" formu son okunan değerlere döndürür (cihaza bir ş
 **bağlantı kaydıdır** (`sourceInputPortDescriptor`: IP, yönetim portu, kullanıcı adı, seri no, `certificateValidationEnabled`, `devIndex`) ve
 DS-8632NI-I8'de GET'te `password` öğesi **hiç gelmez** (capabilities'te de yok). Şifresiz geri yazmanın sonucu doğrulanamıyor: en iyi
 durumda kamera yeniden bağlanır, en kötüsünde şifresi boşalır → çevrimdışı, kayıt yok. Şifre içermeyen bir ad uç noktası yok
-(`System/Video/inputs/channels/{n}` 403 `invalidOperation`, `channelNameOverlay`'de ad öğesi yok). **Karar:** ad Kameralar sekmesinde
-yalnızca gösterilir ("web arayüzünden değiştirin"); `InputProxy/channels/{n}` izin listesinden çıkarıldı, `RecorderPlan.Camera` adı planlamaz,
-sıradan gövdede `sourceInputPortDescriptor` öğesi de reddedilir (testli).
+(`System/Video/inputs/channels/{n}` 403 `invalidOperation`, `channelNameOverlay`'de ad öğesi yok). **Karar:** `InputProxy/channels/{n}`
+izin listesinden **kalıcı olarak** çıkarıldı, `RecorderPlan.Camera` adı planlamaz, sıradan gövdede `sourceInputPortDescriptor` öğesi de reddedilir (testli).
+
+**Kamera adı SDK ile (21.10.2026, cihazda yazma denenmedi):** ad HCNetSDK resim ayarı `NET_DVR_PICCFG_V40.sChanName`'den okunur/yazılır; bu yapıda
+kameranın bağlantı bilgisi (IP, kullanıcı, şifre) **yoktur**. Kanal = `HikSession.SdkChannel(n)` (bu cihazda 33 + n − 1). Salt okuma sondası
+(22 kanal): `NET_DVR_GET_PICCFG_V40` (6179) hepsinde başarılı, dönen boyut ve `dwSize` **77140** (başlıktan hesaplanan `sizeof` ile aynı; 77136'lık
+tampon hata 17 ile reddedildi), aynı kanalın iki okuması bayt bayt aynı; adlar ISAPI'deki ve uygulamadaki adlarla 22/22 aynı (hepsi ASCII). Giriş
+`byCharEncodeType` = **6 (UTF-8)**. Kodlama kuralı (`SdkCharEncoding`, `ChannelNameCodec`): 0 bilinmiyor (yalnız ASCII ad yazılır, ASCII dışı ad
+gösterilmez), 1/2 GBK, 3 BIG5, 4 Shift_JIS, 5 EUC-KR, 6 UTF-8, 7–21 ISO-8859-(n−6) (Türkçe cihaz 15 = ISO-8859-9 olabilir). Sınır **32 bayt** o
+kodlamada (UTF-8'de Türkçe harf 2 bayt; sonlandırıcı gerekmez, okurken ilk NUL'a kadar); boş, kontrol karakteri ve `< > & " ' % \` reddedilir;
+ad kırpılır. Yazma (Kameralar › Cihaza uygula, sıradan onay penceresi, satır "<kamera> · Kamera adı: eski → yeni"): ISAPI yazmalarından sonra,
+UI dışında `ChannelRenameWriter`: GET → cihazdaki ad hâlâ gösterilen ad mı (değilse gönderilmez) → `ChannelNameCodec.WithName` (yalnız bayt 4–35,
+ad + sıfır dolgu) → `SdkWritePolicy` → SET → GET ile doğrula; ilk hatada durur, UYGULANDI/UYGULANMADI raporu ISAPI raporuyla birleşir. Başarılı
+adlar SPVision ayarlarına da yazılır (`CamerasRenamed`: kaydet + kenar çubuğu/oynatma listesi + kare başlıkları, akış yeniden açılmaz). SDK okunamazsa
+(SDK yok, giriş başarısız — cihaz başına bir kez denenir —, GET hatası, çözülemeyen kodlama) alan salt okunur kalır ve yardım satırında kısa sebep yazar.
 
 ### 2. aşama: Olaylar · Ağ · Kullanıcılar · yeniden başlatma · biçimlendirme (21.10.2026, cihazda yazma denenmedi)
 
@@ -551,12 +575,12 @@ Cihazın sunmadığı ayar "Bu cihaz desteklemiyor" ya da "—" (ipucu ile) gös
 | Sekme | Okuma (GET) | Yazma |
 |---|---|---|
 | Olaylar | `Event/triggersCap` (`*TriggerCap/isSupportBeep/Center/Email`), `Event/triggers` (tüm tetikler tek belgede), kamera başına `ContentMgmt/InputProxy/channels/{n}/video/videoLoss` ve `/tamperDetection` (`enabled`) | **sıradan** (ConfigWriter): kamera aç/kapa aynı iki yol (`enabled`); tepkiler `Event/triggers/{id}` — `videoloss-{n}`, `tamper-{n}`, `diskfull`, `diskerror`, `nicbroken`, `ipconflict`, `illaccess`, `recordingfailure`; `EventTriggerNotificationList`'e `<EventTriggerNotification><id>beep</id><notificationMethod>beep</notificationMethod>` ekle/çıkar (`NotificationEdit`; diğer bildirimler, ör. `record`, dokunulmaz). Kamera satırı "Görüntü kaybı / Kurcalama" tüm kameraların tetiklerine uygulanır; yalnız farklı olan tetik yazılır; karışıksa satırda "bazı kameralarda farklı" |
-| Ağ | `System/Network/interfaces` (IPv4: `addressingType`, `ipAddress`, `subnetMask`, `DefaultGateway/ipAddress`, `PrimaryDNS`/`SecondaryDNS`), `System/Network/Bond` (açıksa düzenleme kapalı), `Security/adminAccesses` (yalnız `protocol` + `portNo`: HTTP 80, HTTPS 443, RTSP 554, DEV_MANAGE 8000) | **riskli**: `PUT System/Network/interfaces/{id}/ipAddress` — SPVision'ın bağlandığı arabirim (adresi `Device.Host` olan, yoksa `defaultConnection`). Onaydan hemen önce belge yeniden GET edilir; değişmişse durur. Gövde = o belge + değişen öğeler. Doğrulama `NetworkPlan.Validate` (geçerli IPv4, /8–/30 maske, ağ/yayın adresi değil, ağ geçidi aynı alt ağda). Başarılı ya da **yanıtsız** sonuçtan sonra eski statik adres `Device.Host` ise "SPVision yeni adresten bağlansın mı?" → `Device.Host` güncellenir, kaydedilir, SDK oturumu kapanır, kareler yeniden bağlanır. **Portlar yalnızca gösterilir**: aynı `adminAccesses` belgesi TLS / HTTPS ayarlarını taşıdığı için `adminAccess` kalıcı yasaktır |
+| Ağ | `System/Network/interfaces` (IPv4: `addressingType`, `ipAddress`, `subnetMask`, `DefaultGateway/ipAddress`, `PrimaryDNS`/`SecondaryDNS`), `System/Network/Bond` (açıksa düzenleme kapalı), `Security/adminAccesses` (+ `/capabilities` → port min/max/def; cihazda HTTP 80, RTSP 554, HTTPS 443 + TLS ayarları, DEV_MANAGE 8000, WebSocket 7681, IOT 30999, SDK_OVER_TLS 8443) | **riskli**: `PUT System/Network/interfaces/{id}/ipAddress` — SPVision'ın bağlandığı arabirim (adresi `Device.Host` olan, yoksa `defaultConnection`). Onaydan hemen önce belge yeniden GET edilir; değişmişse durur. Gövde = o belge + değişen öğeler. Doğrulama `NetworkPlan.Validate` (geçerli IPv4, /8–/30 maske, ağ/yayın adresi değil, ağ geçidi aynı alt ağda). Başarılı ya da **yanıtsız** sonuçtan sonra eski statik adres `Device.Host` ise "SPVision yeni adresten bağlansın mı?" → `Device.Host` güncellenir, kaydedilir, SDK oturumu kapanır, kareler yeniden bağlanır. **Portlar** (ayrı kart, **riskli**): aşağıdaki "Portlar" |
 | Kullanıcılar | `Security/users` (yalnız `id`, `userName`, `userLevel` okunur; listede şifre yoktur, istenmez), `Security/capabilities` (`supportUserNums` = 32) | **riskli**: ekle `POST Security/users`; şifre değiştir `PUT Security/users/{id}`; sil `DELETE Security/users/{id}` (id ≥ 2). Gövde yalnız `User{id,userName,password,userLevel,loginPassword}` (izin/bağlama/enable öğesi yok); yeni kullanıcı yalnız Operatör/İzleyici; yönetici (id 1 ya da Administrator) silinemez (politika + kurucu + düğme). `loginPassword` = SPVision hesabının şifresi, formda yeniden sorulur ve kayıtlı şifreyle karşılaştırılır (yanlışsa cihaza gitmez — cihazın giriş kilidini tetiklemesin). Şifre kuralı `UserRules` (8–16, ASCII, 4 türden ≥ 2, kullanıcı adını içermez, iki kez). Şifre taşıyan gövde **yalnız HTTPS** ile gider (`SendRiskyAsync` HTTP'de reddeder). SPVision'ın kendi hesabının şifresi değişince `Device.Password` güncellenir → `SettingsStore` (DPAPI) ile kaydedilir → yeniden bağlanır. `Security/users/capabilities` bu cihazda 503 (meşgul) döndü; kullanılmıyor |
 | Sistem | (1. aşama) | **riskli**: `PUT System/reboot` (gövdesiz); disk başına `PUT ContentMgmt/Storage/hdd/{id}/format` (gövdesiz; onayda disk adı, kapasite, durum; `BİÇİMLENDİR` yazılmadan Biçimlendir düğmesi açılmaz). Biçimlendirme sonrası diskler yeniden okunur |
 
 **Riskli yazma mekanizması (`RiskyWrites.cs`):**
-1. `RiskyWrites.Reboot / FormatDisk / NetworkAddress / AddUser / ChangePassword / DeleteUser` bir `RiskyWriteRequest` kurar: işlem türü, **tam
+1. `RiskyWrites.Reboot / FormatDisk / NetworkAddress / AdminPorts / AddUser / ChangePassword / DeleteUser` bir `RiskyWriteRequest` kurar: işlem türü, **tam
    yöntem + yol**, gövde (bir kez dizgeye çevrilir: onaylanan = gönderilen), başlık, uyarı, eski → yeni satırları (şifre **asla** yok), gerekiyorsa
    yazılacak kelime. Kurucu `IsapiWritePolicy.EnsureRiskyAllowed` + `EnsureRiskyBodyAllowed`'ı hemen çalıştırır.
 2. `ConfirmedRiskyWrite.Confirm(request, IRiskyConfirmation)` — tek uygulama `RiskyConfirmDialog` — kullanıcı onaylarsa (ve kelime Türkçe büyük
@@ -567,13 +591,33 @@ Cihazın sunmadığı ayar "Bu cihaz desteklemiyor" ya da "—" (ipucu ile) gös
 4. Görünümde `RunRiskyAsync` (UI iş parçacığını bloklamaz): onay → gönder → `Done` / `Refused` (Türkçe `ResponseStatus`) / `NoAnswer` (bağlantı
    koptu: yeniden başlatma ve adres değişiminde beklenebilir; "yapılmış olabilir" denir). `statusCode` 7 (yeniden başlatma gerekli) başarı sayılır.
 
+**Portlar (Ağ sekmesi, riskli, 21.10.2026, cihazda yazma denenmedi):** dört kutu (HTTP, HTTPS, RTSP, Sunucu (SDK); 240 px, adres alanlarıyla aynı
+satır düzeni, AutomationId `NetworkPortHttp/Https/Rtsp/Server`), kartın kendi Geri al / Cihaza uygula düğmeleri ve sonuç satırı. Kurallar:
+- Tek izin: `RiskyOperation.AdminPorts` + `PUT ISAPI/Security/adminAccesses` (tam yol; `/`, büyük-küçük harf, `%2F`, sorgu, `/1`, `/capabilities`
+  değişkenleri reddedilir). Belirteç (`ConfirmedRiskyWrite`) olmadan gitmez; `PutConfigAsync` bu yola hiç gitmez.
+- Gövde kuralı `IsapiWritePolicy.CheckAdminPortsBody(okunan, gövde)` — kurucuda ve `SendRiskyAsync`'te yeniden (istek okunan belgeyi `Original`
+  olarak taşır): aynı öğeler aynı sırada, aynı ad/ad alanı/nitelikler, her metin aynı; **yalnız** `protocol`'ü HTTP / HTTPS / RTSP / DEV_MANAGE olan
+  (listede tek) `AdminAccessProtocol`'ün `portNo`'su değişebilir, yeni değer düz sayı 1–65535 ve başka bir girdinin (WebSocket, IOT, SDK_OVER_TLS dahil)
+  portu değil; en az bir port değişmeli; `password`/`secret`/`privateKey`/`verificationCode`/`encrypt`/`EZVIZ`/`platform`/`cloud` öğesi olamaz. TLS,
+  `enabled`, `redirectToHttps`, eklenen/silinen/yer değiştiren protokol → reddedilir (testli: `AdminPortsTests`).
+- `PortPlan.Validate`: 1–65535, cihazın `capabilities` aralığı (bu cihazda RTSP 1024–65535, DEV_MANAGE 2000–65535; protokolün varsayılanı —
+  `def`/`default` ya da 80/443/554/8000 — her zaman kabul: geri alınabilsin), tüm girdilerde benzersiz. `PortPlan.Warnings`: iyi bilinen portlar
+  (22 SSH, 3389, 445, 8080…), başka protokolün olağan portu ve <1024 → onay penceresinde "Dikkat:" (engellemez).
+- Akış: form → doğrula → belge **onaydan hemen önce** yeniden GET (sayfadakiyle `XNode.DeepEquals` değilse gönderilmez) → `RiskyWrites.AdminPorts`
+  (eski → yeni satırları; uyarı: SPVision, web arayüzü, iVMS-4200, telefon uygulamaları, yönlendiricideki port yönlendirme yeni portu ister) →
+  onaydan **sonra, PUT'tan hemen önce** bir GET daha (`RunRiskyAsync` `beforeSend`; değişmişse gönderilmez) → PUT. HTTPS portu istek sırasında
+  değişip yanıt gelmezse `NoAnswer` ("değişmiş olabilir"). `Done`/`NoAnswer` sonrası SPVision'ın kullandığı port değiştiyse
+  (`PortPlan.FollowDevice`: HTTPS kullanılıyorsa HTTPS, değilse HTTP → `Device.HttpPort`; RTSP → `RtspPort`; DEV_MANAGE → `SdkPort`; yalnız eski
+  değer SPVision'ınkiyle aynıysa) "yeni portlardan bağlansın mı?" → `DeviceUpdated(device, true)` (kaydet, SDK oturumu kapanır, yeniden bağlanır).
+
 **İzin listesine eklenenler (tam yol):** sıradan: `ContentMgmt/InputProxy/channels/{n}/video/videoLoss`, `…/video/tamperDetection`,
 `Event/triggers/(videoloss|tamper)-{n}`, `Event/triggers/(diskfull|diskerror|nicbroken|ipconflict|illaccess|recordingfailure)`. Riskli:
 `PUT System/reboot`, `PUT ContentMgmt/Storage/hdd/[1-99]/format`, `PUT System/Network/interfaces/[1-9]/ipAddress`, `POST Security/users`,
-`PUT Security/users/[1-99]`, `DELETE Security/users/[2-99]`. **Çıkarılan:** `ContentMgmt/InputProxy/channels/{n}`. Yol karakterleri yalnız
+`PUT Security/users/[1-99]`, `DELETE Security/users/[2-99]`, `PUT Security/adminAccesses` (yalnız port gövdesi). SDK: yalnız
+`NET_DVR_SET_PICCFG_V40` (yalnız ad baytları). **Çıkarılan (kalıcı):** `ContentMgmt/InputProxy/channels/{n}`. Yol karakterleri yalnız
 `A-Z a-z 0-9 / -` (sorgu, `%`, `..`, ters bölü, baştaki/sondaki `/`, `//` reddedilir). Testler: `RiskyWritePolicyTests` (izinli/yasak her yol,
 yöntem/işlem çaprazı, büyük-küçük harf, sondaki `/`, `..`, `%2F`, sorgu, Türkçe kültür, gövde sözlüğü, belirteç tek kullanım / süre / kelime,
-HTTP'de şifre yok), `RecorderPhaseTwoTests` (ayrıştırıcılar, planlar, ağ doğrulaması, kullanıcı kuralları).
+HTTP'de şifre yok), `RecorderPhaseTwoTests` (ayrıştırıcılar, planlar, ağ doğrulaması, kullanıcı kuralları), `AdminPortsTests` (port yolu, gövde farkı, `PortPlan`), `SdkRenameTests` (ad kodlaması, 32 bayt, bayt farkı koruması, `SdkWritePolicy`, `ChannelRenameWriter`).
 
 ## 10. Erişilebilirlik: denetimler UI Automation ile de çalışmalı (21.10.2026)
 

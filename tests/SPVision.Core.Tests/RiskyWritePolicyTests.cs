@@ -171,8 +171,9 @@ public class RiskyWritePolicyTests
     [InlineData("ISAPI/System/Hik-Connect")]
     [InlineData("ISAPI/System/Network/cloud")]
     [InlineData("ISAPI/System/platform/1")]
-    [InlineData("ISAPI/Security/adminAccesses")]
+    // "ISAPI/Security/adminAccesses" itself: only (AdminPorts, PUT) with the port-only body rule — AdminPortsTests.
     [InlineData("ISAPI/Security/adminAccesses/1")]
+    [InlineData("ISAPI/Security/adminAccesses/capabilities")]
     [InlineData("ISAPI/Security/serverCertificate/certificate")]
     [InlineData("ISAPI/Security/deviceCertificate")]
     [InlineData("ISAPI/Security/SRTP")]

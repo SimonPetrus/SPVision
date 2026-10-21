@@ -49,7 +49,8 @@ public sealed partial class IsapiClient : IConfigTransport, IRiskyTransport
             // The body carries passwords in clear text (Digest protects only the login): never over plain HTTP.
             throw new IsapiWriteDeniedException("Şifre içeren işlemler yalnızca HTTPS bağlantısıyla gönderilir (Ayarlar › Cihaz yönetimi › HTTPS kullan).");
         }
-        IsapiWritePolicy.EnsureRiskyBodyAllowed(risky.Operation, risky.Body is null ? null : IsapiXml.Parse(risky.Body));
+        IsapiWritePolicy.EnsureRiskyBodyAllowed(risky.Operation, risky.Body is null ? null : IsapiXml.Parse(risky.Body),
+            risky.Original is null ? null : IsapiXml.Parse(risky.Original));
 
         using var request = new HttpRequestMessage(new HttpMethod(risky.Method), risky.Path);
         if (risky.Body is not null)

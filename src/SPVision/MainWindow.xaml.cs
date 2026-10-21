@@ -58,6 +58,11 @@ public partial class MainWindow : Window
         SettingsPanel.LiveStateOf = DeviceLiveState;
         SettingsPanel.DeviceSaved += DeviceSaved;
         SettingsPanel.DeviceRemoved += DeviceRemoved;
+        SettingsPanel.CamerasRenamed += device =>
+        {
+            DevicesChanged();
+            Live.RefreshDeviceCameras(device); // same camera objects: titles are refreshed, streams keep running
+        };
         SettingsPanel.MotionBoxesChanged += SetMotionBoxes;
         SettingsPanel.QualitySelected += quality => Live.SelectQuality(quality);
         MotionToggle.IsChecked = App.Settings.ShowMotionBoxes;

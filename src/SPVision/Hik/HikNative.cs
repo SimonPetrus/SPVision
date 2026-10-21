@@ -295,6 +295,13 @@ public static class HikNative
     // Only affects video the SDK decodes itself (RealPlay with a play window); display-only, nothing is sent to the device.
     [DllImport(NetSdk)] public static extern bool NET_DVR_RenderPrivateData(int realHandle, int intelType, bool enable);
 
+    // NET_DVR_API BOOL __stdcall NET_DVR_GetDVRConfig(LONG lUserID, DWORD dwCommand, LONG lChannel, LPVOID lpOutBuffer,
+    //     DWORD dwOutBufferSize, LPDWORD lpBytesReturned);
+    // Read only. Used for NET_DVR_GET_PICCFG_V40 (camera name, Hik/HikChannelConfig.cs). The matching
+    // NET_DVR_SetDVRConfig is deliberately NOT declared here: its only declaration is private to HikChannelConfig,
+    // behind SdkWritePolicy (one allowed command: NET_DVR_SET_PICCFG_V40, name bytes only).
+    [DllImport(NetSdk)] public static extern bool NET_DVR_GetDVRConfig(int userId, uint command, int channel, IntPtr outBuffer, uint outBufferSize, out uint bytesReturned);
+
     // NET_DVR_API LONG __stdcall NET_DVR_GetPlayBackPlayerIndex(LONG lPlayHandle);
     // The PlayCtrl port the SDK itself decodes/draws a playback with (PlayBackByTime_V40 got a window); -1 if none.
     [DllImport(NetSdk)] public static extern int NET_DVR_GetPlayBackPlayerIndex(int playHandle);

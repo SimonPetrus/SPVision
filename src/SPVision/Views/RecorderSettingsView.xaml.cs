@@ -10,6 +10,7 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using SPVision.Controls;
 using SPVision.Core;
+using SPVision.Hik;
 
 namespace SPVision.Views;
 
@@ -79,6 +80,20 @@ public partial class RecorderSettingsView : UserControl
         public StreamOptions? SubOptions { get; set; }
         public CameraSettings Before { get; set; } = new(null, null, null, null, null);
         public CameraSettings Draft { get; set; } = new(null, null, null, null, null);
+
+        /// <summary>Name as read through the SDK (NET_DVR_GET_PICCFG_V40); null = read only, see <see cref="NameReason"/>.</summary>
+        public string? SdkName { get; set; }
+
+        public string? NameReason { get; set; }
+
+        /// <summary>byCharEncodeType of the SDK login (6 = UTF-8 on the DS-8632NI-I8).</summary>
+        public byte EncodeType { get; set; }
+
+        /// <summary>The name box (trimmed); equals <see cref="SdkName"/> when unchanged or invalid.</summary>
+        public string? NameDraft { get; set; }
+
+        /// <summary>Why the text in the name box cannot be written; null when it is fine.</summary>
+        public string? NameProblem { get; set; }
     }
 
     sealed class MotionRow
@@ -276,6 +291,8 @@ public partial class RecorderSettingsView : UserControl
         _system = null;
         _events = null;
         _network = null;
+        _portsResult = null;
+        _sdkNameFailure = null;
         _users = null;
         _results.Clear();
         _loading.Clear();
@@ -610,12 +627,10 @@ public partial class RecorderSettingsView : UserControl
     Border LoadingCard(string text = "Cihazdan okunuyor…") => NoticeCard(text, "");
 
     /// <summary>Result line under a card header after "Cihaza uygula".</summary>
-    UIElement? ResultBanner(Tab tab)
+    UIElement? ResultBanner(Tab tab) => _results.TryGetValue(tab, out var result) ? Banner(result) : null;
+
+    static Border Banner((bool? Ok, string Text) result)
     {
-        if (!_results.TryGetValue(tab, out var result))
-        {
-            return null;
-        }
         var text = Text(result.Text, "CellText");
         text.TextWrapping = TextWrapping.Wrap;
         text.TextTrimming = TextTrimming.None;
@@ -1048,13 +1063,16 @@ public partial class RecorderSettingsView : UserControl
         }
 
         var draft = slot.Draft;
-        // Read only: the recorder stores the name in the camera's connection record (address, user, password), whose
-        // password a GET never returns — writing the record back could drop the camera. See RecorderPlan.Camera.
-        var cameraName = ValueText(CameraLabel(slot.Camera));
-        AutomationProperties.SetAutomationId(cameraName, "CameraName");
-        panel.Children.Add(Row("Kamera adı",
-            "Yalnızca gösterilir. Kayıt cihazı adı kameranın bağlantı kaydıyla (adres, kullanıcı, şifre) birlikte yazar; SPVision o şifreyi okuyamadığı için yazarsa kamera bağlantısı kopabilir. Adı cihazın web arayüzünden değiştirin, sonra Cihaz yönetimi › Kameraları yenile.",
-            cameraName));
+        // The name is written through the SDK picture configuration (NET_DVR_SET_PICCFG_V40, name bytes only), never
+        // through the ISAPI channel record (it carries the camera's login; see RecorderPlan.Camera). Read only when the
+        // SDK could not read it.
+        panel.Children.Add(slot.SdkName is { } sdkName
+            ? Row("Kamera adı",
+                "Kayıt cihazındaki kanal adı; en çok 32 bayt (Türkçe harfler 2 bayt). Kameranın bağlantı bilgilerine dokunulmaz.",
+                NameBox(slot, sdkName))
+            : Row("Kamera adı",
+                $"Yalnızca gösterilir: {slot.NameReason ?? RecorderText.Unreadable}.",
+                CameraNameText(slot)));
 
         UIElement OverlaySwitch(Func<OverlaySettings, bool?> pick, Func<OverlaySettings, bool, OverlaySettings> set, string name) =>
             draft.Overlay is { } o && pick(o) is { } on
@@ -1075,6 +1093,78 @@ public partial class RecorderSettingsView : UserControl
             StreamControls(slot, StreamQuality.Sub), last: true));
 
         host.Child = Card(panel);
+    }
+
+    static TextBlock CameraNameText(CameraSlot slot)
+    {
+        var text = ValueText(CameraLabel(slot.Camera));
+        AutomationProperties.SetAutomationId(text, "CameraName");
+        AutomationProperties.SetName(text, $"Kamera adı: {text.Text}");
+        return text;
+    }
+
+    /// <summary>Name box (240 px like the other row controls); an invalid name gets a red border + the reason and is never written.</summary>
+    static TextBox NameBox(CameraSlot slot, string current)
+    {
+        var box = new TextBox { Text = slot.NameDraft ?? current, MaxLength = PicCfgV40.NameLength, Width = ControlWidth };
+        box.SetResourceReference(StyleProperty, "RowTextBox");
+        AutomationProperties.SetName(box, "Kamera adı");
+        AutomationProperties.SetAutomationId(box, "CameraName");
+        void Check()
+        {
+            var text = box.Text.Trim();
+            slot.NameProblem = text == current ? null : ChannelNameCodec.Validate(text, slot.EncodeType);
+            if (slot.NameProblem is null)
+            {
+                box.ClearValue(BorderBrushProperty);
+                box.ToolTip = "Kamera adı";
+                slot.NameDraft = text;
+            }
+            else
+            {
+                box.SetResourceReference(BorderBrushProperty, "DangerText");
+                box.ToolTip = slot.NameProblem;
+                slot.NameDraft = current; // never written
+            }
+        }
+        box.TextChanged += (_, _) => Check();
+        Check();
+        return box;
+    }
+
+    /// <summary>Why the SDK could not log in to the selected device (kept until another device is chosen: no 5 s retry per camera).</summary>
+    SdkLoginFailure? _sdkNameFailure;
+
+    sealed record SdkLoginFailure(Guid DeviceId, string Reason);
+
+    /// <summary>Blocking (SDK login + GET): call from a worker thread. Sets <see cref="_sdkNameFailure"/> when the login fails.</summary>
+    (string? Name, byte EncodeType, string? Reason) ReadSdkName(Device device, int channel)
+    {
+        if (Volatile.Read(ref _sdkNameFailure) is { } failure && failure.DeviceId == device.Id)
+        {
+            return (null, SdkCharEncoding.Unknown, failure.Reason);
+        }
+        HikChannelConfig config;
+        try
+        {
+            config = HikChannelConfig.Open(device);
+        }
+        catch (Exception ex) when (ex is SdkConfigException or DllNotFoundException or EntryPointNotFoundException)
+        {
+            var reason = ex is SdkConfigException ? ex.Message : "SDK yüklenemedi";
+            Volatile.Write(ref _sdkNameFailure, new SdkLoginFailure(device.Id, reason));
+            return (null, SdkCharEncoding.Unknown, reason);
+        }
+        try
+        {
+            return config.ReadName(channel) is { } name
+                ? (name, config.EncodeType, null)
+                : (null, config.EncodeType, "ad cihazın karakter kodlamasıyla okunamadı");
+        }
+        catch (SdkConfigException ex)
+        {
+            return (null, config.EncodeType, ex.Message);
+        }
     }
 
     Border LoadingCardInline(string title)
@@ -1207,6 +1297,14 @@ public partial class RecorderSettingsView : UserControl
             }
             slot.Before = new CameraSettings(slot.Camera.Name, slot.Overlay.Value, slot.Color.Value, slot.Main.Value, slot.Sub.Value);
             slot.Draft = slot.Before;
+            // The name through HCNetSDK (blocking login + GET): off the UI thread, no lock held.
+            var (sdkName, encodeType, reason) = await Task.Run(() => ReadSdkName(device, channel), CancellationToken.None);
+            ct.ThrowIfCancellationRequested();
+            slot.SdkName = sdkName;
+            slot.NameReason = reason;
+            slot.EncodeType = encodeType;
+            slot.NameDraft = sdkName;
+            slot.NameProblem = null;
             slot.Loaded = true;
         }
         catch (OperationCanceledException)
@@ -1237,21 +1335,73 @@ public partial class RecorderSettingsView : UserControl
         _slots.Values.Where(s => s.Loaded).OrderBy(s => s.Camera.Channel)
             .SelectMany(s => RecorderPlan.Camera(s.Camera.Channel, CameraLabel(s.Camera), s.Before, s.Draft)).ToList();
 
+    /// <summary>Camera renames through the SDK (see <see cref="ChannelRenameWriter"/>), in channel order.</summary>
+    List<ChannelRename> PlanRenames() =>
+        _slots.Values.Where(s => s.Loaded && s.SdkName is not null && s.NameProblem is null && s.NameDraft is { Length: > 0 } d && d != s.SdkName)
+            .OrderBy(s => s.Camera.Channel)
+            .Select(s => new ChannelRename(s.Camera.Channel, CameraLabel(s.Camera), s.SdkName!, s.NameDraft!)).ToList();
+
     void RevertCameras()
     {
         foreach (var slot in _slots.Values)
         {
             slot.Draft = slot.Before;
+            slot.NameDraft = slot.SdkName;
+            slot.NameProblem = null;
         }
         _results.Remove(Tab.Cameras);
         RenderCameraCard();
     }
 
-    void ApplyCameras() => Apply(Tab.Cameras, PlanCameras(), () =>
+    void ApplyCameras()
     {
-        _cameras = null;
-        _slots.Clear();
-    });
+        if (_slots.Values.Where(s => s.Loaded && s.NameProblem is not null).OrderBy(s => s.Camera.Channel).FirstOrDefault() is { } bad)
+        {
+            _results[Tab.Cameras] = (false, $"{CameraLabel(bad.Camera)}: {bad.NameProblem}");
+            RenderCameraCard();
+            return;
+        }
+        Apply(Tab.Cameras, PlanCameras(), () =>
+        {
+            _cameras = null;
+            _slots.Clear();
+        }, PlanRenames());
+    }
+
+    /// <summary>The renames, one by one through the SDK (blocking calls: run on a worker thread).</summary>
+    static ConfigWriteReport RunRenames(Device device, IReadOnlyList<ChannelRename> renames)
+    {
+        try
+        {
+            return ChannelRenameWriter.Apply(HikChannelConfig.Open(device), renames);
+        }
+        catch (Exception ex) when (ex is SdkConfigException or DllNotFoundException or EntryPointNotFoundException)
+        {
+            var all = renames.Select(r => r.Description).ToList();
+            return new ConfigWriteReport([], string.Join("; ", all), $"Kamera adı yazılamadı: {ex.Message}", all);
+        }
+    }
+
+    /// <summary>The cameras renamed on the device keep their new names in SPVision too (lists, tiles), without reconnecting.</summary>
+    void RenameInSettings(Device device, IReadOnlyList<ChannelRename> renames, IReadOnlyList<string> applied)
+    {
+        var changed = false;
+        foreach (var rename in renames.Where(r => applied.Contains(r.Description)))
+        {
+            if (device.Cameras.FirstOrDefault(c => c.Channel == rename.Channel) is { } camera)
+            {
+                camera.Name = rename.NewName;
+                changed = true;
+            }
+        }
+        if (changed)
+        {
+            CamerasRenamed?.Invoke(device);
+        }
+    }
+
+    /// <summary>Camera names of a saved device changed (rename on the recorder): save and refresh the lists, no reconnect.</summary>
+    public event Action<Device>? CamerasRenamed;
 
     // ================================================================ Hareket
 
@@ -1671,26 +1821,29 @@ public partial class RecorderSettingsView : UserControl
     // ================================================================ apply
 
     bool HasPendingChanges() =>
-        PlanCameras().Count + PlanMotion().Count + PlanRecord().Count + PlanSystem().Count + PlanEvents().Count > 0 || NetworkPending();
+        PlanCameras().Count + PlanRenames().Count + PlanMotion().Count + PlanRecord().Count + PlanSystem().Count + PlanEvents().Count > 0 ||
+        NetworkPending();
 
     /// <summary>
     /// Confirmation → sequential writes (stop at the first failure) → result → re-read from the device.
-    /// <paramref name="forget"/> drops the tab's data so the next render reads the device again.
+    /// <paramref name="forget"/> drops the tab's data so the next render reads the device again. <paramref name="renames"/>
+    /// (Kameralar) go through the SDK after the ISAPI writes, in the same confirmation and the same report.
     /// </summary>
-    async void Apply(Tab tab, List<ConfigWrite> writes, Action forget)
+    async void Apply(Tab tab, List<ConfigWrite> writes, Action forget, IReadOnlyList<ChannelRename>? renames = null)
     {
         if (_device is not { } device || _writing)
         {
             return;
         }
+        renames ??= [];
         var owner = Window.GetWindow(this);
-        if (writes.Count == 0)
+        if (writes.Count == 0 && renames.Count == 0)
         {
             _results[tab] = (null, "Değişiklik yok; cihaza bir şey yazılmadı.");
             Render();
             return;
         }
-        var lines = writes.SelectMany(w => w.Descriptions).ToList();
+        var lines = writes.SelectMany(w => w.Descriptions).Concat(renames.Select(r => r.Description)).ToList();
         var question = lines.Count == 1
             ? $"Bu değişiklik “{device.Name}” kayıt cihazına yazılsın mı?"
             : string.Create(CultureInfo.InvariantCulture, $"Bu {lines.Count} değişiklik “{device.Name}” kayıt cihazına sırayla yazılsın mı? Bir hata olursa kalanlar yazılmaz.");
@@ -1704,10 +1857,31 @@ public partial class RecorderSettingsView : UserControl
         Render();
         UpdateEnabled();
         ConfigWriteReport report;
+        IReadOnlyList<string> renamed = [];
         try
         {
-            using var isapi = new IsapiClient(device, WriteTimeout);
-            report = await ConfigWriter.ApplyAsync(isapi, writes);
+            if (writes.Count > 0)
+            {
+                using var isapi = new IsapiClient(device, WriteTimeout);
+                report = await ConfigWriter.ApplyAsync(isapi, writes);
+            }
+            else
+            {
+                report = new ConfigWriteReport([], null, null, []);
+            }
+            if (renames.Count > 0)
+            {
+                if (report.Success)
+                {
+                    var sdk = await Task.Run(() => RunRenames(device, renames));
+                    renamed = sdk.Applied;
+                    report = new ConfigWriteReport([.. report.Applied, .. sdk.Applied], sdk.FailedChange, sdk.FailureMessage, sdk.NotApplied);
+                }
+                else
+                {
+                    report = report with { NotApplied = [.. report.NotApplied, .. renames.Select(r => r.Description)] };
+                }
+            }
         }
         catch (IsapiWriteDeniedException ex)
         {
@@ -1722,6 +1896,10 @@ public partial class RecorderSettingsView : UserControl
         {
             _writing = false;
             UpdateEnabled();
+        }
+        if (renamed.Count > 0)
+        {
+            RenameInSettings(device, renames, renamed);
         }
 
         if (report.Success)

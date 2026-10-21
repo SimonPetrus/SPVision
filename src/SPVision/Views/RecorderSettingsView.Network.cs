@@ -2,15 +2,16 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
-using SPVision.Controls;
+using System.Xml.Linq;
 using SPVision.Core;
 
 namespace SPVision.Views;
 
 // Settings › Cihaz ayarları › Ağ (phase 2). Read: ISAPI/System/Network/interfaces, .../Bond, ISAPI/Security/adminAccesses
-// (ports, read only). The address of the interface SPVision uses is a risky write (RiskyWrites.NetworkAddress): fresh
-// GET → edits → the separate confirmation with "eski → yeni" → PUT. After a change SPVision offers to use the new address.
+// (+ /capabilities for the port ranges). Two risky writes, each with its own card: the address of the interface SPVision
+// uses (RiskyWrites.NetworkAddress) and the HTTP / HTTPS / RTSP / server port numbers (RiskyWrites.AdminPorts: the
+// adminAccesses document just read with only those portNo values changed). Both: fresh GET → edits → the separate
+// confirmation with "eski → yeni" → PUT. Afterwards SPVision offers to use the new address / ports.
 public partial class RecorderSettingsView
 {
     sealed class NetworkData
@@ -18,15 +19,31 @@ public partial class RecorderSettingsView
         public required Read<List<NetworkInterfaceInfo>> Interfaces { get; init; }
         public required Read<BondInfo> Bond { get; init; }
         public required Read<PortSettings> Ports { get; init; }
+
+        /// <summary>The adminAccesses document as read (the ports body is built from a fresh read of the same document).</summary>
+        public XDocument? PortsDoc { get; init; }
+
+        public Dictionary<string, PortLimit> PortLimits { get; init; } = [];
         public NetworkInterfaceInfo? Main { get; init; }
         public NetworkAddress? Draft { get; set; }
+        public PortSettings? PortsDraft { get; set; }
+
+        /// <summary>Protocols whose box holds no valid port number (never sent).</summary>
+        public HashSet<string> PortErrors { get; } = [];
     }
 
     NetworkData? _network;
 
+    /// <summary>Result line of the Portlar card (the address card uses _results[Tab.Network]).</summary>
+    (bool? Ok, string Text)? _portsResult;
+
     const string NetworkWarning =
         "Yanlış ayar cihazla bağlantıyı koparabilir. Uygulamadan önce eski → yeni değerler ayrı bir pencerede onaylatılır; " +
         "adres değişirse SPVision'daki cihaz adresini güncellemeyi önerir.";
+
+    const string PortsWarning =
+        "Port değişince bu cihaza bağlanan her program yeni portu ister: SPVision, web arayüzü, iVMS-4200, telefon uygulamaları ve " +
+        "yönlendiricideki port yönlendirme. Uygulamadan önce eski → yeni portlar ayrı bir pencerede onaylatılır.";
 
     void RenderNetwork()
     {
@@ -41,11 +58,17 @@ public partial class RecorderSettingsView
             {
                 var interfaces = await RecorderReader.TryAsync(isapi, IsapiPaths.Interfaces, NetworkInterfaceInfo.ParseList, ct);
                 var bond = await RecorderReader.TryAsync(isapi, IsapiPaths.Bond, BondInfo.Parse, ct);
-                var ports = await RecorderReader.TryAsync(isapi, IsapiPaths.AdminAccesses, PortSettings.Parse, ct);
+                var portsDoc = await RecorderReader.TryAsync(isapi, IsapiPaths.AdminAccesses, d => d, ct);
+                var ports = portsDoc.Value is { } doc ? Read<PortSettings>.Success(PortSettings.Parse(doc)) : new Read<PortSettings>(portsDoc.State, null, portsDoc.Error);
+                var limits = portsDoc.Value is null ? new Dictionary<string, PortLimit>() : PortPlan.ParseLimits(await RecorderReader.TryCapabilitiesAsync(isapi, IsapiPaths.AdminAccessesCapabilities, ct));
                 var main = interfaces.Value is { } list ? NetworkInterfaceInfo.ForHost(list, device.Host) : null;
                 if (device == _device)
                 {
-                    _network = new NetworkData { Interfaces = interfaces, Bond = bond, Ports = ports, Main = main, Draft = main?.Address };
+                    _network = new NetworkData
+                    {
+                        Interfaces = interfaces, Bond = bond, Ports = ports, PortsDoc = portsDoc.Value, PortLimits = limits,
+                        Main = main, Draft = main?.Address, PortsDraft = ports.Value,
+                    };
                 }
             });
             return;
@@ -147,29 +170,7 @@ public partial class RecorderSettingsView
         }
         TabContent.Children.Add(Card(panel));
 
-        // Portlar (read only): four equal cells like the disk summary of Genel bakış.
-        var ports = new StackPanel();
-        ports.Children.Add(CardHeader("Portlar",
-            "Yalnızca gösterilir: portlar cihazın HTTPS / TLS güvenlik ayarlarıyla aynı belgede durduğu için SPVision'dan değiştirilmez. Cihazın web arayüzünde değiştirirseniz Cihaz yönetimi'nde de güncelleyin.",
-            [], (System.Windows.Media.Geometry)FindResource("IconLock")));
-        var cells = new UniformGrid { Rows = 1, Columns = 4, Margin = new Thickness(16, 12, 16, 14) };
-        void Cell(string caption, int? port)
-        {
-            var cell = new StackPanel();
-            cell.Children.Add(Text(caption, "CaptionText"));
-            var value = Text(data.Ports.Ok ? PortSettings.Text(port) : RecorderText.Unreadable, "CardTitle");
-            value.Margin = new Thickness(0, 4, 0, 0);
-            AutomationProperties.SetName(value, $"{caption}: {value.Text}");
-            cell.Children.Add(value);
-            cells.Children.Add(cell);
-        }
-        var p = data.Ports.Value;
-        Cell("HTTP", p?.Http);
-        Cell("HTTPS", p?.Https);
-        Cell("RTSP", p?.Rtsp);
-        Cell("SUNUCU (SDK)", p?.Server);
-        ports.Children.Add(cells);
-        TabContent.Children.Add(Card(ports, new Thickness(0, 16, 0, 0)));
+        TabContent.Children.Add(Card(PortsPanel(data), new Thickness(0, 16, 0, 0)));
 
         // Other interfaces (read only), e.g. the camera-side LAN of an NVR.
         var others = (data.Interfaces.Value ?? []).Where(i => i != main).ToList();
@@ -190,7 +191,224 @@ public partial class RecorderSettingsView
     }
 
     bool NetworkPending() =>
-        _network is { Main.Address: { } before, Draft: { } after } && NetworkPlan.Edits(before, after).Count > 0;
+        (_network is { Main.Address: { } before, Draft: { } after } && NetworkPlan.Edits(before, after).Count > 0) || PortsPending();
+
+    bool PortsPending() =>
+        _network is { Ports.Value: { } before, PortsDraft: { } after } && PortPlan.Changes(before, after).Count > 0;
+
+    // ================================================================ Portlar
+
+    StackPanel PortsPanel(NetworkData data)
+    {
+        var device = _device!;
+        var panel = new StackPanel();
+        var editable = data.PortsDoc is not null && data.Ports.Value is not null;
+        Button[] buttons = editable
+            ? [SettingsButton("Geri al", (_, _) => RevertPorts()), SettingsButton("Cihaza uygula", (_, _) => ApplyPorts(), "SettingsAccentButton")]
+            : [];
+        panel.Children.Add(CardHeader("Portlar",
+            "Kayıt cihazına bağlanılan portlar. Yalnızca port numaraları değişir; HTTPS / TLS ayarlarına dokunulmaz. Değişiklik onaydan sonra hemen geçerli olur.",
+            buttons));
+        panel.Children.Add(CardWarning(PortsWarning));
+        if (_portsResult is { } result)
+        {
+            panel.Children.Add(Banner(result));
+        }
+        if (!editable || data.PortsDraft is not { } draft)
+        {
+            var reason = data.Ports.State == ReadState.Unsupported ? "Bu cihaz desteklemiyor" : RecorderText.Unreadable;
+            panel.Children.Add(Row("Portlar", "HTTP, HTTPS, RTSP ve sunucu (SDK) portları.", MutedText(reason), last: true));
+            return panel;
+        }
+
+        var before = data.Ports.Value!;
+        string Uses(string protocol, int? port)
+        {
+            var used = protocol switch
+            {
+                PortPlan.Http => !device.UseHttps && device.HttpPort == port,
+                PortPlan.Https => device.UseHttps && device.HttpPort == port,
+                PortPlan.Rtsp => device.RtspPort == port,
+                _ => device.SdkPort == port,
+            };
+            return used ? " SPVision bu portu kullanıyor." : "";
+        }
+
+        UIElement PortBox(string protocol, int? value, string id, Func<PortSettings, int?, PortSettings> set)
+        {
+            var label = PortPlan.Label(protocol) + " portu";
+            if (value is null)
+            {
+                var missing = MutedText("—");
+                missing.ToolTip = $"{label}: cihaz bildirmiyor";
+                return missing;
+            }
+            var limit = data.PortLimits.GetValueOrDefault(protocol);
+            var box = new TextBox
+            {
+                Text = value.Value.ToString(CultureInfo.InvariantCulture),
+                MaxLength = 5,
+                Width = ControlWidth,
+                ToolTip = limit is null ? $"{label} (1–65535)" : string.Create(CultureInfo.InvariantCulture, $"{label} ({limit.Min}–{limit.Max})"),
+            };
+            box.SetResourceReference(StyleProperty, "RowTextBox");
+            AutomationProperties.SetName(box, label);
+            AutomationProperties.SetAutomationId(box, id);
+            box.TextChanged += (_, _) =>
+            {
+                if (PortPlan.ParsePort(box.Text) is { } port)
+                {
+                    box.ClearValue(BorderBrushProperty);
+                    data.PortErrors.Remove(protocol);
+                    data.PortsDraft = set(data.PortsDraft!, port);
+                }
+                else
+                {
+                    box.SetResourceReference(BorderBrushProperty, "DangerText");
+                    data.PortErrors.Add(protocol);
+                    data.PortsDraft = set(data.PortsDraft!, PortOf(before, protocol)); // an invalid box is never sent
+                }
+            };
+            return box;
+        }
+
+        panel.Children.Add(Row("HTTP portu", "Web arayüzü ve ayar trafiği, şifresiz (varsayılan 80)." + Uses(PortPlan.Http, before.Http),
+            PortBox(PortPlan.Http, draft.Http, "NetworkPortHttp", (p, v) => p with { Http = v })));
+        panel.Children.Add(Row("HTTPS portu", "Web arayüzü ve ayar trafiği, şifreli (varsayılan 443)." + Uses(PortPlan.Https, before.Https),
+            PortBox(PortPlan.Https, draft.Https, "NetworkPortHttps", (p, v) => p with { Https = v })));
+        panel.Children.Add(Row("RTSP portu", "Şifresiz görüntü akışı: VLC ve benzeri oynatıcılar (varsayılan 554)." + Uses(PortPlan.Rtsp, before.Rtsp),
+            PortBox(PortPlan.Rtsp, draft.Rtsp, "NetworkPortRtsp", (p, v) => p with { Rtsp = v })));
+        panel.Children.Add(Row("Sunucu (SDK) portu", "iVMS-4200, telefon uygulamaları ve şifreli akış (varsayılan 8000)." + Uses(PortPlan.Server, before.Server),
+            PortBox(PortPlan.Server, draft.Server, "NetworkPortServer", (p, v) => p with { Server = v }), last: true));
+        return panel;
+    }
+
+    static int? PortOf(PortSettings ports, string protocol) => protocol switch
+    {
+        PortPlan.Http => ports.Http,
+        PortPlan.Https => ports.Https,
+        PortPlan.Rtsp => ports.Rtsp,
+        _ => ports.Server,
+    };
+
+    void RevertPorts()
+    {
+        if (_network is { } data)
+        {
+            data.PortsDraft = data.Ports.Value;
+            data.PortErrors.Clear();
+        }
+        _portsResult = null;
+        Render();
+    }
+
+    async void ApplyPorts()
+    {
+        if (_device is not { } device || _writing || _network is not { Ports.Value: { } before, PortsDraft: { } after, PortsDoc: { } shown } data)
+        {
+            return;
+        }
+        if (data.PortErrors.Count > 0)
+        {
+            _portsResult = (false, string.Join(", ", data.PortErrors.Select(p => PortPlan.Label(p))) + " portu 1–65535 arasında bir sayı olmalı.");
+            Render();
+            return;
+        }
+        var changes = PortPlan.Changes(before, after);
+        if (changes.Count == 0)
+        {
+            _portsResult = (null, "Değişiklik yok; cihaza bir şey yazılmadı.");
+            Render();
+            return;
+        }
+        if (PortPlan.Validate(shown, changes, data.PortLimits) is { } problem)
+        {
+            _portsResult = (false, problem);
+            Render();
+            return;
+        }
+        var used = new DevicePorts(device.HttpPort, device.RtspPort, device.SdkPort);
+        var follow = PortPlan.FollowDevice(device.UseHttps, used, changes);
+
+        // Read the document again right before the confirmation: if the device's ports (or anything else in that
+        // document) changed since the page was read, nothing is sent. The confirmed body is this fresh document + the ports.
+        RiskyWriteRequest request;
+        try
+        {
+            _writing = true;
+            UpdateEnabled();
+            using var isapi = new IsapiClient(device, ReadTimeout);
+            var fresh = await isapi.GetConfigAsync(IsapiPaths.AdminAccesses);
+            if (fresh.Root is null || !XNode.DeepEquals(fresh.Root, shown.Root))
+            {
+                _portsResult = (false, "Cihazdaki port ayarı bu sayfa açıldıktan sonra değişmiş; yeniden okundu. Değişikliği yeniden yapın.");
+                _network = null;
+                return;
+            }
+            request = RiskyWrites.AdminPorts(fresh, changes, follow is not null);
+        }
+        catch (Exception ex) when (ex is IsapiException or IsapiWriteDeniedException or ConfigEditException or System.Xml.XmlException)
+        {
+            _portsResult = (false, $"Port ayarı okunamadı: {ex.Message}");
+            return;
+        }
+        finally
+        {
+            _writing = false;
+            UpdateEnabled();
+            if (device == _device)
+            {
+                Render();
+            }
+        }
+
+        // After the confirmation and right before the PUT: the same check once more (the dialog may have stayed open).
+        async Task<string?> StillUnchanged(IsapiClient isapi)
+        {
+            try
+            {
+                return request.IsUnchanged(await isapi.GetConfigAsync(IsapiPaths.AdminAccesses))
+                    ? null
+                    : "Cihazdaki port ayarı onay sırasında değişti; hiçbir şey gönderilmedi. Sayfa yeniden okundu.";
+            }
+            catch (Exception ex) when (ex is IsapiException or System.Xml.XmlException or System.Net.Http.HttpRequestException)
+            {
+                return $"Port ayarı gönderimden önce yeniden okunamadı; hiçbir şey gönderilmedi. ({ex.Message})";
+            }
+        }
+
+        var (outcome, text) = await RunRiskyAsync(Tab.Network, device, request, StillUnchanged, () => _portsResult = (null, "Uygulanıyor…"));
+        if (outcome == RiskyOutcome.Cancelled)
+        {
+            Render();
+            return;
+        }
+        _portsResult = outcome switch
+        {
+            RiskyOutcome.Done => (true, ("Uygulandı. " + text).Trim()),
+            RiskyOutcome.NoAnswer => (null, $"Cihaz yanıt vermedi; portlar değişmiş olabilir (HTTP/HTTPS portu değiştiyse eski port artık yanıt vermez). ({text})"),
+            _ => (false, text),
+        };
+        Message?.Invoke(outcome == RiskyOutcome.Done ? $"Portlar uygulandı: {device.Name}" : $"Portlar: {text}");
+
+        // SPVision may now reach the recorder only through the new ports: offer to use them (also when no answer came back).
+        if (outcome is RiskyOutcome.Done or RiskyOutcome.NoAnswer && follow is not null &&
+            ConfirmDialog.Show(Window.GetWindow(this),
+                $"SPVision “{device.Name}” kayıt cihazına bundan sonra yeni portlardan bağlansın mı?",
+                [(null, PortPlan.DeviceChangeLines(device.UseHttps, used, follow))], "Portları güncelle", "Hayır"))
+        {
+            device.HttpPort = follow.Http;
+            device.RtspPort = follow.Rtsp;
+            device.SdkPort = follow.Sdk;
+            DeviceUpdated?.Invoke(device, true);
+            _portsResult = (true, "Uygulandı. SPVision artık yeni portları kullanıyor.");
+        }
+        if (device == _device)
+        {
+            _network = null; // read again (through the new port if it was updated)
+            Render();
+        }
+    }
 
     void RevertNetwork()
     {

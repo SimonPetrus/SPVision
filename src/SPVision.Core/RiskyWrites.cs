@@ -11,14 +11,15 @@ namespace SPVision.Core;
 public sealed class RiskyWriteRequest
 {
     internal RiskyWriteRequest(RiskyOperation operation, string method, string path, XDocument? body, string title, string warning,
-        IReadOnlyList<string> changes, string accept, string? requiredWord = null)
+        IReadOnlyList<string> changes, string accept, string? requiredWord = null, XDocument? original = null)
     {
         IsapiWritePolicy.EnsureRiskyAllowed(operation, method, path);
-        IsapiWritePolicy.EnsureRiskyBodyAllowed(operation, body);
+        IsapiWritePolicy.EnsureRiskyBodyAllowed(operation, body, original);
         Operation = operation;
         Method = method;
         Path = path;
         Body = body is null ? null : "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + body.ToString(SaveOptions.DisableFormatting);
+        Original = original?.ToString(SaveOptions.DisableFormatting);
         Title = title;
         Warning = warning;
         Changes = changes;
@@ -34,6 +35,16 @@ public sealed class RiskyWriteRequest
     internal string? Body { get; }
 
     public bool HasBody => Body is not null;
+
+    /// <summary>
+    /// The device document the body was built from (port changes only): checked again against the body before sending,
+    /// and compared with a fresh read right before the PUT (<see cref="IsUnchanged"/>).
+    /// </summary>
+    internal string? Original { get; }
+
+    /// <summary>True when <paramref name="fresh"/> (read from the device now) is still the document the body was built from.</summary>
+    public bool IsUnchanged(XDocument fresh) =>
+        Original is not null && fresh.Root is not null && XNode.DeepEquals(IsapiXml.Parse(Original).Root, fresh.Root);
 
     /// <summary>Dialog title line, e.g. "Kayıt cihazı yeniden başlatılsın mı?".</summary>
     public string Title { get; }
@@ -169,6 +180,37 @@ public static class RiskyWrites
             "Yanlış ayar cihazla bağlantıyı koparabilir. Adres değişince cihaza yalnızca yeni adresten ulaşılır; ağ geçidi veya maske yanlışsa cihaza bu bilgisayardan hiç ulaşılamayabilir ve ayarı düzeltmek için cihazın başına gitmek gerekir.",
             edits.Select(e => ConfigChangeText.Format("Ağ", e.Label, e.OldText, e.NewText)).ToList(),
             "Ağ ayarını değiştir");
+    }
+
+    /// <summary>
+    /// HTTP / HTTPS / RTSP / server port numbers: <paramref name="current"/> is ISAPI/Security/adminAccesses as just read;
+    /// the body is that document with only the changed portNo values (<see cref="PortPlan.Apply"/>), and the policy checks
+    /// it against <paramref name="current"/> here and again before sending.
+    /// </summary>
+    public static RiskyWriteRequest AdminPorts(XDocument current, IReadOnlyList<PortChange> changes, bool usedBySpvision)
+    {
+        if (changes.Count == 0)
+        {
+            throw new ConfigEditException("Değişiklik yok.");
+        }
+        var body = PortPlan.Apply(current, changes);
+        var warning = "Port değişince bu kayıt cihazına bağlanan her program yeni portu ister: SPVision, web arayüzü (adreste :port), " +
+                      "iVMS-4200, telefon uygulamaları ve yönlendiricideki port yönlendirme kuralları. Yanlış port bu bilgisayardan cihaza " +
+                      "erişimi kesebilir; geri almak için web arayüzüne yeni porttan girip eski değeri yazın.";
+        if (usedBySpvision)
+        {
+            warning += " SPVision bu portlardan birini kullanıyor: uygulandıktan sonra SPVision'daki cihaz ayarını güncellemeyi önerir.";
+        }
+        foreach (var extra in PortPlan.Warnings(changes))
+        {
+            warning += " Dikkat: " + extra;
+        }
+        return new RiskyWriteRequest(
+            RiskyOperation.AdminPorts, "PUT", IsapiPaths.AdminAccesses, body,
+            "Kayıt cihazının portları değişsin mi?",
+            warning,
+            changes.Select(c => ConfigChangeText.Format("Port", c.Label, c.Old.ToString(CultureInfo.InvariantCulture), c.New.ToString(CultureInfo.InvariantCulture))).ToList(),
+            "Portları değiştir", original: current);
     }
 
     /// <summary>A new Operator / Viewer account (never an administrator). <paramref name="id"/> is the first free slot.</summary>

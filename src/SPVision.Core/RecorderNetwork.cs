@@ -4,9 +4,10 @@ using System.Xml.Linq;
 namespace SPVision.Core;
 
 // Settings › Cihaz ayarları › Ağ (phase 2). Read: ISAPI/System/Network/interfaces (IPv4 part of each NIC),
-// ISAPI/System/Network/Bond, ISAPI/Security/adminAccesses (ports; read only: the same document holds the TLS
-// settings, and adminAccess is never written). Write: ISAPI/System/Network/interfaces/{id}/ipAddress as a risky
-// operation (RiskyWrites.NetworkAddress). Unit tested.
+// ISAPI/System/Network/Bond, ISAPI/Security/adminAccesses (ports; the same document holds the TLS settings).
+// Writes, both risky operations: ISAPI/System/Network/interfaces/{id}/ipAddress (RiskyWrites.NetworkAddress) and the
+// four port numbers of ISAPI/Security/adminAccesses (RiskyWrites.AdminPorts: the document just read with only those
+// portNo values changed — IsapiWritePolicy.CheckAdminPortsBody). Unit tested.
 
 /// <summary>IPv4 part of an ISAPI IPAddress element. Text values as the device sent them ("" when missing).</summary>
 public sealed record NetworkAddress(bool Dhcp, string Ip, string Mask, string Gateway, string Dns1, string Dns2)
@@ -68,7 +69,7 @@ public sealed record BondInfo(bool Enabled)
         new(doc.Root!.Descendants().Where(e => e.Name.LocalName == "Bond").Any(b => IsapiXml.GetBool(b, "enabled") == true));
 }
 
-/// <summary>Ports of ISAPI/Security/adminAccesses (only protocol + port are read; nothing else of that document).</summary>
+/// <summary>Ports of ISAPI/Security/adminAccesses (only protocol + port are parsed; also the Ağ tab's draft).</summary>
 public sealed record PortSettings(int? Http, int? Https, int? Rtsp, int? Server)
 {
     public static PortSettings Parse(XDocument doc)
@@ -81,6 +82,219 @@ public sealed record PortSettings(int? Http, int? Https, int? Rtsp, int? Server)
     }
 
     public static string Text(int? port) => port?.ToString(CultureInfo.InvariantCulture) ?? "—";
+}
+
+/// <summary>
+/// Allowed range of one protocol's port (adminAccesses/capabilities portNo min/max) and its default (def/default), which
+/// is accepted even outside the range: the DS-8632NI-I8 reports RTSP 1024–65535 although its default is 554.
+/// </summary>
+public sealed record PortLimit(int Min, int Max, int? Default = null);
+
+/// <summary>One port change of the Ağ tab: protocol as the device names it (HTTP, HTTPS, RTSP, DEV_MANAGE).</summary>
+public sealed record PortChange(string Protocol, int Old, int New)
+{
+    public string Label => PortPlan.Label(Protocol);
+}
+
+/// <summary>The ports SPVision itself uses for a device (ISAPI HTTP(S), RTSP for Flyleaf, HCNetSDK login).</summary>
+public sealed record DevicePorts(int Http, int Rtsp, int Sdk);
+
+/// <summary>
+/// Ağ tab, ports (risky write <see cref="RiskyWrites.AdminPorts"/>): validation, warnings, the body (the document just
+/// read with only portNo of HTTP / HTTPS / RTSP / DEV_MANAGE changed) and which of SPVision's own ports follow. Unit tested.
+/// </summary>
+public static class PortPlan
+{
+    public const string Http = "HTTP";
+    public const string Https = "HTTPS";
+    public const string Rtsp = "RTSP";
+    public const string Server = "DEV_MANAGE";
+
+    public static string Label(string protocol) => protocol switch
+    {
+        Server => "Sunucu (SDK)",
+        _ => protocol,
+    };
+
+    /// <summary>portNo min/max per protocol from ISAPI/Security/adminAccesses/capabilities (missing = 1–65535).</summary>
+    public static Dictionary<string, PortLimit> ParseLimits(XDocument? capabilities)
+    {
+        var limits = new Dictionary<string, PortLimit>(StringComparer.Ordinal);
+        if (capabilities?.Root is not { } root)
+        {
+            return limits;
+        }
+        foreach (var entry in root.Elements().Where(e => e.Name.LocalName == "AdminAccessProtocol"))
+        {
+            if (IsapiXml.Get(entry, "protocol") is { Length: > 0 } protocol && !limits.ContainsKey(protocol))
+            {
+                var min = IsapiXml.IntAttribute(entry, "portNo", "min") ?? 1;
+                var max = IsapiXml.IntAttribute(entry, "portNo", "max") ?? 65535;
+                var def = IsapiXml.IntAttribute(entry, "portNo", "def") ?? IsapiXml.IntAttribute(entry, "portNo", "default");
+                limits[protocol] = new PortLimit(Math.Max(1, min), Math.Min(65535, max), def);
+            }
+        }
+        return limits;
+    }
+
+    /// <summary>The changed ports, in the order HTTP, HTTPS, RTSP, server; ports the device did not report are never changed.</summary>
+    public static List<PortChange> Changes(PortSettings before, PortSettings after)
+    {
+        var changes = new List<PortChange>();
+        void Add(string protocol, int? old, int? value)
+        {
+            if (old is { } o && value is { } v && v != o)
+            {
+                changes.Add(new PortChange(protocol, o, v));
+            }
+        }
+        Add(Http, before.Http, after.Http);
+        Add(Https, before.Https, after.Https);
+        Add(Rtsp, before.Rtsp, after.Rtsp);
+        Add(Server, before.Server, after.Server);
+        return changes;
+    }
+
+    /// <summary>Text of a port box → port, or null when it is not a plain number 1–65535.</summary>
+    public static int? ParsePort(string? text)
+    {
+        var t = (text ?? "").Trim();
+        return t.Length is >= 1 and <= 5 && t.All(char.IsAsciiDigit) && t[0] != '0' &&
+               int.TryParse(t, NumberStyles.None, CultureInfo.InvariantCulture, out var port) && port <= 65535
+            ? port
+            : null;
+    }
+
+    /// <summary>Null when the changes may be sent; otherwise what is wrong (Turkish). Uniqueness counts every entry (WebSocket, IOT…).</summary>
+    public static string? Validate(XDocument current, IReadOnlyList<PortChange> changes, IReadOnlyDictionary<string, PortLimit>? limits = null)
+    {
+        foreach (var change in changes)
+        {
+            if (change.New is < 1 or > 65535)
+            {
+                return $"{change.Label} portu 1–65535 arasında olmalı.";
+            }
+            // The protocol's default (device "def" or the usual 80 / 443 / 554 / 8000) is always accepted: a change can be undone.
+            var isDefault = change.New == limits?.GetValueOrDefault(change.Protocol)?.Default ||
+                            (Defaults.TryGetValue(change.New, out var usualFor) && usualFor == change.Protocol);
+            if (limits?.GetValueOrDefault(change.Protocol) is { } limit && (change.New < limit.Min || change.New > limit.Max) && !isDefault)
+            {
+                return string.Create(CultureInfo.InvariantCulture, $"Cihaz {change.Label} portu için {limit.Min}–{limit.Max} arasını kabul ediyor.");
+            }
+        }
+        var final = new List<(string Protocol, int Port)>();
+        foreach (var entry in current.Root!.Elements().Where(e => e.Name.LocalName == "AdminAccessProtocol"))
+        {
+            var protocol = IsapiXml.Get(entry, "protocol") ?? "";
+            if (IsapiXml.GetInt(entry, "portNo") is not { } port)
+            {
+                continue;
+            }
+            final.Add((protocol, changes.FirstOrDefault(c => c.Protocol == protocol)?.New ?? port));
+        }
+        foreach (var change in changes)
+        {
+            if (final.Count(f => f.Protocol == change.Protocol) != 1)
+            {
+                return $"{change.Label} cihazın port listesinde tek bir kez bulunmuyor; değiştirilemez.";
+            }
+            if (final.FirstOrDefault(f => f.Port == change.New && f.Protocol != change.Protocol) is { Protocol.Length: > 0 } clash)
+            {
+                return string.Create(CultureInfo.InvariantCulture, $"{change.New} portunu cihazda {Label(clash.Protocol)} kullanıyor; her hizmetin portu farklı olmalı.");
+            }
+        }
+        return null;
+    }
+
+    static readonly Dictionary<int, string> WellKnown = new()
+    {
+        [21] = "FTP", [22] = "SSH", [23] = "Telnet", [25] = "e-posta (SMTP)", [53] = "DNS", [67] = "DHCP", [68] = "DHCP",
+        [69] = "TFTP", [110] = "e-posta (POP3)", [123] = "saat eşitleme (NTP)", [135] = "Windows RPC", [137] = "NetBIOS",
+        [138] = "NetBIOS", [139] = "NetBIOS", [143] = "e-posta (IMAP)", [161] = "SNMP", [162] = "SNMP", [389] = "LDAP",
+        [445] = "Windows dosya paylaşımı", [465] = "e-posta (SMTP)", [587] = "e-posta (SMTP)", [993] = "e-posta (IMAP)",
+        [995] = "e-posta (POP3)", [1433] = "SQL Server", [1900] = "UPnP", [3306] = "MySQL", [3389] = "Uzak Masaüstü",
+        [5353] = "mDNS", [5900] = "VNC", [8080] = "vekil sunucular ve başka web arayüzleri", [37020] = "Hikvision cihaz bulma (SADP)",
+    };
+
+    static readonly Dictionary<int, string> Defaults = new() { [80] = Http, [443] = Https, [554] = Rtsp, [8000] = Server };
+
+    /// <summary>Allowed but worth a warning in the confirmation: a well-known service port or another protocol's usual port.</summary>
+    public static List<string> Warnings(IReadOnlyList<PortChange> changes)
+    {
+        var warnings = new List<string>();
+        foreach (var change in changes)
+        {
+            var port = change.New.ToString(CultureInfo.InvariantCulture);
+            if (WellKnown.TryGetValue(change.New, out var service))
+            {
+                warnings.Add($"{change.Label} için seçilen {port} genellikle {service} için kullanılır; çakışma olabilir.");
+            }
+            else if (Defaults.TryGetValue(change.New, out var usual) && usual != change.Protocol)
+            {
+                warnings.Add($"{port} normalde {Label(usual)} portudur; programlar bu cihaza yanlış hizmetle bağlanmaya çalışabilir.");
+            }
+            else if (change.New < 1024 && !Defaults.ContainsKey(change.New))
+            {
+                warnings.Add($"{port} 1024'ten küçük, sistem hizmetlerine ayrılmış bir porttur; çakışma olabilir.");
+            }
+        }
+        return warnings;
+    }
+
+    /// <summary>
+    /// A copy of the document just read with only the changed portNo values replaced. Each protocol must appear once and
+    /// still hold the old port (otherwise the device changed meanwhile). Throws <see cref="ConfigEditException"/>.
+    /// </summary>
+    public static XDocument Apply(XDocument current, IReadOnlyList<PortChange> changes)
+    {
+        var body = new XDocument(current);
+        var root = body.Root ?? throw new ConfigEditException("Cihazdan boş belge geldi.");
+        foreach (var change in changes)
+        {
+            var entries = root.Elements().Where(e => e.Name.LocalName == "AdminAccessProtocol" &&
+                                                     string.Equals(IsapiXml.Get(e, "protocol"), change.Protocol, StringComparison.Ordinal)).ToList();
+            if (entries.Count != 1 || IsapiXml.Child(entries[0], "portNo") is not { } port)
+            {
+                throw new ConfigEditException($"{change.Label} cihazın port listesinde tek bir kez bulunmuyor.");
+            }
+            if (IsapiXml.GetInt(entries[0], "portNo") != change.Old)
+            {
+                throw new ConfigEditException($"{change.Label} portu cihazda değişmiş; yeniden okuyun.");
+            }
+            port.Value = change.New.ToString(CultureInfo.InvariantCulture);
+        }
+        return body;
+    }
+
+    /// <summary>
+    /// SPVision's own ports after the change, or null when none of them follows: the ISAPI port follows HTTPS (when the
+    /// device uses HTTPS) or HTTP, RTSP follows RTSP and the SDK login port follows the server port — each only when
+    /// SPVision used that protocol's old port.
+    /// </summary>
+    public static DevicePorts? FollowDevice(bool useHttps, DevicePorts current, IReadOnlyList<PortChange> changes)
+    {
+        int Follow(string protocol, int used) =>
+            changes.FirstOrDefault(c => c.Protocol == protocol && c.Old == used)?.New ?? used;
+        var next = new DevicePorts(Follow(useHttps ? Https : Http, current.Http), Follow(Rtsp, current.Rtsp), Follow(Server, current.Sdk));
+        return next == current ? null : next;
+    }
+
+    /// <summary>"HTTPS 443 → 8443" lines of SPVision's own ports.</summary>
+    public static List<string> DeviceChangeLines(bool useHttps, DevicePorts before, DevicePorts after)
+    {
+        var lines = new List<string>();
+        void Add(string label, int a, int b)
+        {
+            if (a != b)
+            {
+                lines.Add(string.Create(CultureInfo.InvariantCulture, $"{label}: {a} → {b}"));
+            }
+        }
+        Add(useHttps ? "HTTPS portu" : "HTTP portu", before.Http, after.Http);
+        Add("RTSP portu", before.Rtsp, after.Rtsp);
+        Add("Sunucu (SDK) portu", before.Sdk, after.Sdk);
+        return lines;
+    }
 }
 
 /// <summary>Dotted IPv4 helpers (no host names, no IPv6).</summary>

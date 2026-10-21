@@ -37,10 +37,11 @@ public static class IsapiPaths
     public static string VideoLoss(int channel) => Invariant($"ISAPI/ContentMgmt/InputProxy/channels/{channel}/video/videoLoss");
     public static string Tamper(int channel) => Invariant($"ISAPI/ContentMgmt/InputProxy/channels/{channel}/video/tamperDetection");
 
-    // ---- phase 2: Ağ (ports: read only, see IsapiWritePolicy) ----
+    // ---- phase 2: Ağ (ports: risky write of the port numbers only, see IsapiWritePolicy.CheckAdminPortsBody) ----
     public const string Interfaces = "ISAPI/System/Network/interfaces";
     public const string Bond = "ISAPI/System/Network/Bond";
     public const string AdminAccesses = "ISAPI/Security/adminAccesses";
+    public const string AdminAccessesCapabilities = "ISAPI/Security/adminAccesses/capabilities";
     public static string InterfaceAddress(int id) => Invariant($"ISAPI/System/Network/interfaces/{id}/ipAddress");
 
     // ---- phase 2: Kullanıcılar (no password is ever read: the list has none) ----

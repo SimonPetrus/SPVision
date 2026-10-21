@@ -32,8 +32,13 @@ public partial class RecorderSettingsView
         return band;
     }
 
-    /// <summary>Confirmation → token → send. The tab is disabled meanwhile; the caller writes the result.</summary>
-    async Task<(RiskyOutcome Outcome, string Text)> RunRiskyAsync(Tab tab, Device device, RiskyWriteRequest request)
+    /// <summary>
+    /// Confirmation → token → send. The tab is disabled meanwhile; the caller writes the result. <paramref name="beforeSend"/>
+    /// runs after the confirmation, right before the request: a non-null reason sends nothing (e.g. the device document
+    /// changed meanwhile). <paramref name="showProgress"/> replaces the tab's "Uygulanıyor…" line (a second card).
+    /// </summary>
+    async Task<(RiskyOutcome Outcome, string Text)> RunRiskyAsync(Tab tab, Device device, RiskyWriteRequest request,
+        Func<IsapiClient, Task<string?>>? beforeSend = null, Action? showProgress = null)
     {
         var token = ConfirmedRiskyWrite.Confirm(request, new RiskyConfirmDialog(Window.GetWindow(this)));
         if (token is null)
@@ -41,12 +46,23 @@ public partial class RecorderSettingsView
             return (RiskyOutcome.Cancelled, "");
         }
         _writing = true;
-        _results[tab] = (null, "Uygulanıyor…");
+        if (showProgress is null)
+        {
+            _results[tab] = (null, "Uygulanıyor…");
+        }
+        else
+        {
+            showProgress();
+        }
         Render();
         UpdateEnabled();
         try
         {
             using var isapi = new IsapiClient(device, WriteTimeout);
+            if (beforeSend is not null && await beforeSend(isapi) is { } stop)
+            {
+                return (RiskyOutcome.Refused, stop);
+            }
             var status = await isapi.SendRiskyAsync(token);
             return status.IsOk ? (RiskyOutcome.Done, "")
                 : status.StatusCode == 7 ? (RiskyOutcome.Done, "Cihaz yeniden başlatılınca geçerli olur.")
