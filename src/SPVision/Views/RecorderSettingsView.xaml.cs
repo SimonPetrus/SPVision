@@ -16,7 +16,7 @@ namespace SPVision.Views;
 
 /// <summary>
 /// Settings › Cihaz ayarları (phase 1: Genel bakış, Kameralar, Hareket, Kayıt, Sistem; phase 2: Olaylar, Ağ,
-/// Kullanıcılar, yeniden başlatma / disk biçimlendirme — see the partial files). Every tab reads the recorder with ISAPI
+/// Kullanıcılar, yeniden başlatma / disk biçimlendirme; phase 3: Bakım — see the partial files). Every tab reads the recorder with ISAPI
 /// GETs when it is first shown; nothing is written on open, tab change or load. "Cihaza uygula" lists the changes
 /// ("&lt;kamera&gt; · &lt;alan&gt;: &lt;eski&gt; → &lt;yeni&gt;"), asks for confirmation and then
 /// <see cref="ConfigWriter"/> writes them one by one (read-modify-write through the allowlist in
@@ -294,6 +294,7 @@ public partial class RecorderSettingsView : UserControl
         _portsResult = null;
         _sdkNameFailure = null;
         _users = null;
+        ForgetMaintenance();
         _results.Clear();
         _loading.Clear();
         _attempted.Clear();
@@ -325,23 +326,24 @@ public partial class RecorderSettingsView : UserControl
         }
     }
 
+    /// <summary>The recorder's web UI with the scheme and port of the device setting (Core <see cref="WebUi.Address"/>).</summary>
     void Web_Click(object sender, RoutedEventArgs e)
     {
         if (_device is not { } device)
         {
             return;
         }
-        var scheme = device.UseHttps ? "https" : "http";
-        var port = device.HttpPort == (device.UseHttps ? 443 : 80) ? "" : ":" + device.HttpPort.ToString(CultureInfo.InvariantCulture);
-        var url = $"{scheme}://{device.Host}{port}/";
+        string url;
         try
         {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true });
+            url = WebUi.Address(device);
         }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
+        catch (UriFormatException ex)
         {
-            Message?.Invoke($"Tarayıcı açılamadı: {ex.Message}");
+            Message?.Invoke($"Cihaz adresi geçersiz: {ex.Message}");
+            return;
         }
+        OpenBrowser(url);
     }
 
     // ================================================================ rendering
@@ -384,6 +386,9 @@ public partial class RecorderSettingsView : UserControl
             case Tab.Users:
                 RenderUsers();
                 break;
+            case Tab.Maintenance:
+                RenderMaintenance();
+                break;
             default:
                 var later = Tabs.First(t => t.Tab == _tab);
                 TabContent.Children.Add(NoticeCard("Bu bölüm bir sonraki aşamada eklenecek.",
@@ -395,8 +400,8 @@ public partial class RecorderSettingsView : UserControl
     void UpdateEnabled()
     {
         TabContent.IsEnabled = !_writing;
-        TabBar.IsEnabled = !_writing;
-        DeviceCombo.IsEnabled = !_writing;
+        TabBar.IsEnabled = !_writing && !_firmwareBusy;     // a firmware upgrade (Bakım) keeps the page on its device and tab
+        DeviceCombo.IsEnabled = !_writing && !_firmwareBusy;
     }
 
     void UpdateClocks()

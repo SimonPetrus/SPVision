@@ -6,7 +6,7 @@
 > 836/836 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
 > (21.10.2026'daki düzen seçici + eş zamanlı çoklu oynatma değişikliği ile cihaz düzenleyicideki HTTPS varsayılanı / HTTP'ye düşme sorusu henüz cihazda denenmedi; bkz. §4, §5.)
 > (Canlı izlemede sayfalar — §4 "Canlı izlemede sayfalar" — da henüz cihazda denenmedi.)
-> (Ayarlar › Cihaz ayarları'ndan kayıt cihazına yazma — §9, 2. aşama, SDK ile kamera adı ve Ağ › Portlar dahil — henüz cihazda denenmedi; okuma uç noktaları cihazda GET / SDK Get ile doğrulandı. İlk gerçek yazmayı sahibi uygulamadan yapar; Claude cihaza **hiçbir şey yazmaz**, deneme için bile.)
+> (Ayarlar › Cihaz ayarları'ndan kayıt cihazına yazma — §9, 2. ve 3. aşama, SDK ile kamera adı ve Ağ › Portlar dahil — henüz cihazda denenmedi; okuma uç noktaları cihazda GET / SDK Get ile doğrulandı. 3. aşama (Bakım: yazılım güncelleme, fabrika ayarları) gerçek cihazda **hiç** çalıştırılmadı. İlk gerçek yazmayı sahibi uygulamadan yapar; Claude cihaza **hiçbir şey yazmaz**, deneme için bile.)
 >
 > **Ad değişikliği (21.10.2026):** Uygulamanın eski adı **SP-2026 Lite** idi (proje/namespace
 > `SP2026Lite`, exe `SP-2026 Lite.exe`). Sahibinin onayıyla adı **SPVision** oldu; aşağıdaki
@@ -363,7 +363,9 @@ dotnet run --project src\SPVision
 | `Views/RecorderSettingsView.xaml(.cs)`, `Themes/RecorderControls.xaml` | **Cihaz ayarları** sayfası (§9): cihaz seçici + "Web arayüzünü aç" (180×32), 9 eşit sekme; kartlar (başlık + açıklama · Geri al / Cihaza uygula), satırlar (etiket + yardım · 240 px denetim). Sayfanın kendi stilleri (temalı ComboBox, `SettingsToggleButton`, sekme şeridi, rozet) `RecorderControls.xaml`'da, yalnız bu sayfada birleştirilir. Rozet zeminleri `OnlineSoftBg` / `WarningSoftBg` (Light/Dark) |
 | `Views/ConfirmDialog.cs` | Adlandırılmış düğmeli tema uyumlu soru; liste aşırı yüklemesi değişiklikleri satır satır (başlıklı bölümler: UYGULANDI / UYGULANMADI) kaydırmalı kutuda gösterir; `cancel` null = tek düğme |
 | `Views/RecorderSettingsView.{Events,Network,Users,Risky}.cs` | Cihaz ayarları 2. aşama (§9 "2. aşama"): Olaylar, Ağ (adres + portlar), Kullanıcılar sekmeleri; riskli işlemler (`RunRiskyAsync`, yeniden başlat, disk biçimlendir); `DeviceUpdated` olayı (adres / şifre değişince SettingsView kaydeder + yeniden bağlar) |
-| `Views/RiskyConfirmDialog.cs` | Riskli işlemin **ayrı onayı** (`IRiskyConfirmation`'ın tek uygulaması): başlık, amber uyarı bandı, eski → yeni satırları, biçimlendirmede `BİÇİMLENDİR` yazma kutusu; odak Vazgeç'te, Enter onaylamaz. `DialogChrome` (tema + sayfa stilleri + uyarı bandı) burada |
+| `Views/RiskyConfirmDialog.cs` | Riskli işlemin **ayrı onayı** (`IRiskyConfirmation`'ın tek uygulaması): başlık, amber uyarı bandı (`Severe` istekte kırmızı: fabrika ayarları), eski → yeni satırları, yazılacak kelime kutusu (`BİÇİMLENDİR`, `GÜNCELLE`, `SIFIRLA`); odak Vazgeç'te, Enter onaylamaz. `DialogChrome` (tema + sayfa stilleri + uyarı/tehlike bandı) burada |
+| `Views/RecorderSettingsView.Maintenance.cs` | Cihaz ayarları 3. aşama, **Bakım** sekmesi (§9 "3. aşama"): kayıt cihazı bilgisi + "Web arayüzünü aç", kayıt cihazı yazılımı (Denetle / Dosyadan yükle… / Güncelle…), kamera yazılımları (onay kutulu tablo, sırayla güncelleme), fabrika ayarları (Temel / Tam sıfırla…). `FirmwareBusy` sürerken sekmeler, cihaz seçici ve pencere kapatma kilitlenir (kapatmada soru) |
+| `Hik/HikFirmware.cs` | Yalnız yazılım güncellemesinin SDK çağrıları (`NET_DVR_Upgrade_V50` + `ENUM_UPGRADE_DVR`, `NET_DVR_StartRemoteConfig` + `NET_DVR_UPGRADE_IPC`); `HikNative`'den bilerek ayrı. Yalnız onaydan çıkan `FirmwareJob` kabul eder |
 | `Views/UserFormDialog.cs` | Kullanıcı ekle / şifre değiştir formu: ad, yetki (Operatör/İzleyici), şifre ×2, SPVision hesabının şifresi (onay; kayıtlı şifreyle karşılaştırılır, yanlışsa cihaza gitmez) |
 | `Views/DeviceEditor.xaml(.cs)` | Satır altı düzenleme paneli (eski DeviceDialog'un yerine): Bağlantı (iki eşit sütun; şifre/anahtar kutusu kayıtlı değeri göstermez, boş bırakılırsa değişmez), "Bağlantıyı test et", "Cihazdan oku", **HTTPS kullan** (ipucu: ayar/bilgi trafiğini şifreler, görüntü akışını etkilemez; yeni cihaz HTTPS + 443 ile açılır, kayıtlı cihaz kendi değerleriyle; işaretleyince 80→443, kaldırınca 443→80, özel port değişmez — Core `HttpsPort.Follow`; HTTPS açıkken cihaza TCP/TLS düzeyinde hiç ulaşılamazsa (`IsapiException.ConnectionFailed`, 401 vb. yanıtlar hariç) "HTTP ile dene / İptal" sorulur ([`ConfirmDialog`](src/SPVision/Views/ConfirmDialog.cs)), kabul edilirse forma HTTP (443 ise 80) yazılır ve bir kez yeniden denenir — sessiz düşürme yok), Kameralar tablosu (LİSTEDE GÖSTER anahtarı), alt satır Cihazı kaldır · Kameraları yenile · İptal · Kaydet. Taslakla çalışır; Kaydet ayarı yazar, giriş bilgisi değiştiyse SDK oturumunu kapatır ve cihazın karelerini yeniden bağlar |
 | `Controls/RoundedClip.cs` | Yuvarlak köşeli kartın içindeki satır arka planlarını köşeden taşırmadan kırpar |
@@ -400,6 +402,9 @@ Kayıt (§4 "Kayıt ve klip biçimi"): `Recording/` — `Mp4VideoWriter` (FFmpeg
 `RecordingText`, `Recordings`), `FrameClock`, `Mp4Inspector`. `RecordingTests` sentetik YV12 karelerden MP4 yazıp FFmpeg ile
 açar/çözer (depodaki `ffmpeg\` DLL'leri yoksa bu testler bir şey yapmadan geçer).
 Cihaz ayarları (§9): [`IsapiWritePolicy`](src/SPVision.Core/IsapiWritePolicy.cs) (yazma izin listesi + yasak kelimeler; riskli işlemlerin tam yol listesi),
+3. aşama: [`Maintenance.cs`](src/SPVision.Core/Maintenance.cs) (`MaintenancePaths`, `MaintenancePolicy` tam girişler + kelimeler, `FactoryResetMode`/`FactoryResetText`,
+`FirmwareVersion`, `RecorderFirmware`, `CameraFirmware`, `OnlineUpgrade` denetimi, `FirmwareFile` (SHA-256, akışla), `WebUi`), [`RiskyWrites.Maintenance.cs`](src/SPVision.Core/RiskyWrites.Maintenance.cs)
+(`MaintenanceWrites` kurucuları, `FirmwareJob`, `ConfirmedRiskyWrite.TakeFirmwareJobAsync`), [`FirmwareRun.cs`](src/SPVision.Core/FirmwareRun.cs) (`RecorderFirmwareRun`, `FirmwareReturn`, `CameraFirmwareBatch`, `FirmwareText`),
 [`RiskyWrites.cs`](src/SPVision.Core/RiskyWrites.cs) (`RiskyWriteRequest`, `ConfirmedRiskyWrite`, `IRiskyConfirmation`, `IRiskyTransport`, `RiskyWrites` kurucuları),
 [`SdkChannelName.cs`](src/SPVision.Core/SdkChannelName.cs) (`PicCfgV40` yerleşimi, `SdkCharEncoding`, `ChannelNameCodec`, `SdkWritePolicy`, `IPicConfigTransport`, `ChannelRenameWriter` — SDK ile kamera adı),
 [`RecorderEvents.cs`](src/SPVision.Core/RecorderEvents.cs), [`RecorderNetwork.cs`](src/SPVision.Core/RecorderNetwork.cs), [`RecorderUsers.cs`](src/SPVision.Core/RecorderUsers.cs) (2. aşama ayrıştırıcıları ve planları),
@@ -478,13 +483,17 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
        işlem başına **tam yöntem + tam yol** (`RiskyPatterns`), belirteç yalnız ayrı onay penceresinden çıkar (§9 "2. aşama").
     - **Kalıcı yasak** (iki kapıda da, her yöntemde): encrypt, EZVIZ, HikConnect, Hik-Connect, platform, cloud, factoryReset, upgrade,
       firmware, activate, configurationData, adminAccess, certificate, SRTP, TLS, illegalLogin, loginLock, securityQuestion, ONVIF, shutdown.
-      **Tek istisna** (`IsapiWritePolicy.KeywordExemptions`, testli): `adminAccess` kelimesi yalnız `(AdminPorts, PUT, ISAPI/Security/adminAccesses)`
+      **İstisna 1** (`IsapiWritePolicy.KeywordExemptions`, testli): `adminAccess` kelimesi yalnız `(AdminPorts, PUT, ISAPI/Security/adminAccesses)`
       üçlüsünde (tam yol, ordinal) kalkar ve gövde **port kuralına** bağlıdır (§9 "Portlar"); başka her adminAccess yolu/yöntemi/işlemi yasak kalır.
-    - **SDK ile yazma (kamera adı, 21.10.2026):** HCNetSDK'da tek yazma `NET_DVR_SetDVRConfig(NET_DVR_SET_PICCFG_V40 = 6180)`'dir; yalnız
+    - **SDK ile yazma (kamera adı, 21.10.2026):** HCNetSDK'da ayar yazması yalnız `NET_DVR_SetDVRConfig(NET_DVR_SET_PICCFG_V40 = 6180)`'dir; yalnız
       [`HikChannelConfig`](src/SPVision/Hik/HikChannelConfig.cs) içinde `private` bildirilir ve hemen önce
       [`SdkWritePolicy.EnsureSetAllowed`](src/SPVision.Core/SdkChannelName.cs) çalışır: izinli komut listesi yalnız 6180; tampon tam 77140 bayt,
       `dwSize` 77140; **az önce GET edilen tamponla `sChanName` (bayt 4–35) dışında tek bayt farkı yok**; ad geçerli, ad alanında sondaki baytlar 0.
-      Başka hiçbir `NET_DVR_Set*` / uzaktan kontrol çağrısı ekleme. Yeni bir SDK yazması gerekirse `SdkWritePolicy` + testleri birlikte genişletilir.
+      Başka hiçbir `NET_DVR_Set*` / uzaktan kontrol çağrısı ekleme (tek ayrık istisna: 3. aşamanın yazılım güncelleme çağrıları, yalnız `Hik/HikFirmware.cs` içinde ve yalnız `FirmwareJob` ile — aşağıdaki İstisna 2). Yeni bir SDK yazması gerekirse `SdkWritePolicy` + testleri birlikte genişletilir.
+      **İstisna 2 (3. aşama):** `MaintenancePolicy.Entries`'teki dört **tam dizge** (`PUT ISAPI/System/factoryReset?mode=basic`, `…?mode=full`,
+      `SDK NET_DVR_Upgrade_V50/ENUM_UPGRADE_DVR`, `SDK NET_DVR_StartRemoteConfig/NET_DVR_UPGRADE_IPC`), yalnız kendi riskli işlemleriyle
+      (`FactoryReset`, `RecorderFirmware`, `CameraFirmware`) ve `GÜNCELLE`/`SIFIRLA` yazılı onayla. Başka her upgrade/firmware/factoryReset yolu
+      (updateFirmware, upgradeStatus, onlineUpgrade/downloadPackage…, kamera sıfırlama) yasak kalır.
   - Okuma-değiştirme-yazma (`ConfigWriter`): güncel XML GET edilir, yalnızca değişen öğeler değiştirilir, belge bütün olarak PUT
     edilir, `ResponseStatus` kontrol edilir, yeniden okunup doğrulanır; istekler tek tek gider, ilk hatada durulur. Ayrıntı §9.
   - 2. aşama riskli işlemleri **yalnız tam yol** olarak ekledi; kalıcı yasak liste genişledi, hiç kısalmadı. Yeni bir riskli uç nokta
@@ -524,8 +533,8 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
 > Uç noktalar DS-8632NI-I8 (V4.61.025) üzerinde **yalnızca GET** ile bulundu; 22 kanalın hepsinde aşağıdakilerin tümü 200 döndü.
 
 **Sekmeler:** Genel bakış · Kameralar · Hareket · Kayıt · Sistem (1. aşama); Olaylar · Ağ · Kullanıcılar + Sistem'de yeniden başlatma /
-biçimlendirme (2. aşama, aşağıda). Bakım hâlâ tek kart gösterir: "Bu bölüm bir sonraki aşamada eklenecek." (Yazılım güncelleme ve fabrika
-ayarları ise politika gereği **kalıcı yasak**tır.) Her sekme ilk gösterildiğinde okunur (GET); sayfa her açılışta cihazı yeniden okur.
+biçimlendirme (2. aşama, aşağıda); Bakım: yazılım güncelleme ve fabrika ayarları (3. aşama, aşağıda — yalnız tam dizge girişleri, yazılı onayla).
+Her sekme ilk gösterildiğinde okunur (GET); sayfa her açılışta cihazı yeniden okur.
 Okunamayan değer "okunamadı", cihazın sunmadığı ayar "Bu kamera desteklemiyor" yazar (403/404/405/501) — hata penceresi yok.
 
 | Sekme | Okuma (GET) | Yazma (PUT, izin listesinde) |
@@ -618,6 +627,55 @@ satır düzeni, AutomationId `NetworkPortHttp/Https/Rtsp/Server`), kartın kendi
 `A-Z a-z 0-9 / -` (sorgu, `%`, `..`, ters bölü, baştaki/sondaki `/`, `//` reddedilir). Testler: `RiskyWritePolicyTests` (izinli/yasak her yol,
 yöntem/işlem çaprazı, büyük-küçük harf, sondaki `/`, `..`, `%2F`, sorgu, Türkçe kültür, gövde sözlüğü, belirteç tek kullanım / süre / kelime,
 HTTP'de şifre yok), `RecorderPhaseTwoTests` (ayrıştırıcılar, planlar, ağ doğrulaması, kullanıcı kuralları), `AdminPortsTests` (port yolu, gövde farkı, `PortPlan`), `SdkRenameTests` (ad kodlaması, 32 bayt, bayt farkı koruması, `SdkWritePolicy`, `ChannelRenameWriter`).
+
+### 3. aşama (Bakım): yazılım güncelleme · fabrika ayarları (21.10.2026, cihazda HİÇ yazma denenmedi)
+
+> **Gerçek güncelleme ve sıfırlamayı yalnız sahibi yapar.** Kod yazılırken cihaza tek bir PUT/POST/DELETE, yükleme, sıfırlama ya da SDK
+> Set/Upgrade çağrısı gönderilmedi; upgrade/updateFirmware/factoryReset/reboot adreslerine GET bile atılmadı. Okunanlar (yalnız GET):
+> `System/deviceInfo` (DS-8632NI-I8, **V4.61.025 build 220905**), `System/capabilities` (`isSupportPostUpdateFirmware` **yok**,
+> `isSupportOnlineUpgradeTask` true, `isSupportInputProxyDeviceInfo` true), `System/onlineUpgrade/capabilities` (200; `isSupportUpgradeChannels`
+> true), `onlineUpgrade/server` (`connectStatus` true), `onlineUpgrade/status`, `onlineUpgrade/version?check=false` (parametresiz 400
+> `badParameters`; `newVersionAvailable` false), `ContentMgmt/InputProxy/channels` (kamera başına `sourceInputPortDescriptor/model` +
+> `firmwareVersion` — 22 kamera, 4 model: DS-2CD1043G0-IUF, DS-2CD1323G0-IUF, DS-2CD1343G0-IUF, DS-2CD1343G2-LIUF; sürümler V5.5.800 … V5.8.4),
+> `…/channels/status` (`online`), `…/channels/1/deviceInfo` (200; kullanılmıyor, liste yetiyor).
+
+**Kaynak seçimi (yalnız `sdk/…/doc` ve `incEn`; `reversing/raw/` okunmadı):** ISAPI dosya yükleme uç noktası (`updateFirmware`) yerel SDK kılavuzunda
+belgeli değil ve bu cihaz `isSupportPostUpdateFirmware` bildirmiyor → **kayıt cihazı yazılımı SDK ile**: `NET_DVR_Upgrade_V50`
+(`NET_DVR_UPGRADE_PARAM`, `ENUM_UPGRADE_DVR`; General Developer Guide §4.2 "Remotely Upgrade Device", §12.7.5–8), ilerleme
+`NET_DVR_GetUpgradeProgress` (0–100), durum `NET_DVR_GetUpgradeState` (Tablo 12-3: 1 bitti, 2 sürüyor, 3 başarısız, 4 ağ koptu/bilinmiyor, 5 dil,
+6 flash, 7 paket türü (yanlış model), 8 paket sürümü, 9–11 destek), adım `NET_DVR_GetUpgradeStep` (STEP_*), sonra `NET_DVR_CloseUpgradeHandle`.
+SDK dosyayı **diskten kendisi okur** (bellekte tutulmaz). **Kamera yazılımı kayıt cihazı üzerinden SDK ile**: `NET_DVR_StartRemoteConfig(NET_DVR_UPGRADE_IPC = 6174,
+NET_DVR_UPGRADE_IPC_PARAM { NET_DVR_STREAM_INFO[64], szFileName[260] })` (resmi ClientDemo `DlgUpgradeIPC.cpp`), `dwChannel` = SDK kanal no
+(`HikSession.SdkChannel`, 33+), geri çağırma durumları `NET_SDK_CALLBACK_STATUS_*` (1000 başarı, 1001 sürüyor, 1002 başarısız, 1003 istisna, 1004 dil,
+1005 cihaz türü), kanal hatası `NET_SDK_UPGRADE_IPC_ERR_CODE`; **her çağrıda tek kamera**, sırayla. **Fabrika ayarları ISAPI**: `PUT ISAPI/System/factoryReset?mode=`
+(E.177; gövdesiz, yanıt ResponseStatus). Belgeye göre: `full` = tüm ayarlar; `basic` = **ağ ayarları hariç** tüm ayarlar; `other` = ağ ve kullanıcılar hariç;
+`part` = kısmi. SPVision yalnız `basic` ve `full` gönderir; belge `basic`'in kullanıcıları koruduğunu **söylemez** (arayüz bunu açıkça yazar).
+
+| Kart | Okuma | Yazma (riskli, yazılı onay) |
+|---|---|---|
+| Kayıt cihazı bilgisi | `System/deviceInfo` (model, `firmwareVersion` + `firmwareReleasedDate` "build yyMMdd"; seri/MAC/ID tutulmaz) | — ; "Web arayüzünü aç" = `WebUi.Address(Device)` (cihaz ayarındaki şema + port; 443/80 yazılmaz, IPv6 köşeli). Başlıktaki düğme de aynısını kullanır |
+| Kayıt cihazı yazılımı | "Denetle": `onlineUpgrade/capabilities` (yoksa "Bu cihaz çevrimiçi denetimi desteklemiyor — Hikvision sitesinden dosya indirin" + "Hikvision sitesi" düğmesi) → `onlineUpgrade/server` (`connectStatus` false → sunucuya ulaşılamıyor) → `onlineUpgrade/version?check=true` (cihaz Hikvision sunucusuna sorar; GET). **Hiçbir şey indirilmez/kurulmaz**; yeni sürüm varsa yalnız yazılır | "Dosyadan yükle…" (.dav/.digicap, 1 MiB–512 MiB, SHA-256 akışla) → "Güncelle…" → onay (`GÜNCELLE`; model, yüklü sürüm, dosya adı/boyutu, SHA-256) → `TakeFirmwareJobAsync` (belirteci tüketir, dosyayı yeniden özetler) → `RecorderFirmwareRun` (1 sn'de bir yoklar; ilerleme çubuğu; 10 dk ilerleme yoksa ya da 60 dk'da "durum bilinmiyor", tutamaç kapatılır) → bitti ise `FirmwareReturn` (10 sn'de bir deviceInfo GET; yeni sürüm / sürüm değişmedi / 5 dk'da yeniden başlamadı → "Sistem › Yeniden başlat" / 20 dk'da dönmedi) |
+| Kamera yazılımları | `InputProxy/channels` + `/status` → tablo (☐ · KANAL · KAMERA · MODEL · YÜKLÜ SÜRÜM · DURUM); yalnız **çevrimiçi ve HIKVISION protokollü** kamera seçilebilir; "Yenile" yeniden okur | "Dosyadan yükle…" → "Güncelle (n)…" → onay (`GÜNCELLE`; her kamera satırı, **farklı modeller seçiliyse uyarı**, ilk hatada dur açık/kapalı) → `CameraFirmwareBatch`: kameralar **sırayla**, her biri yükle → kameranın geri gelmesini bekle (`InputProxy` GET; yeni sürüm = başarı); "İlk hatada dur" varsayılan **açık** → kalanlar "Başlatılmadı". Satır durumları yerinde güncellenir |
+| Fabrika ayarları (kırmızı kart) | — | "Temel sıfırla…" `PUT …factoryReset?mode=basic`, "Tam sıfırla…" `…?mode=full`; onay `SIFIRLA`, **kırmızı** bant: akış şifreleme ve Hik-Connect de varsayılana döner, yeniden etkinleştirme gerekebilir, SPVision bağlantıyı kaybeder; SPVision bunları sonradan **kendisi açmaz/değiştirmez** |
+
+**Politika (3. aşama):** `RiskyOperation`'a `FactoryReset`, `RecorderFirmware`, `CameraFirmware` eklendi. `IsapiWritePolicy.CheckRisky` bu üç işlem için
+`MaintenancePolicy.Check`'e gider: dört girişten biriyle **ordinal tam eşitlik** (desen yok → büyük/küçük harf, sondaki `/`, `%2F`, `..`, ek/yinelenen sorgu
+parametresi, yanlış mod, boşluk hepsi reddedilir). Eski işlemler bu hedeflere, yeni işlemler başka hedeflere ulaşamaz; kalıcı yasak listesi aynen durur.
+Yazılım işlemlerinin "yöntemi" `SDK`'dır: `IsapiClient.SendRiskyAsync` bu yöntemi reddeder (belirteç tüketilir, istek gitmez); SDK koşucusu (`Hik/HikFirmware.cs`)
+yalnız `FirmwareJob` alır, `FirmwareJob`'u yalnız `ConfirmedRiskyWrite.TakeFirmwareJobAsync` üretir (tek kullanım, 2 dk, işlem türü + giriş yeniden denetlenir,
+dosya boyutu + son yazma zamanı + SHA-256 onaydakiyle aynı olmalı). Üç işlem de gövde göndermez (`EnsureRiskyBodyAllowed`). Kelimeler Türkçe büyük harfe
+çevrilerek karşılaştırılır: `güncelle` ✓, `GUNCELLE` ✗; `sıfırla` ✓, `sifirla` ✗ (→ `SİFİRLA`). SDK yolu ANSI kod sayfasına sığmayan ya da 260 baytı aşan dosya
+yolunu reddeder ("kısa, Türkçe karaktersiz klasöre taşıyın"). Güncelleme sürerken sekmeler/cihaz seçici kilitli, pencere kapatılmak istenirse soru sorulur.
+Yeni tema anahtarları: `DangerSoftBg`, `OnDanger` (Light/Dark); `RecorderControls.xaml`'da `SettingsDangerFillButton` (120×30, kırmızı dolgu).
+Testler: `MaintenanceTests` (izinli 4 giriş × diğer işlemler/yöntemler, ~30 reddedilen sıfırlama varyantı, yanlış SDK hedefi/yöntemi, diğer upgrade uç noktaları,
+güvenlik sözlüğü yeni işlemlerde de kapalı, gövdesizlik, kelimeler, belirteç tek kullanım/süre, dosya değişince iş yok, yazılım belirteci ISAPI'ye gitmez,
+kamera isteği kuralları + farklı model uyarısı, ayrıştırıcılar (sır tutulmaz), çevrimiçi denetim yalnız okur, koşucu durumları/takılma, geri dönüş bekleme,
+kamera sırası + ilk hatada dur, web adresi).
+
+**Açık sorular (yalnız gerçek yazmayla doğrulanabilir):** (1) `NET_DVR_Upgrade_V50` sonrası DS-8632NI-I8 kendiliğinden yeniden başlıyor mu (ClientDemo
+"upgrade successfully, reboot please" diyor; SPVision 5 dk bekler, başlamazsa Sistem › Yeniden başlat'ı önerir). (2) `NET_DVR_UPGRADE_IPC` geri çağırmasında
+durum `dwType`'ta mı (demo) yoksa tamponda mı (genel sözleşme) — ikisi de kabul ediliyor. (3) `mode=basic` bu cihazda kullanıcıları/yönetici şifresini
+koruyor mu ve akış şifreleme/Hik-Connect'i gerçekten sıfırlıyor mu. (4) `onlineUpgrade/version?check=true` yalnız `check=false` ile denendi.
 
 ## 10. Erişilebilirlik: denetimler UI Automation ile de çalışmalı (21.10.2026)
 

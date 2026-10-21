@@ -8,9 +8,10 @@ using SPVision.Core;
 namespace SPVision.Views;
 
 /// <summary>
-/// The separate confirmation of a risky recorder operation (reboot, disk format, network address, users): title,
-/// warning band with the consequences, the "eski → yeni" lines and, for a disk format, a box where the word
-/// <see cref="RiskyWrites.FormatWord"/> must be typed. The only <see cref="IRiskyConfirmation"/> of the app, so a
+/// The separate confirmation of a risky recorder operation (reboot, disk format, network address, users; phase 3:
+/// firmware, factory reset): title, warning band with the consequences (red for <see cref="RiskyWriteRequest.Severe"/>),
+/// the "eski → yeni" lines and, when the request names one, a box where its word (<see cref="RiskyWrites.FormatWord"/>,
+/// <see cref="MaintenancePolicy.UpdateWord"/>, <see cref="MaintenancePolicy.ResetWord"/>) must be typed. The only <see cref="IRiskyConfirmation"/> of the app, so a
 /// <see cref="ConfirmedRiskyWrite"/> exists only after this dialog was accepted. Vazgeç has the focus; Enter does not
 /// accept (no default button); Esc / close = cancel.
 /// </summary>
@@ -28,7 +29,9 @@ sealed class RiskyConfirmDialog(Window? owner) : IRiskyConfirmation
         title.TextTrimming = TextTrimming.None;
         content.Children.Add(title);
 
-        content.Children.Add(DialogChrome.WarningBand(request.Warning, new Thickness(0, 12, 0, 0)));
+        content.Children.Add(request.Severe
+            ? DialogChrome.DangerBand(request.Warning, new Thickness(0, 12, 0, 0))   // factory reset: red
+            : DialogChrome.WarningBand(request.Warning, new Thickness(0, 12, 0, 0)));
 
         if (request.Changes.Count > 0)
         {
@@ -114,21 +117,28 @@ static class DialogChrome
     }
 
     /// <summary>Amber band: triangle icon + text (same as the band under a risky card header).</summary>
-    public static Border WarningBand(string text, Thickness margin, double radius = 6)
+    public static Border WarningBand(string text, Thickness margin, double radius = 6) =>
+        Band(text, margin, radius, "WarningText", "WarningSoftBg");
+
+    /// <summary>Red band of an irreversible operation (factory reset), same shape as <see cref="WarningBand"/>.</summary>
+    public static Border DangerBand(string text, Thickness margin, double radius = 6) =>
+        Band(text, margin, radius, "DangerText", "DangerSoftBg");
+
+    static Border Band(string text, Thickness margin, double radius, string foreground, string background)
     {
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         var icon = new GlyphIcon { Data = RiskyConfirmDialog.WarningIcon, Size = 15, Margin = new Thickness(0, 1, 8, 0), VerticalAlignment = VerticalAlignment.Top };
-        icon.SetResourceReference(GlyphIcon.ForegroundProperty, "WarningText");
+        icon.SetResourceReference(GlyphIcon.ForegroundProperty, foreground);
         grid.Children.Add(icon);
         var message = new TextBlock { Text = text, TextWrapping = TextWrapping.Wrap, LineHeight = 18 };
         message.SetResourceReference(TextBlock.FontSizeProperty, "FontSizeTile");
-        message.SetResourceReference(TextBlock.ForegroundProperty, "WarningText");
+        message.SetResourceReference(TextBlock.ForegroundProperty, foreground);
         Grid.SetColumn(message, 1);
         grid.Children.Add(message);
         var band = new Border { Child = grid, Padding = new Thickness(12, 10, 12, 10), CornerRadius = new CornerRadius(radius), Margin = margin };
-        band.SetResourceReference(Border.BackgroundProperty, "WarningSoftBg");
+        band.SetResourceReference(Border.BackgroundProperty, background);
         AutomationProperties.SetName(band, text);
         return band;
     }

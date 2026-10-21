@@ -6,7 +6,7 @@ namespace SPVision.Core;
 /// <summary>A write that the policy refuses; thrown before any network I/O.</summary>
 public sealed class IsapiWriteDeniedException(string message) : Exception(message);
 
-/// <summary>Writes that can cut the connection, lock users out or destroy recordings (Settings › Cihaz ayarları, phase 2).</summary>
+/// <summary>Writes that can cut the connection, lock users out or destroy recordings (Settings › Cihaz ayarları, phases 2 and 3).</summary>
 public enum RiskyOperation
 {
     Reboot,
@@ -21,6 +21,11 @@ public enum RiskyOperation
     /// with only those portNo values changed (<see cref="IsapiWritePolicy.CheckAdminPortsBody"/>).
     /// </summary>
     AdminPorts,
+
+    // Phase 3 (Bakım): exact entries in MaintenancePolicy.
+    FactoryReset,
+    RecorderFirmware,
+    CameraFirmware,
 }
 
 /// <summary>
@@ -33,7 +38,9 @@ public enum RiskyOperation
 /// separate confirmation dialog produced (<see cref="ConfirmedRiskyWrite.Confirm"/>). Exact method + path per operation.</item>
 /// </list>
 /// <see cref="ForbiddenKeywords"/> (stream encryption, Hik-Connect/EZVIZ/cloud, certificates/TLS, admin access ports,
-/// login lock, factory reset, firmware, activation…) are refused on every route, whatever a pattern says.
+/// login lock, factory reset, firmware, activation…) are refused on every route, whatever a pattern says. The only
+/// exceptions are the exact whole-string entries of <see cref="MaintenancePolicy"/> (phase 3: factory reset
+/// mode=basic|full, recorder and camera firmware through the SDK), reachable only by their own risky operation.
 /// <see cref="GuardedKeywords"/> (Security, Users, Network, reboot, format) are refused on the ordinary route; the risky
 /// route reaches them only through its exact entries.
 /// </summary>
@@ -141,6 +148,10 @@ public static class IsapiWritePolicy
     /// <summary>Risky route: the exact method + path of <paramref name="operation"/>. Null when allowed.</summary>
     public static string? CheckRisky(RiskyOperation operation, string? method, string? path)
     {
+        if (MaintenancePolicy.Handles(operation))
+        {
+            return MaintenancePolicy.Check(operation, method, path); // exact whole strings only (phase 3)
+        }
         var exempt = KeywordExemptions
             .Where(x => x.Operation == operation && string.Equals(x.Method, method, StringComparison.Ordinal) && string.Equals(x.Path, path, StringComparison.Ordinal))
             .Select(x => x.Keyword).FirstOrDefault();
@@ -213,7 +224,9 @@ public static class IsapiWritePolicy
                     throw new IsapiWriteDeniedException(reason);
                 }
                 return;
-            case RiskyOperation.Reboot or RiskyOperation.FormatDisk or RiskyOperation.DeleteUser:
+            case RiskyOperation.Reboot or RiskyOperation.FormatDisk or RiskyOperation.DeleteUser
+                or RiskyOperation.FactoryReset or RiskyOperation.RecorderFirmware or RiskyOperation.CameraFirmware:
+                // (Firmware has no XML body: the SDK reads the confirmed file, see FirmwareJob.)
                 if (body is not null)
                 {
                     throw new IsapiWriteDeniedException("Bu işlem gövde göndermez.");

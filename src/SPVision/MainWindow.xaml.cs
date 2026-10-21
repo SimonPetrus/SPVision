@@ -120,6 +120,12 @@ public partial class MainWindow : Window
         {
             return;
         }
+        if (Views.RecorderSettingsView.FirmwareBusy && !Views.ConfirmDialog.Show(this,
+                "Bir yazılım güncellemesi sürüyor. SPVision kapanırsa dosyanın gönderimi yarıda kesilir. Cihazın elektriğini kesmeyin. Yine de kapatılsın mı?",
+                "Yine de kapat", "Vazgeç"))
+        {
+            return; // stays open; the upgrade goes on
+        }
         _closeStarted = true;
         App.StartExitWatchdog();
         App.LogShutdown("Kapanış başladı");
