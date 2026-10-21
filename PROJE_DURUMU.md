@@ -26,8 +26,8 @@ sorup hatırlayan bir izleme uygulaması. **Kayıt cihazında hiçbir güvenlik 
 
 - **Tersine mühendislik:** Eski uygulamanın mimarisi ve CPU yükünün kaynağı → [reversing/BULGULAR.md](reversing/BULGULAR.md)
 - **Core kütüphanesi** (`src/SP2026Lite.Core`): ISAPI istemcisi (cihaz bilgisi, kamera listesi, kayıt arama,
-  anlık görüntü, akış şifreleme durumu + doğrulama kodunu okuma), RTSP adresleri, DPAPI ile şifreli ayar deposu. 15 birim testi.
-- **WPF arayüzü** (`src/SP2026Lite`): 1/4/9/16 ızgara, sürükle-bırak, çift tıkla büyüt, tam ekran,
+  anlık görüntü, akış şifreleme durumu + doğrulama kodunu okuma), RTSP adresleri, DPAPI ile şifreli ayar deposu, ızgara düzenleri (`GridLayout`). 32 birim testi.
+- **WPF arayüzü** (`src/SP2026Lite`): 6/8/25/32 ızgara (6/8: büyük kare + küçükler), sürükle-bırak, çift tıkla büyüt, tam ekran,
   HD/SD/Oto kalite, otomatik yeniden bağlanma, kayıt oynatma + zaman çizelgesi, anlık görüntü, MP4 kayıt,
   cihaz ekleme/düzenleme.
 - **Video katmanı (şifresiz akışlar için):** FlyleafLib + FFmpeg 9, GPU decode. Şifreleme kapalıyken

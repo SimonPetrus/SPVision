@@ -3,7 +3,7 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 15/15 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 32/32 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
 
 ---
 
@@ -11,7 +11,7 @@
 
 Eski **iVMS-4200 Lite** (2019, 32-bit, CPU'yu yoran) izleme uygulamasının yerine yazılmış
 hafif bir WPF istemcisi. Hikvision DS-8632NI-I8 kayıt cihazına (192.168.1.2) bağlı 22 IP
-kamerayı canlı izler (1/4/9/16 ızgara) ve kayıtları oynatır. **En kritik nokta:** Cihazda
+kamerayı canlı izler (6/8/25/32 ızgara) ve kayıtları oynatır. **En kritik nokta:** Cihazda
 "akış şifreleme" (stream encryption) **açıktır ve KAPATILMAYACAK** — bu, proje sahibinin kesin
 istemidir. Şifreli akışı yalnızca Hikvision'ın resmi SDK'sı çözebilir; proje bu yüzden
 HCNetSDK + PlayCtrl entegrasyonu içerir.
@@ -23,7 +23,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SP2026Lite.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SP2026Lite.slnx` |
 | `src/SP2026Lite.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SP2026Lite/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SP2026Lite.Core.Tests/` | 15 xUnit testi (`dotnet test tests\SP2026Lite.Core.Tests\SP2026Lite.Core.Tests.csproj`) |
+| `tests/SP2026Lite.Core.Tests/` | 32 xUnit testi (`dotnet test tests\SP2026Lite.Core.Tests\SP2026Lite.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -34,7 +34,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ```powershell
 cd SPVision
 dotnet build SP2026Lite.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SP2026Lite.Core.Tests\SP2026Lite.Core.Tests.csproj   # 15/15 geçer
+dotnet test tests\SP2026Lite.Core.Tests\SP2026Lite.Core.Tests.csproj   # 32/32 geçer
 dotnet run --project src\SP2026Lite
 ```
 
@@ -79,7 +79,7 @@ dotnet run --project src\SP2026Lite
 |---|---|
 | `App.xaml.cs` | `HikSdk.Init/Shutdown`, Flyleaf `Engine.Start`, ayar yükleme |
 | `MainWindow.xaml(.cs)` | Pencere, görünüm değiştirme (Canlı İzleme/Kayıt Oynatma), cihaz ağacı (ekle/düzenle/sil, sürükle-bırak), tam ekran (F11) |
-| `Views/LiveView.xaml(.cs)` | 1/4/9/16 ızgara, sürükle-bırak, düzeni kaydet/geri yükle |
+| `Views/LiveView.xaml(.cs)` | 6/8/25/32 ızgara (düzen tanımı: Core `GridLayout`; eski 1/4/9/16 ayarı en küçük sığan düzene çevrilir), sürükle-bırak/kare takası, düzeni kaydet/geri yükle |
 | `Controls/VideoTile.xaml(.cs)` | Tek kamera karesi — **çift yol** (Flyleaf/SDK), Popup overlay, yeniden bağlanma (3/10/30 sn), kayıt + anlık görüntü |
 | `Views/PlaybackView.xaml(.cs)` | Kayıt oynatma — ISAPI arama + zaman çizelgesi + çift yol oynatma (oynat/duraklat/sar/klip) |
 | `Views/DeviceDialog.xaml(.cs)` | Cihaz ekle/düzenle: IP, port, kullanıcı, şifre, **akış anahtarı (doğrulama kodu)** + "Cihazdan oku" butonu (ISAPI'den çeker) |
@@ -103,7 +103,7 @@ kamera anahtarı yoksa cihaz anahtarını kullanır), [`SettingsStore`](src/SP20
 - **16 kamera aynı anda SDK yoluyla akıyor**, log temiz (`Stream Head Data Callback` 16×),
   **CPU ~%8.7** (32 çekirdeğin yüzdesi; eski iVMS 4 kamerada tek çekirdeğin %107'siydi).
 - Şifresiz Flyleaf yolu daha önce test edildi: 16 kamera HD'de tek çekirdek ~%52.
-- Derleme 0 hata/0 uyarı, 15/15 test. Kalan tek iş: **paketleme (yayınlama)**.
+- Derleme 0 hata/0 uyarı, 32/32 test. Kalan tek iş: **paketleme (yayınlama)**.
 
 ## 7. Senin (Claude'un) yapacağın iş: paketleme
 

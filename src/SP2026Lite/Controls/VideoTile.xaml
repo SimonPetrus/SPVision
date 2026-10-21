@@ -25,7 +25,7 @@
             <Grid x:Name="Overlay" Background="#01000000" AllowDrop="True"
                   Width="{Binding ActualWidth, ElementName=Frame}"
                   Height="{Binding ActualHeight, ElementName=Frame}"
-                  MouseLeftButtonDown="Overlay_MouseLeftButtonDown"
+                  MouseLeftButtonDown="Overlay_MouseLeftButtonDown" MouseMove="Overlay_MouseMove"
                   DragOver="Overlay_DragOver" Drop="Overlay_Drop">
                 <Grid.ContextMenu>
                     <ContextMenu x:Name="Menu" Opened="Menu_Opened">

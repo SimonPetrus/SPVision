@@ -12,24 +12,30 @@ namespace SP2026Lite.Views;
 
 public partial class LiveView : UserControl
 {
-    const int MaxTiles = 16;
-
     readonly List<VideoTile> _tiles = [];
     readonly DispatcherTimer _qualityTimer = new() { Interval = TimeSpan.FromMilliseconds(600) };
-    int _columns = 2;
+    GridLayout _layout = GridLayout.Default;
     VideoTile? _selected;
     VideoTile? _maximized;
+    bool _batchUpdate; // many tiles change at once: save the layout once at the end
 
     public LiveView()
     {
         InitializeComponent();
-        for (var i = 0; i < MaxTiles; i++)
+        for (var i = 0; i < GridLayout.MaxTiles; i++)
         {
             var tile = new VideoTile();
             tile.Activated += Select;
             tile.DoubleClicked += ToggleMaximize;
             tile.CameraDropped += (t, source) => ShowCamera(t, source);
-            tile.Changed += _ => SaveLayout();
+            tile.TileDropped += SwapTiles;
+            tile.Changed += _ =>
+            {
+                if (!_batchUpdate)
+                {
+                    SaveLayout();
+                }
+            };
             _tiles.Add(tile);
         }
         _qualityTimer.Tick += (_, _) =>
@@ -47,7 +53,7 @@ public partial class LiveView : UserControl
     {
         var target = _selected is not null && _selected.Camera is null
             ? _selected
-            : _tiles.Take(_columns * _columns).FirstOrDefault(t => t.Camera is null) ?? _selected ?? _tiles[0];
+            : _tiles.Take(_layout.TileCount).FirstOrDefault(t => t.Camera is null) ?? _selected ?? _tiles[0];
         ShowCamera(target, source);
         Select(target);
     }
@@ -55,25 +61,26 @@ public partial class LiveView : UserControl
     /// <summary>Opens every camera of a device into the grid, growing the layout if needed.</summary>
     public void ShowDevice(Device device)
     {
-        var cameras = device.Cameras.Where(c => c.Online).Take(MaxTiles).ToList();
+        var cameras = device.Cameras.Where(c => c.Online).Take(GridLayout.MaxTiles).ToList();
         if (cameras.Count == 0)
         {
             return;
         }
-        var columns = cameras.Count switch { 1 => 1, <= 4 => 2, <= 9 => 3, _ => 4 };
-        SetLayout(Math.Max(columns, _columns));
-        for (var i = 0; i < _tiles.Count; i++)
+        SetLayout(GridLayout.Fitting(Math.Max(cameras.Count, _layout.TileCount)));
+        Batch(() =>
         {
-            if (i < cameras.Count)
+            for (var i = 0; i < _tiles.Count; i++)
             {
-                _tiles[i].Show(device, cameras[i]);
+                if (i < cameras.Count)
+                {
+                    _tiles[i].Show(device, cameras[i]);
+                }
+                else if (i < _layout.TileCount)
+                {
+                    _tiles[i].Clear();
+                }
             }
-            else if (i < _columns * _columns)
-            {
-                _tiles[i].Clear();
-            }
-        }
-        SaveLayout();
+        });
     }
 
     public void StopAll()
@@ -121,6 +128,44 @@ public partial class LiveView : UserControl
         _qualityTimer.Start();
     }
 
+    /// <summary>Dragging a tile onto another swaps their cameras; onto an empty tile it moves the camera.</summary>
+    void SwapTiles(VideoTile from, VideoTile to)
+    {
+        if (from == to || from.Source is not { } moved)
+        {
+            return;
+        }
+        var replaced = to.Source;
+        Batch(() =>
+        {
+            if (replaced is null)
+            {
+                from.Clear();
+            }
+            else
+            {
+                ShowCamera(from, replaced);
+            }
+            ShowCamera(to, moved);
+        });
+        Select(to);
+    }
+
+    /// <summary>Runs a change that touches many tiles and saves the layout once afterwards.</summary>
+    void Batch(Action change)
+    {
+        _batchUpdate = true;
+        try
+        {
+            change();
+        }
+        finally
+        {
+            _batchUpdate = false;
+        }
+        SaveLayout();
+    }
+
     void Select(VideoTile tile)
     {
         if (_selected is not null)
@@ -137,9 +182,8 @@ public partial class LiveView : UserControl
         if (_maximized is null)
         {
             _maximized = tile;
-            Grid.Children.Clear();
-            Grid.Columns = Grid.Rows = 1;
-            Grid.Children.Add(tile);
+            ResetGrid(1, 1);
+            Place(tile, new GridCell(0, 0));
         }
         else
         {
@@ -149,20 +193,29 @@ public partial class LiveView : UserControl
         _qualityTimer.Start();
     }
 
-    void SetLayout(int columns)
+    void SetLayout(GridLayout layout)
     {
-        _columns = columns;
+        _layout = layout;
         _maximized = null;
-        for (var i = columns * columns; i < _tiles.Count; i++)
+        // Tiles that drop out of the layout release their streams (Flyleaf and SDK alike).
+        _batchUpdate = true;
+        try
         {
-            _tiles[i].Clear();
+            for (var i = layout.TileCount; i < _tiles.Count; i++)
+            {
+                _tiles[i].Clear();
+            }
+        }
+        finally
+        {
+            _batchUpdate = false;
         }
         ArrangeTiles();
-        foreach (var button in new[] { Layout1, Layout4, Layout9, Layout16 })
+        foreach (var button in new[] { Layout6, Layout8, Layout25, Layout32 })
         {
-            button.IsChecked = (string)button.Tag == columns.ToString();
+            button.IsChecked = (string)button.Tag == layout.TileCount.ToString();
         }
-        if (_selected is null || _tiles.IndexOf(_selected) >= columns * columns)
+        if (_selected is null || _tiles.IndexOf(_selected) >= layout.TileCount)
         {
             Select(_tiles[0]);
         }
@@ -172,22 +225,46 @@ public partial class LiveView : UserControl
 
     void ArrangeTiles()
     {
-        Grid.Children.Clear();
-        Grid.Columns = Grid.Rows = _columns;
-        foreach (var tile in _tiles.Take(_columns * _columns))
+        ResetGrid(_layout.Columns, _layout.Rows);
+        for (var i = 0; i < _layout.TileCount; i++)
         {
-            Grid.Children.Add(tile);
+            Place(_tiles[i], _layout.Cells[i]);
         }
     }
 
+    void ResetGrid(int columns, int rows)
+    {
+        TileGrid.Children.Clear();
+        TileGrid.ColumnDefinitions.Clear();
+        TileGrid.RowDefinitions.Clear();
+        for (var i = 0; i < columns; i++)
+        {
+            TileGrid.ColumnDefinitions.Add(new ColumnDefinition());
+        }
+        for (var i = 0; i < rows; i++)
+        {
+            TileGrid.RowDefinitions.Add(new RowDefinition());
+        }
+    }
+
+    void Place(VideoTile tile, GridCell cell)
+    {
+        Grid.SetRow(tile, cell.Row);
+        Grid.SetColumn(tile, cell.Column);
+        Grid.SetRowSpan(tile, cell.RowSpan);
+        Grid.SetColumnSpan(tile, cell.ColumnSpan);
+        TileGrid.Children.Add(tile);
+    }
+
     /// <summary>
-    /// Small tiles use the sub stream, large ones the main stream. The old client always pulled main streams,
-    /// which is what kept a CPU core busy.
+    /// Small tiles use the sub stream, large ones the main stream — decided per tile from its own height,
+    /// so the large tile of the 6/8 layouts can get HD while its neighbours stay SD. The old client always
+    /// pulled main streams, which is what kept a CPU core busy.
     /// </summary>
     void UpdateAutoQuality()
     {
         var dpi = VisualTreeHelper.GetDpi(this).DpiScaleY;
-        foreach (var tile in _tiles.Take(_columns * _columns))
+        foreach (var tile in _tiles.Take(_layout.TileCount))
         {
             var visible = _maximized is null || _maximized == tile;
             var pixels = tile.ActualHeight * dpi;
@@ -206,18 +283,22 @@ public partial class LiveView : UserControl
     {
         SetGlobalQuality(App.Settings.LiveQuality);
         var view = App.Settings.LastView;
-        SetLayout(view?.Columns is >= 1 and <= 4 ? view.Columns : 2);
+        // Settings from the 1/4/9/16 era map to the smallest layout that holds as many tiles.
+        SetLayout(GridLayout.ForSavedView(view));
         if (view is null)
         {
             return;
         }
-        for (var i = 0; i < Math.Min(view.Tiles.Count, _columns * _columns); i++)
+        Batch(() =>
         {
-            if (view.Tiles[i] is { } source)
+            for (var i = 0; i < Math.Min(view.Tiles.Count, _layout.TileCount); i++)
             {
-                ShowCamera(_tiles[i], source);
+                if (view.Tiles[i] is { } source)
+                {
+                    ShowCamera(_tiles[i], source);
+                }
             }
-        }
+        });
     }
 
     void SaveLayout()
@@ -229,8 +310,8 @@ public partial class LiveView : UserControl
         App.Settings.LastView = new SavedView
         {
             Name = "Son görünüm",
-            Columns = _columns,
-            Tiles = _tiles.Take(_columns * _columns).Select(t => t.Source).ToList(),
+            Layout = _layout.TileCount,
+            Tiles = _tiles.Take(_layout.TileCount).Select(t => t.Source).ToList(),
         };
         App.SaveSettings();
     }
@@ -255,7 +336,7 @@ public partial class LiveView : UserControl
         RecordButton.Content = _selected?.IsRecording == true ? "⏹ Kaydı durdur" : "⏺ Kayıt";
 
     void Layout_Click(object sender, RoutedEventArgs e) =>
-        SetLayout(int.Parse((string)((ToggleButton)sender).Tag));
+        SetLayout(GridLayout.Fitting(int.Parse((string)((ToggleButton)sender).Tag)));
 
     /// <summary>null = automatic per tile size, otherwise forced for every tile.</summary>
     void SetGlobalQuality(StreamQuality? quality)

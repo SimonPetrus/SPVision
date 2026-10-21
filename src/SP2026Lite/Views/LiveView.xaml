@@ -6,10 +6,10 @@
                 BorderThickness="0,0,0,1" Padding="6,4">
             <DockPanel>
                 <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
-                    <ToggleButton x:Name="Layout1" Content="1" Width="34" Tag="1" Click="Layout_Click" ToolTip="Tek kare" />
-                    <ToggleButton x:Name="Layout4" Content="4" Width="34" Tag="2" Click="Layout_Click" ToolTip="2×2" />
-                    <ToggleButton x:Name="Layout9" Content="9" Width="34" Tag="3" Click="Layout_Click" ToolTip="3×3" />
-                    <ToggleButton x:Name="Layout16" Content="16" Width="34" Tag="4" Click="Layout_Click" ToolTip="4×4" />
+                    <ToggleButton x:Name="Layout6" Content="6" Width="34" Tag="6" Click="Layout_Click" ToolTip="1 büyük + 5 küçük kare" />
+                    <ToggleButton x:Name="Layout8" Content="8" Width="34" Tag="8" Click="Layout_Click" ToolTip="1 büyük + 7 küçük kare" />
+                    <ToggleButton x:Name="Layout25" Content="25" Width="34" Tag="25" Click="Layout_Click" ToolTip="5×5" />
+                    <ToggleButton x:Name="Layout32" Content="32" Width="34" Tag="32" Click="Layout_Click" ToolTip="8×4" />
                     <Rectangle Width="1" Margin="8,4" Fill="{StaticResource PanelBorder}" />
                     <TextBlock Text="Kalite:" VerticalAlignment="Center" Foreground="{StaticResource MutedFg}" Margin="2,0,4,0" />
                     <ToggleButton x:Name="QualityAuto" Content="Oto" Click="QualityAuto_Click"
@@ -29,6 +29,7 @@
         <Border x:Name="Toast" DockPanel.Dock="Bottom" Background="{StaticResource PanelBg}" Padding="8,3" Visibility="Collapsed">
             <TextBlock x:Name="ToastText" Foreground="{StaticResource MutedFg}" />
         </Border>
-        <UniformGrid x:Name="Grid" Background="Black" SizeChanged="Grid_SizeChanged" />
+        <!-- Rows/columns are built in code: the 6 and 8 layouts need a spanning large tile. -->
+        <Grid x:Name="TileGrid" Background="Black" SizeChanged="Grid_SizeChanged" />
     </DockPanel>
 </UserControl>

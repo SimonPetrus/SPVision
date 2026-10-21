@@ -21,6 +21,9 @@ public partial class VideoTile : UserControl
 {
     public const string DragFormat = "SP2026Lite.CameraRef";
 
+    /// <summary>Added next to <see cref="DragFormat"/> when the drag starts from a tile (swap, not copy).</summary>
+    const string TileDragFormat = "SP2026Lite.VideoTile";
+
     static readonly Brush IdleBorder = new SolidColorBrush(Color.FromRgb(0x2C, 0x30, 0x39));
     static readonly Brush SelectedBorder = new SolidColorBrush(Color.FromRgb(0xE5, 0x48, 0x4D));
 
@@ -46,6 +49,7 @@ public partial class VideoTile : UserControl
 
     Window? _rootWindow;
     bool _rootActive = true;
+    Point? _dragOrigin;
 
     public VideoTile()
     {
@@ -67,6 +71,9 @@ public partial class VideoTile : UserControl
     public event Action<VideoTile>? Activated;
     public event Action<VideoTile>? DoubleClicked;
     public event Action<VideoTile, CameraRef>? CameraDropped;
+
+    /// <summary>Another tile was dragged onto this one: (source tile, this tile).</summary>
+    public event Action<VideoTile, VideoTile>? TileDropped;
     public event Action<VideoTile>? Changed;
 
     public Device? Device { get; private set; }
@@ -584,19 +591,58 @@ public partial class VideoTile : UserControl
         Activated?.Invoke(this);
         if (e.ClickCount == 2)
         {
+            _dragOrigin = null;
             DoubleClicked?.Invoke(this);
         }
+        else
+        {
+            _dragOrigin = e.GetPosition(Overlay);
+        }
+    }
+
+    /// <summary>Dragging a tile with a camera onto another tile swaps the two (handled by the live view).</summary>
+    void Overlay_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            _dragOrigin = null;
+            return;
+        }
+        if (_dragOrigin is not { } origin || Source is not { } source)
+        {
+            return;
+        }
+        var delta = e.GetPosition(Overlay) - origin;
+        if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+        _dragOrigin = null;
+        var data = new DataObject(DragFormat, source);
+        data.SetData(TileDragFormat, this);
+        DragDrop.DoDragDrop(Overlay, data, DragDropEffects.Move);
     }
 
     void Overlay_DragOver(object sender, DragEventArgs e)
     {
-        e.Effects = e.Data.GetDataPresent(DragFormat) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Effects = e.Data.GetDataPresent(TileDragFormat)
+            ? (ReferenceEquals(e.Data.GetData(TileDragFormat), this) ? DragDropEffects.None : DragDropEffects.Move)
+            : e.Data.GetDataPresent(DragFormat) ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
     void Overlay_Drop(object sender, DragEventArgs e)
     {
-        if (e.Data.GetData(DragFormat) is CameraRef source)
+        if (e.Data.GetData(TileDragFormat) is VideoTile from)
+        {
+            if (from != this)
+            {
+                Activated?.Invoke(this);
+                TileDropped?.Invoke(from, this);
+            }
+        }
+        else if (e.Data.GetData(DragFormat) is CameraRef source)
         {
             Activated?.Invoke(this);
             CameraDropped?.Invoke(this, source);

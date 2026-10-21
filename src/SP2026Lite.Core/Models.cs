@@ -48,11 +48,17 @@ public enum StreamQuality
     Sub = 2,
 }
 
-/// <summary>A layout the user saved: grid size plus the camera shown in each tile.</summary>
+/// <summary>A layout the user saved: grid layout plus the camera shown in each tile.</summary>
 public sealed class SavedView
 {
     public string Name { get; set; } = "";
-    public int Columns { get; set; } = 2;
+
+    /// <summary>Tile count of the <see cref="GridLayout"/> (6, 8, 25 or 32).</summary>
+    public int? Layout { get; set; }
+
+    /// <summary>Legacy (1/4/9/16 grids): column count of a square grid. Only read to migrate old settings.</summary>
+    public int? Columns { get; set; }
+
     public List<CameraRef?> Tiles { get; set; } = [];
 }
 

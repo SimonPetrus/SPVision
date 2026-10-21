@@ -33,7 +33,7 @@ SP-2026 Lite:
 
 ## Özellikler (v0.1)
 
-- Canlı izleme: 1/4/9/16 ızgara, sürükle-bırak, çift tıkla büyüt, tam ekran (F11), HD/SD/Otomatik kalite
+- Canlı izleme: 6/8/25/32 ızgara (6 ve 8: bir büyük kare + küçükler), sürükle-bırak (kareler arası takas dahil), çift tıkla büyüt, tam ekran (F11), HD/SD/Otomatik kalite
 - Şifreli ve şifresiz akışlar için çift video yolu (SDK / FlyleafLib), kopmada otomatik yeniden bağlanma (3/10/30 sn)
 - Kayıt oynatma: güne göre NVR kayıt arama, zaman çizelgesi (tekerlekle yakınlaştırma), oynat/duraklat, ±30 sn atlama
 - Anlık görüntü (NVR'dan tam çözünürlüklü JPEG) ve yerel MP4 kayıt/klip
