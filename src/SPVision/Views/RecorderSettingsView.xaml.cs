@@ -14,12 +14,14 @@ using SPVision.Core;
 namespace SPVision.Views;
 
 /// <summary>
-/// Settings › Cihaz ayarları (phase 1: Genel bakış, Kameralar, Hareket, Kayıt, Sistem). Every tab reads the recorder
-/// with ISAPI GETs when it is first shown; nothing is written on open, tab change or load. "Cihaza uygula" lists the
-/// changes ("&lt;kamera&gt; · &lt;alan&gt;: &lt;eski&gt; → &lt;yeni&gt;"), asks for confirmation and then
+/// Settings › Cihaz ayarları (phase 1: Genel bakış, Kameralar, Hareket, Kayıt, Sistem; phase 2: Olaylar, Ağ,
+/// Kullanıcılar, yeniden başlatma / disk biçimlendirme — see the partial files). Every tab reads the recorder with ISAPI
+/// GETs when it is first shown; nothing is written on open, tab change or load. "Cihaza uygula" lists the changes
+/// ("&lt;kamera&gt; · &lt;alan&gt;: &lt;eski&gt; → &lt;yeni&gt;"), asks for confirmation and then
 /// <see cref="ConfigWriter"/> writes them one by one (read-modify-write through the allowlist in
 /// <see cref="IsapiWritePolicy"/>), verifies them and stops at the first failure. "Geri al" restores the values last read.
-/// Stream encryption and Hik-Connect are shown read-only and are never written.
+/// Risky operations go through their own confirmation (<see cref="RiskyConfirmDialog"/>) and
+/// <see cref="IsapiClient.SendRiskyAsync"/>. Stream encryption and Hik-Connect are shown read-only and are never written.
 /// </summary>
 public partial class RecorderSettingsView : UserControl
 {
@@ -272,6 +274,9 @@ public partial class RecorderSettingsView : UserControl
         _motion = null;
         _record = null;
         _system = null;
+        _events = null;
+        _network = null;
+        _users = null;
         _results.Clear();
         _loading.Clear();
         _attempted.Clear();
@@ -352,6 +357,15 @@ public partial class RecorderSettingsView : UserControl
                 break;
             case Tab.System:
                 RenderSystem();
+                break;
+            case Tab.Events:
+                RenderEvents();
+                break;
+            case Tab.Network:
+                RenderNetwork();
+                break;
+            case Tab.Users:
+                RenderUsers();
                 break;
             default:
                 var later = Tabs.First(t => t.Tab == _tab);
@@ -1034,8 +1048,13 @@ public partial class RecorderSettingsView : UserControl
         }
 
         var draft = slot.Draft;
-        panel.Children.Add(Row("Kamera adı", "Kayıt cihazındaki kanal adı. SPVision listesinde görünmesi için ardından Cihaz yönetimi › Kameraları yenile.",
-            RowTextBox(draft.Name ?? slot.Camera.Name, 32, "Kamera adı", v => slot.Draft = slot.Draft with { Name = v })));
+        // Read only: the recorder stores the name in the camera's connection record (address, user, password), whose
+        // password a GET never returns — writing the record back could drop the camera. See RecorderPlan.Camera.
+        var cameraName = ValueText(CameraLabel(slot.Camera));
+        AutomationProperties.SetAutomationId(cameraName, "CameraName");
+        panel.Children.Add(Row("Kamera adı",
+            "Yalnızca gösterilir. Kayıt cihazı adı kameranın bağlantı kaydıyla (adres, kullanıcı, şifre) birlikte yazar; SPVision o şifreyi okuyamadığı için yazarsa kamera bağlantısı kopabilir. Adı cihazın web arayüzünden değiştirin, sonra Cihaz yönetimi › Kameraları yenile.",
+            cameraName));
 
         UIElement OverlaySwitch(Func<OverlaySettings, bool?> pick, Func<OverlaySettings, bool, OverlaySettings> set, string name) =>
             draft.Overlay is { } o && pick(o) is { } on
@@ -1506,7 +1525,7 @@ public partial class RecorderSettingsView : UserControl
     // ================================================================ Sistem
 
     static readonly GridLength[] DiskColumns =
-        [new(1, GridUnitType.Star), new(100), new(140), new(120), new(120)];
+        [new(1, GridUnitType.Star), new(100), new(140), new(120), new(120), new(120)];
 
     void RenderSystem()
     {
@@ -1580,10 +1599,10 @@ public partial class RecorderSettingsView : UserControl
             ValueText(data.Ntp.Value is { } ntp ? ntp.Describe(data.Time.Value) : RecorderText.Unreadable), last: true));
         TabContent.Children.Add(Card(panel));
 
-        // Diskler (read-only).
+        // Diskler; "Biçimlendir…" per disk is a risky operation (typed confirmation).
         var disks = new StackPanel();
-        disks.Children.Add(CardHeader("Diskler", "Durum, kapasite ve boş alan (yalnızca gösterilir).", []));
-        disks.Children.Add(TableHeader(DiskColumns, ("DİSK", false), ("TÜR", false), ("DURUM", false), ("KAPASİTE", false), ("BOŞ ALAN", false)));
+        disks.Children.Add(CardHeader("Diskler", "Durum, kapasite ve boş alan. Biçimlendirme diskteki TÜM kayıtları siler; ayrıca yazarak onay istenir.", []));
+        disks.Children.Add(TableHeader(DiskColumns, ("DİSK", false), ("TÜR", false), ("DURUM", false), ("KAPASİTE", false), ("BOŞ ALAN", false), ("İŞLEM", true)));
         if (data.Disks.Value is { Count: > 0 } list)
         {
             for (var i = 0; i < list.Count; i++)
@@ -1597,27 +1616,33 @@ public partial class RecorderSettingsView : UserControl
                 Put(grid, status, 2);
                 Put(grid, Text(RecorderText.Size(disk.CapacityMb), "CellText"), 3);
                 Put(grid, Text(RecorderText.Size(disk.FreeMb), "CellText"), 4);
-                disks.Children.Add(TableRow(grid, last: i == list.Count - 1));
+                var name = disk.Name.Length > 0 ? disk.Name : string.Create(CultureInfo.InvariantCulture, $"Disk {disk.Id}");
+                var format = SettingsButton("Biçimlendir…", (_, _) => FormatDisk(disk), "SettingsDangerButton");
+                AutomationProperties.SetName(format, $"{name} biçimlendir");
+                AutomationProperties.SetAutomationId(format, string.Create(CultureInfo.InvariantCulture, $"DiskFormat{disk.Id}"));
+                if (string.Equals(disk.Status, "formatting", StringComparison.OrdinalIgnoreCase) || disk.Id <= 0)
+                {
+                    format.IsEnabled = false;
+                }
+                Put(grid, format, 5);
+                disks.Children.Add(TableRow(grid, last: i == list.Count - 1, height: 44));
             }
         }
         else
         {
             var grid = TableGrid(DiskColumns);
-            Put(grid, MutedText(data.Disks.Ok ? "Disk yok" : RecorderText.Unreadable, HorizontalAlignment.Left), 0, span: 5);
+            Put(grid, MutedText(data.Disks.Ok ? "Disk yok" : RecorderText.Unreadable, HorizontalAlignment.Left), 0, span: 6);
             disks.Children.Add(TableRow(grid, last: true));
         }
         disks.SetValue(RoundedClip.RadiusProperty, 7.0);
         TabContent.Children.Add(Card(disks, new Thickness(0, 16, 0, 0)));
 
-        // Phase 2: shown, disabled.
+        // Yeniden başlatma (risky: its own confirmation).
         var maintenance = new StackPanel();
-        maintenance.Children.Add(CardHeader("Yeniden başlatma ve biçimlendirme", "Bir sonraki aşamada.", []));
-        var reboot = SettingsButton("Yeniden başlat…", (_, _) => { });
-        reboot.IsEnabled = false;
-        maintenance.Children.Add(Row("Yeniden başlat", "Kayıt birkaç dakika durur; onay istenir. Bir sonraki aşamada.", reboot));
-        var format = SettingsButton("Biçimlendir…", (_, _) => { }, "SettingsDangerButton");
-        format.IsEnabled = false;
-        maintenance.Children.Add(Row("Diski biçimlendir", "Diskteki TÜM kayıtları siler; ayrıca yazarak onay istenir. Bir sonraki aşamada.", format, last: true));
+        maintenance.Children.Add(CardHeader("Yeniden başlatma", "Kayıt cihazını uzaktan yeniden başlatır.", []));
+        var reboot = SettingsButton("Yeniden başlat…", (_, _) => Reboot());
+        AutomationProperties.SetAutomationId(reboot, "RecorderReboot");
+        maintenance.Children.Add(Row("Yeniden başlat", "Kayıt birkaç dakika durur, canlı görüntü ve oynatma kesilir; ayrıca onay istenir.", reboot, last: true));
         TabContent.Children.Add(Card(maintenance, new Thickness(0, 16, 0, 0)));
     }
 
@@ -1645,7 +1670,8 @@ public partial class RecorderSettingsView : UserControl
 
     // ================================================================ apply
 
-    bool HasPendingChanges() => PlanCameras().Count + PlanMotion().Count + PlanRecord().Count + PlanSystem().Count > 0;
+    bool HasPendingChanges() =>
+        PlanCameras().Count + PlanMotion().Count + PlanRecord().Count + PlanSystem().Count + PlanEvents().Count > 0 || NetworkPending();
 
     /// <summary>
     /// Confirmation → sequential writes (stop at the first failure) → result → re-read from the device.

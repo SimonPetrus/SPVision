@@ -3,7 +3,8 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:c="clr-namespace:SPVision.Controls">
     <!-- Settings › Cihaz ayarları. Opening the page or a tab only reads (ISAPI GET); the recorder is written only by
-         "Cihaza uygula" after a confirmation, through IsapiClient.PutConfigAsync and its allowlist. Tab contents are
+         "Cihaza uygula" after a confirmation, through IsapiClient.PutConfigAsync and its allowlist (risky operations:
+         reboot, disk format, network address, users - their own RiskyConfirmDialog and IsapiClient.SendRiskyAsync). Tab contents are
          built in code (RecorderSettingsView.xaml.cs): cards with a header row (title + description | Geri al ·
          Cihaza uygula, 120×30) and rows (label + help | control, 240 px). -->
     <UserControl.Resources>

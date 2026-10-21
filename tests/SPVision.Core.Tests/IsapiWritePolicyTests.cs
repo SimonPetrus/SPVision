@@ -11,7 +11,6 @@ public class IsapiWritePolicyTests
         var data = new TheoryData<string> { IsapiPaths.DeviceInfo, IsapiPaths.Time };
         foreach (var channel in new[] { 1, 9, 22, 32 })
         {
-            data.Add(IsapiPaths.InputProxyChannel(channel));
             data.Add(IsapiPaths.Overlays(channel));
             data.Add(IsapiPaths.Motion(channel));
             data.Add(IsapiPaths.Image(channel));
@@ -45,6 +44,8 @@ public class IsapiWritePolicyTests
     [InlineData("ISAPI/ContentMgmt/Storage/hdd/1/format")]
     [InlineData("ISAPI/System/upgradeStatus")]
     [InlineData("ISAPI/System/activate")]
+    [InlineData("ISAPI/ContentMgmt/InputProxy/channels/1")]             // camera record (address + login): rename blocked
+    [InlineData("ISAPI/ContentMgmt/InputProxy/channels/22")]
     public void DeniesSecurityAndDestructivePaths(string path)
     {
         Assert.NotNull(IsapiWritePolicy.Check(path));

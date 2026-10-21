@@ -428,11 +428,11 @@ public class RecorderSettingsTests
 
         var writes = RecorderPlan.Camera(1, "DIS KAPI", before, after);
 
-        Assert.Equal([IsapiPaths.InputProxyChannel(1), IsapiPaths.Overlays(1), IsapiPaths.Image(1), IsapiPaths.Stream(1, StreamQuality.Main)],
+        // The name change is not planned: the IP channel record is never written (camera password, see RecorderPlan.Camera).
+        Assert.Equal([IsapiPaths.Overlays(1), IsapiPaths.Image(1), IsapiPaths.Stream(1, StreamQuality.Main)],
             writes.Select(w => w.Path).ToList());
         Assert.Equal(
         [
-            "DIS KAPI · Kamera adı: DIS KAPI → GIRIS",
             "DIS KAPI · Ekranda tarih / saat: Açık → Kapalı",
             "DIS KAPI · Kontrast: 50 → 60",
             "DIS KAPI · Ana akış çözünürlüğü: 1920×1080 → 2560×1440",
