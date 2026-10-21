@@ -369,4 +369,46 @@ public class VideoRecorderTests
             File.Delete(path);
         }
     }
+
+    [Fact]
+    public async Task Download_add_waits_for_the_encoder_and_never_drops()
+    {
+        if (!FfmpegLoaded.Value)
+        {
+            return;
+        }
+        var path = TempFile();
+        try
+        {
+            var recorder = new VideoRecorder(path, ["libopenh264"], queueCapacity: 1);
+            var frame = Yv12(640, 480, 0);
+            for (int i = 0; i < 120; i++)
+            {
+                Assert.True(recorder.AddYv12Waiting(frame, 640, 480, i * 40, 25, CancellationToken.None)); // waits, never drops
+            }
+            var result = await recorder.Complete().WaitAsync(TimeSpan.FromSeconds(60));
+            Assert.True(result.Success, result.Error);
+            Assert.Equal(120, result.Frames);
+            Assert.Equal(0, result.DroppedFrames);
+            Assert.InRange(result.Duration.TotalSeconds, 4.7, 4.9); // presentation times as given: 120 × 40 ms
+            Assert.Null(recorder.WriteError);
+            Assert.Equal("libopenh264", recorder.EncoderName);
+        }
+        finally
+        {
+            File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public async Task Download_add_returns_when_cancelled()
+    {
+        var path = TempFile();
+        var recorder = new VideoRecorder(path, ["no-such-encoder"], queueCapacity: 1);
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        Assert.False(recorder.AddYv12Waiting(new byte[64 * 64 * 3 / 2], 64, 64, 0, 25, cts.Token));
+        await recorder.Complete().WaitAsync(TimeSpan.FromSeconds(10));
+        File.Delete(path);
+    }
 }

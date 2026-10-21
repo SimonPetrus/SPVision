@@ -50,6 +50,9 @@ public sealed class VideoRecorder
 
     public long DroppedFrames => Interlocked.Read(ref _dropped);
 
+    /// <summary>The encoder that wrote the file (known once it is finalized).</summary>
+    public string? EncoderName { get; private set; }
+
     /// <summary>
     /// Queues one YV12 picture (Y plane, then V, then U, no padding: PlayCtrl's decode callback format).
     /// False when it was dropped (queue full, size invalid, or the recording is completing).
@@ -96,6 +99,50 @@ public sealed class VideoRecorder
     /// <inheritdoc cref="TryAddYv12(ReadOnlySpan{byte}, int, int, long, int)"/>
     public unsafe bool TryAddYv12(IntPtr data, int length, int width, int height, long stampMs, int frameRate) =>
         data != IntPtr.Zero && length > 0 && TryAddYv12(new ReadOnlySpan<byte>((void*)data, length), width, height, stampMs, frameRate);
+
+    /// <summary>
+    /// Downloads: queues one YV12 picture with its presentation time (ms, increasing; see <see cref="DownloadTimeline"/>)
+    /// and <b>waits</b> while the queue is full, so no picture is ever dropped — the encoder's pace holds the decoder,
+    /// which holds the data stream. Never for a live or playback display path (those must not wait). False when
+    /// <paramref name="ct"/> was cancelled or the recording is completing (the picture is not written).
+    /// </summary>
+    public bool AddYv12Waiting(ReadOnlySpan<byte> data, int width, int height, long ptsMs, int frameRate, CancellationToken ct)
+    {
+        if (_completing || width < 16 || height < 16 || ct.IsCancellationRequested)
+        {
+            return false;
+        }
+        var size = width * height * 3 / 2;
+        if (data.Length < size)
+        {
+            return false;
+        }
+        var buffer = ArrayPool<byte>.Shared.Rent(size);
+        data[..size].CopyTo(buffer);
+        try
+        {
+            if (_queue.TryAdd(new Frame(buffer, width, height, ptsMs, frameRate), Timeout.Infinite, ct))
+            {
+                return true;
+            }
+        }
+        catch (Exception e) when (e is OperationCanceledException or InvalidOperationException)
+        {
+            // Cancelled, or completed meanwhile.
+        }
+        ArrayPool<byte>.Shared.Return(buffer);
+        return false;
+    }
+
+    /// <inheritdoc cref="AddYv12Waiting(ReadOnlySpan{byte}, int, int, long, int, CancellationToken)"/>
+    public unsafe bool AddYv12Waiting(IntPtr data, int length, int width, int height, long ptsMs, int frameRate, CancellationToken ct) =>
+        data != IntPtr.Zero && length > 0 && AddYv12Waiting(new ReadOnlySpan<byte>((void*)data, length), width, height, ptsMs, frameRate, ct);
+
+    /// <summary>Pictures waiting for the encoder.</summary>
+    public int Queued => _queue.Count;
+
+    /// <summary>Why the encoder stopped writing before the end (the file then holds only the frames before it); null otherwise.</summary>
+    public string? WriteError { get; private set; }
 
     /// <summary>No more pictures: the queued ones are written, the file finalized and checked. Idempotent.</summary>
     public Task<RecordingResult> Complete()
@@ -169,6 +216,8 @@ public sealed class VideoRecorder
         {
             error ??= e.Message; // e.g. FFmpeg not loaded: reported, never an unobserved crash of this thread
         }
+        WriteError = error;
+        EncoderName = writer?.EncoderName;
         try
         {
             writer?.Dispose();

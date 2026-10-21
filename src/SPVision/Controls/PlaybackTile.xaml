@@ -58,7 +58,7 @@
                     </Grid>
                 </Border>
 
-                <Grid Grid.Row="1" Background="{DynamicResource VideoBg}">
+                <Grid x:Name="VideoArea" Grid.Row="1" Background="{DynamicResource VideoBg}">
                     <!-- Shown only while the video hosts are hidden (no recording / failed) -->
                     <TextBlock x:Name="MessageText" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
                                TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="12"

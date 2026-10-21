@@ -1,0 +1,322 @@
+<UserControl x:Class="SPVision.Views.DownloadPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:SPVision.Controls"
+             Width="400" AutomationProperties.AutomationId="DownloadPanel" AutomationProperties.Name="Video indir">
+    <UserControl.Resources>
+        <!-- Section captions and small labels -->
+        <Style x:Key="SectionText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="{StaticResource FontSizeTile}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Foreground" Value="{DynamicResource TextStrong}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style x:Key="LabelText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="{StaticResource FontSizeStatus}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+        <Style x:Key="NoteText" TargetType="TextBlock">
+            <Setter Property="FontSize" Value="{StaticResource FontSizeSmall}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
+        </Style>
+
+        <!-- Camera row: 34 px, radius 4, check box 16 px + name; checked = range tint + SemiBold (set in code). -->
+        <Style x:Key="CameraRow" TargetType="ToggleButton">
+            <Setter Property="Height" Value="34" />
+            <Setter Property="Padding" Value="9,0" />
+            <Setter Property="Margin" Value="0,0,0,2" />
+            <Setter Property="Background" Value="{DynamicResource CardBg}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFg}" />
+            <Setter Property="FontSize" Value="{StaticResource FontSizeList}" />
+            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ToggleButton">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="Transparent" BorderThickness="1"
+                                CornerRadius="4" Padding="{TemplateBinding Padding}" SnapsToDevicePixels="True">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Calendar day: 32 px circle in a 34 px cell; number above a 4 px "recorded" dot. Colours set in code. -->
+        <Style x:Key="RangeDay" TargetType="Button">
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="32" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextFg}" />
+            <Setter Property="FontSize" Value="{StaticResource FontSizeTile}" />
+            <Setter Property="FontWeight" Value="Medium" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Grid>
+                            <Border x:Name="Hover" CornerRadius="16" Background="Transparent" />
+                            <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="Transparent" BorderThickness="1"
+                                    CornerRadius="16" SnapsToDevicePixels="True">
+                                <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                        </Grid>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Hover" Property="Background" Value="{DynamicResource HoverBg}" />
+                            </Trigger>
+                            <Trigger Property="IsKeyboardFocused" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.35" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- 28 px month buttons with a 1 px border, radius 6. -->
+        <Style x:Key="MonthButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Width" Value="28" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="{DynamicResource Border}" />
+            <Setter Property="Foreground" Value="{DynamicResource TextStrong}" />
+            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
+        </Style>
+
+        <!-- ss:dd:ss field: 30 px, centred 13 px SemiBold tabular digits, accent bottom border. -->
+        <Style x:Key="TimeField" TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="MaxLength" Value="8" />
+            <Setter Property="FontSize" Value="{StaticResource FontSizeBase}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Typography.NumeralAlignment" Value="Tabular" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="TextBox">
+                        <Border Background="{DynamicResource WindowBg}" BorderBrush="{DynamicResource InputBorder}" BorderThickness="1"
+                                CornerRadius="4" SnapsToDevicePixels="True">
+                            <Grid>
+                                <ScrollViewer x:Name="PART_ContentHost" Focusable="False" VerticalAlignment="Center" Margin="8,0" />
+                                <Border x:Name="Underline" Height="2" VerticalAlignment="Bottom" Background="{DynamicResource Accent}"
+                                        CornerRadius="0,0,3,3" />
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+
+        <!-- Footer buttons: equal halves, 32 px. -->
+        <Style x:Key="FooterButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+            <Setter Property="Background" Value="{DynamicResource CardBg}" />
+            <Setter Property="FontWeight" Value="Normal" />
+        </Style>
+        <Style x:Key="FooterAccentButton" TargetType="Button" BasedOn="{StaticResource AccentButton}">
+            <Setter Property="Height" Value="32" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="Margin" Value="0" />
+        </Style>
+
+        <!-- Thin progress bar: 6 px track, radius 3, accent fill. -->
+        <Style x:Key="ThinProgress" TargetType="ProgressBar">
+            <Setter Property="Height" Value="6" />
+            <Setter Property="Minimum" Value="0" />
+            <Setter Property="Maximum" Value="100" />
+            <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+            <Setter Property="Background" Value="{DynamicResource Divider}" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="ProgressBar">
+                        <Border Background="{TemplateBinding Background}" CornerRadius="3" SnapsToDevicePixels="True">
+                            <Grid x:Name="PART_Track" ClipToBounds="True">
+                                <Border x:Name="PART_Indicator" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="3" />
+                            </Grid>
+                        </Border>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
+
+    <Border Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource Border}" BorderThickness="1,0,0,0">
+        <DockPanel>
+            <!-- ===== Header, 44 px: title · close ===== -->
+            <Grid DockPanel.Dock="Top" Height="44">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Border Grid.ColumnSpan="2" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" />
+                <TextBlock Text="Video indir" Margin="16,0,0,0" FontSize="14" FontWeight="SemiBold" Foreground="{DynamicResource TextStrong}"
+                           VerticalAlignment="Center" />
+                <Button x:Name="CloseButton" Grid.Column="1" Style="{StaticResource GhostIconButton}" Width="32" Height="32" Margin="0,0,6,0"
+                        Click="Close_Click" ToolTip="Paneli kapat" AutomationProperties.AutomationId="DownloadClose"
+                        AutomationProperties.Name="Paneli kapat" Foreground="{DynamicResource TextStrong}">
+                    <c:GlyphIcon Data="{StaticResource IconClose}" Size="14" />
+                </Button>
+            </Grid>
+
+            <!-- ===== Footer: two equal 32 px buttons, 8 px apart (one full-width button while downloading) ===== -->
+            <Grid DockPanel.Dock="Bottom">
+                <Border BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" />
+                <Grid x:Name="FormFooter" Margin="16,12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="8" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="StartButton" Content="İndir" Style="{StaticResource FooterAccentButton}" Click="Start_Click"
+                            ToolTipService.ShowOnDisabled="True" AutomationProperties.AutomationId="DownloadStart" AutomationProperties.Name="İndir" />
+                    <Button x:Name="DismissButton" Grid.Column="2" Content="Vazgeç" Style="{StaticResource FooterButton}" Click="Close_Click"
+                            AutomationProperties.AutomationId="DownloadCancel" AutomationProperties.Name="Vazgeç" />
+                </Grid>
+                <Button x:Name="CancelButton" Margin="16,12" Content="İptal" Style="{StaticResource FooterButton}" Click="CancelDownload_Click"
+                        Visibility="Collapsed" AutomationProperties.AutomationId="DownloadAbort" AutomationProperties.Name="İndirmeyi iptal et" />
+                <Grid x:Name="DoneFooter" Margin="16,12" Visibility="Collapsed">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="8" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="OpenFolderButton" Content="Klasörü aç" Style="{StaticResource FooterAccentButton}" Click="OpenFolder_Click"
+                            AutomationProperties.AutomationId="DownloadOpenFolder" AutomationProperties.Name="Klasörü aç" />
+                    <Button x:Name="NewButton" Grid.Column="2" Content="Yeni indirme" Style="{StaticResource FooterButton}" Click="New_Click"
+                            AutomationProperties.AutomationId="DownloadNew" AutomationProperties.Name="Yeni indirme" />
+                </Grid>
+            </Grid>
+
+            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                <Grid Margin="16,12,16,12">
+                    <!-- ===== Form ===== -->
+                    <StackPanel x:Name="FormPanel">
+                        <!-- Cameras of the playback tiles -->
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="Oynatılan kameralar" Style="{StaticResource SectionText}" />
+                            <TextBlock x:Name="CameraCount" Grid.Column="1" Style="{StaticResource NoteText}" FontSize="{StaticResource FontSizeStatus}"
+                                       Typography.NumeralAlignment="Tabular" VerticalAlignment="Center" ToolTip="Seçili / oynatılan kamera" />
+                        </Grid>
+                        <Border Background="{DynamicResource WindowBg}" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="6"
+                                MinHeight="190" MaxHeight="226" Padding="4,4,4,2">
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                                <StackPanel x:Name="CameraList" AutomationProperties.Name="İndirilecek kameralar" />
+                            </ScrollViewer>
+                        </Border>
+
+                        <!-- One calendar for the range -->
+                        <Grid Margin="0,12,0,4">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="28" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="28" />
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="PrevMonthButton" Style="{StaticResource MonthButton}" Click="PrevMonth_Click"
+                                    ToolTip="Önceki ay" AutomationProperties.AutomationId="DownloadPrevMonth" AutomationProperties.Name="Önceki ay">
+                                <c:GlyphIcon Data="{StaticResource IconChevronLeft}" Size="12" StrokeThickness="2.4" />
+                            </Button>
+                            <TextBlock x:Name="MonthTitle" Grid.Column="1" HorizontalAlignment="Center" VerticalAlignment="Center"
+                                       FontSize="{StaticResource FontSizeBase}" FontWeight="SemiBold" Foreground="{DynamicResource TextStrong}" />
+                            <Button x:Name="NextMonthButton" Grid.Column="2" Style="{StaticResource MonthButton}" Click="NextMonth_Click"
+                                    ToolTip="Sonraki ay" AutomationProperties.AutomationId="DownloadNextMonth" AutomationProperties.Name="Sonraki ay">
+                                <c:GlyphIcon Data="{StaticResource IconChevronRight}" Size="12" StrokeThickness="2.4" />
+                            </Button>
+                        </Grid>
+                        <UniformGrid x:Name="WeekdayRow" Columns="7" />
+                        <UniformGrid x:Name="DayGrid" Columns="7" AutomationProperties.Name="Tarih aralığı" />
+                        <TextBlock x:Name="HintText" Margin="0,4,0,0" HorizontalAlignment="Center" Style="{StaticResource NoteText}" />
+
+                        <!-- Times: start → end -->
+                        <Grid Margin="0,12,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="20" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+                            <TextBlock x:Name="StartLabel" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
+                            <TextBlock x:Name="EndLabel" Grid.Column="2" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
+                            <TextBox x:Name="StartTimeBox" Grid.Row="1" Style="{StaticResource TimeField}" TextChanged="Time_TextChanged"
+                                     PreviewTextInput="Time_PreviewTextInput" AutomationProperties.AutomationId="DownloadStartTime"
+                                     AutomationProperties.Name="Başlangıç saati (ss:dd:ss)" />
+                            <c:GlyphIcon Grid.Row="1" Grid.Column="1" Data="{StaticResource IconArrowRight}" Size="12" StrokeThickness="2.4"
+                                         Foreground="{DynamicResource TextSecondary}" />
+                            <TextBox x:Name="EndTimeBox" Grid.Row="1" Grid.Column="2" Style="{StaticResource TimeField}" TextChanged="Time_TextChanged"
+                                     PreviewTextInput="Time_PreviewTextInput" AutomationProperties.AutomationId="DownloadEndTime"
+                                     AutomationProperties.Name="Bitiş saati (ss:dd:ss)" />
+                        </Grid>
+
+                        <!-- Summary: duration · cameras, estimated size · free space (warning colours when İndir is off) -->
+                        <Border x:Name="SummaryBox" Margin="0,12,0,0" Padding="10,8" CornerRadius="6" Background="{DynamicResource WindowBg}"
+                                AutomationProperties.AutomationId="DownloadSummary">
+                            <StackPanel>
+                                <TextBlock x:Name="SummaryText" FontSize="{StaticResource FontSizeTile}" TextWrapping="Wrap"
+                                           Typography.NumeralAlignment="Tabular" />
+                                <TextBlock x:Name="SizeText" Margin="0,4,0,0" FontSize="{StaticResource FontSizeTile}" TextWrapping="Wrap"
+                                           Typography.NumeralAlignment="Tabular" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- Target folder -->
+                        <TextBlock Text="Kayıt yeri" Style="{StaticResource LabelText}" Margin="0,12,0,4" />
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="6" />
+                                <ColumnDefinition Width="30" />
+                            </Grid.ColumnDefinitions>
+                            <Border Height="30" Background="{DynamicResource WindowBg}" BorderBrush="{DynamicResource InputBorder}" BorderThickness="1"
+                                    CornerRadius="4" Padding="8,0">
+                                <TextBlock x:Name="FolderText" FontSize="{StaticResource FontSizeTile}" Foreground="{DynamicResource TextFg}"
+                                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis" AutomationProperties.AutomationId="DownloadFolderPath" />
+                            </Border>
+                            <Button x:Name="FolderButton" Grid.Column="2" Content="…" Width="30" Height="30" MinHeight="0" Padding="0" Margin="0"
+                                    FontWeight="Bold" Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource InputBorder}"
+                                    Click="Folder_Click" ToolTip="Klasör seç" AutomationProperties.AutomationId="DownloadFolder"
+                                    AutomationProperties.Name="Klasör seç" />
+                        </Grid>
+                        <TextBlock Text="MP4 (H.264) · Ses dahil değil · Her kamera ayrı dosya" Style="{StaticResource NoteText}" Margin="0,4,0,0" />
+                    </StackPanel>
+
+                    <!-- ===== Progress / results ===== -->
+                    <StackPanel x:Name="ProgressPanel" Visibility="Collapsed">
+                        <TextBlock x:Name="ProgressTitle" Style="{StaticResource SectionText}" />
+                        <TextBlock x:Name="ProgressRange" Style="{StaticResource LabelText}" Margin="0,4,0,8" Typography.NumeralAlignment="Tabular" />
+                        <StackPanel x:Name="ProgressList" AutomationProperties.Name="İndirmeler" />
+                        <TextBlock Text="MP4 (H.264) · Ses dahil değil · Her kamera ayrı dosya" Style="{StaticResource NoteText}" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Grid>
+            </ScrollViewer>
+        </DockPanel>
+    </Border>
+</UserControl>
