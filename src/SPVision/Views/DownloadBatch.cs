@@ -21,6 +21,9 @@ sealed class DownloadItem(Device device, Camera camera)
     public DownloadOutcome? Outcome { get; set; }
 
     public bool Running { get; set; }
+
+    /// <summary>Its outcome went to the status bar already.</summary>
+    public bool Reported { get; set; }
 }
 
 /// <summary>

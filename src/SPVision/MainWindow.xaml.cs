@@ -43,10 +43,15 @@ public partial class MainWindow : Window
     MainSection _sectionBeforeSettings = MainSection.Live;
     WindowState _stateBeforeFullScreen;
 
+    /// <summary>"Video indir" downloads: the app's, not Kayıt Oynatma's — they go on across pages and playback changes.</summary>
+    readonly DownloadManager _downloads;
+
     public MainWindow()
     {
         InitializeComponent();
         DarkTitleBar.Attach(this);
+        _downloads = new DownloadManager(Dispatcher);
+        HookDownloads();
         Live.StateChanged += LiveStateChanged;
         Live.Message += ShowMessage;
         LivePicker.LayoutSelected += Live.SelectLayout;
@@ -140,7 +145,7 @@ public partial class MainWindow : Window
         var watch = System.Diagnostics.Stopwatch.StartNew();
         try
         {
-            var release = Task.WhenAll(Live.ShutdownAsync(), Playback.ShutdownAsync());
+            var release = Task.WhenAll(Live.ShutdownAsync(), Playback.ShutdownAsync(), DownloadManager.ShutdownAsync());
             var released = await Task.WhenAny(release, Task.Delay(ReleaseLimit)) == release;
             var left = ReleaseLimit - watch.Elapsed;
             var finished = await Recordings.WhenAllFinished(left > TimeSpan.Zero ? left : TimeSpan.Zero);
@@ -153,6 +158,44 @@ public partial class MainWindow : Window
         }
         _closeDone = true;
         Application.Current.Shutdown();
+    }
+
+    // ---- Downloads ("Video indir"): the pill in the middle of the top bar, on every page ----
+
+    void HookDownloads()
+    {
+        Playback.Downloads = _downloads;
+        _downloads.Started += DownloadPillView.ShowProgress;
+        _downloads.Changed += (batch, _) =>
+        {
+            if (ReferenceEquals(_downloads.Current, batch))
+            {
+                DownloadPillView.ShowProgress(batch);
+            }
+        };
+        _downloads.Finished += DownloadPillView.ShowResult;
+        _downloads.Message += ShowMessage;
+        DownloadPillView.CancelRequested += _downloads.Cancel;
+        DownloadPillView.Message += ShowMessage;
+        // The pill's room follows the bar: window width, page tools (live / playback), tab texts.
+        HeaderLayer.SizeChanged += (_, _) => FitDownloadPill();
+        TabsPanel.SizeChanged += (_, _) => FitDownloadPill();
+        ToolsPanel.SizeChanged += (_, _) => FitDownloadPill();
+    }
+
+    /// <summary>
+    /// 440 px, exactly centred in the window (the bar's insets are equal, so its centre is the window's); narrower when the
+    /// tabs on the left or the tools on the right would be closer than 12 px; hidden when not even 200 px fit.
+    /// </summary>
+    void FitDownloadPill()
+    {
+        if (HeaderLayer.ActualWidth <= 0)
+        {
+            return;
+        }
+        var leftEnd = TabsPanel.TranslatePoint(new Point(TabsPanel.ActualWidth, 0), HeaderLayer).X;
+        var rightStart = ToolsPanel.TranslatePoint(new Point(0, 0), HeaderLayer).X;
+        DownloadPillView.PillWidth = Core.DownloadPill.Width(HeaderLayer.ActualWidth, leftEnd, rightStart);
     }
 
     // ---- In-app update (banner for an optional update, blocking dialog for a mandatory one) ----

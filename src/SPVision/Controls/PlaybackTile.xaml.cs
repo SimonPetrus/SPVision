@@ -1,8 +1,10 @@
 using System.ComponentModel;
 using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using FlyleafLib.MediaPlayer;
 using SPVision.Core;
 using SPVision.Hik;
@@ -55,8 +57,10 @@ public partial class PlaybackTile : UserControl
         Unloaded += (_, _) => DisposePlayers(waitForSdk: true);
         Host.SurfaceCreated += (_, _) => HookSurface(Host.Surface);
         HookSurface(Host.Surface);
-        // The SDK window is transparent to hit testing: wheel, drag and release over the video arrive here.
+        // The SDK window is transparent to hit testing: wheel, drag and release over the video arrive here. A wheel message
+        // that lands on the video window itself is taken there (same handling).
         MouseWheel += Tile_MouseWheel;
+        HikHost.WheelHandler = (delta, x, y) => ZoomWheel(delta, new Point(x, y));
         MouseMove += Tile_MouseMove;
         MouseLeftButtonUp += Tile_MouseLeftButtonUp;
         LostMouseCapture += (_, _) => _panFrom = null;
@@ -119,7 +123,8 @@ public partial class PlaybackTile : UserControl
     /// <summary>Digital zoom works on the SDK path (PlayCtrl draws a part of the picture); Flyleaf tiles have none.</summary>
     public bool CanZoom => UsesSdk && _hikPlayer is { IsStarted: true } && _timeVerified;
 
-    public bool IsZoomed => _zoom.IsZoomed;
+    /// <summary>The zoom mode is on (tool bar button active; the wheel zooms, a drag moves a zoomed picture).</summary>
+    public bool IsZoomMode => _zoom.Mode;
 
     /// <summary>How the view is bringing this tile back in step without reopening it (SDK path only).</summary>
     public SyncNudge Nudge { get; private set; }
@@ -198,7 +203,7 @@ public partial class PlaybackTile : UserControl
         SearchError = null;
         IsParked = false;
         _preferHik = false;
-        _zoom = DigitalZoom.None; // a new camera starts with the whole picture
+        ResetZoom(); // a new camera starts with the whole picture, zoom mode off
         EmptyFrame.Visibility = Visibility.Collapsed;
         Frame.Visibility = Visibility.Visible;
         CameraName.Text = camera.Name;
@@ -240,7 +245,7 @@ public partial class PlaybackTile : UserControl
         SearchDone = false;
         SearchError = null;
         IsParked = false;
-        _zoom = DigitalZoom.None;
+        ResetZoom();
         ShowEmpty();
     }
 
@@ -457,6 +462,7 @@ public partial class PlaybackTile : UserControl
         ClearNudge();
         StopPlayers();
         IsParked = false;
+        ResetZoom(); // Durdur ends the zoom mode (the next open shows the whole picture)
         if (Camera is not null)
         {
             SetState(TileState.Stopped, "Durduruldu\nOynat'a basın");
@@ -504,7 +510,7 @@ public partial class PlaybackTile : UserControl
         }
         var player = _hikPlayer;
         player.ShowMotionBoxes = App.Settings.ShowMotionBoxes;
-        player.Zoom = _zoom; // shown again once the picture is (OnCatchUpDone): every open is a new port
+        player.Zoom = _zoom.View; // shown again once the picture is (OnCatchUpDone): every open is a new port
         player.RequestedSpeedSteps = PlaybackSpeed.Steps(_speedIndex);
         player.RequestedPaused = _paused;
 
@@ -1184,9 +1190,10 @@ public partial class PlaybackTile : UserControl
             _panFrom = null;
             RaiseDoubleClick();
         }
-        else if (_zoom.IsZoomed && CanZoom && CaptureMouse())
+        else if (_zoom.IsZoomed && CanZoom && IsOverVideo(e) && CaptureMouse())
         {
-            _panFrom = e.GetPosition(VideoArea); // drag moves the zoomed picture
+            _panFrom = CursorPixels(); // drag moves the zoomed picture
+            Mouse.OverrideCursor = Cursors.SizeAll;
         }
     }
 
@@ -1210,30 +1217,44 @@ public partial class PlaybackTile : UserControl
 
     // ---- Digital zoom (SDK path, display only) ----
 
-    DigitalZoom _zoom = DigitalZoom.None;
-    Point? _panFrom;
+    TileZoom _zoom = TileZoom.Off;
+    Point? _panFrom;  // screen pixels
     int _zoomQueued;
 
-    /// <summary>Tool bar "Yakınlaştır": 2× on the centre, or the whole picture again. Wheel zooms, drag moves while zoomed.</summary>
+    /// <summary>
+    /// Tool bar "Yakınlaştır": switches the zoom mode on (the picture stays at 1× until the wheel turns) or off (the whole
+    /// picture again). While it is on the wheel zooms 1×–8× around the cursor (1× keeps the mode on) and a drag moves a
+    /// zoomed picture.
+    /// </summary>
     public void ToggleZoom()
     {
-        if (!_zoom.IsZoomed && !CanZoom)
+        if (!_zoom.Mode && !CanZoom)
         {
             return;
         }
         SetZoom(_zoom.Toggle());
     }
 
-    void SetZoom(DigitalZoom zoom)
+    void ResetZoom()
+    {
+        _panFrom = null;
+        SetZoom(TileZoom.Off);
+    }
+
+    void SetZoom(TileZoom zoom)
     {
         if (zoom == _zoom)
         {
             return;
         }
+        var viewChanged = zoom.View != _zoom.View;
         _zoom = zoom;
-        if (_hikPlayer is { } player)
+        // Magnifier while the mode is on (the owner's choice); the move cursor only while dragging (WPF sets it: the video
+        // window is transparent to hit testing, so WM_SETCURSOR asks the main window).
+        VideoArea.Cursor = zoom.Mode ? ZoomCursor.Magnifier : null;
+        if (viewChanged && _hikPlayer is { } player)
         {
-            player.Zoom = zoom;
+            player.Zoom = zoom.View;
             // Coalesced: a fast wheel or drag queues one apply at a time (it reads the latest zoom when it runs).
             if (Interlocked.Exchange(ref _zoomQueued, 1) == 0)
             {
@@ -1252,15 +1273,48 @@ public partial class PlaybackTile : UserControl
 
     void Tile_MouseWheel(object sender, MouseWheelEventArgs e)
     {
-        if (!_zoom.IsZoomed || !CanZoom || VideoArea.ActualWidth < 1 || VideoArea.ActualHeight < 1)
+        if (ZoomWheel(e.Delta, CursorPixels()))
         {
-            return; // the wheel zooms only once "Yakınlaştır" is on
+            e.Handled = true;
         }
-        var at = e.GetPosition(VideoArea);
-        var factor = e.Delta > 0 ? DigitalZoom.WheelStep : 1 / DigitalZoom.WheelStep;
-        SetZoom(_zoom.ZoomAt(factor, at.X / VideoArea.ActualWidth, at.Y / VideoArea.ActualHeight));
-        e.Handled = true;
     }
+
+    /// <summary>
+    /// A wheel turn with the cursor at <paramref name="screen"/> (physical pixels — taken from the cursor itself, not from
+    /// WPF's last mouse position, which the video window can leave stale). The point is mapped onto the picture with the
+    /// video area's screen rectangle (DIP size × DPI scale; PlayCtrl stretches the picture over the whole window) and the
+    /// zoom keeps that picture point under the cursor. False (unused) when the zoom mode is off or the cursor is not over
+    /// the video.
+    /// </summary>
+    bool ZoomWheel(int delta, Point screen)
+    {
+        if (!_zoom.Mode || !CanZoom || VideoPoint(screen) is not { } at)
+        {
+            return false;
+        }
+        SetZoom(_zoom.Wheel(delta, at.X, at.Y));
+        return true;
+    }
+
+    /// <summary>The cursor as 0…1 across the picture; null when it is not over the video area.</summary>
+    (double X, double Y)? VideoPoint(Point screen)
+    {
+        if (!VideoArea.IsVisible || PresentationSource.FromVisual(VideoArea) is null)
+        {
+            return null;
+        }
+        var origin = VideoArea.PointToScreen(new Point(0, 0)); // physical pixels
+        var scale = VisualTreeHelper.GetDpi(VideoArea).DpiScaleX;
+        return ZoomGeometry.ViewPoint(screen.X, screen.Y, origin.X, origin.Y, VideoArea.ActualWidth, VideoArea.ActualHeight, scale);
+    }
+
+    bool IsOverVideo(MouseEventArgs e)
+    {
+        var at = e.GetPosition(VideoArea);
+        return at.X >= 0 && at.Y >= 0 && at.X < VideoArea.ActualWidth && at.Y < VideoArea.ActualHeight;
+    }
+
+    static Point CursorPixels() => GetCursorPos(out var p) ? new Point(p.X, p.Y) : default;
 
     void Tile_MouseMove(object sender, MouseEventArgs e)
     {
@@ -1268,18 +1322,37 @@ public partial class PlaybackTile : UserControl
         {
             return;
         }
-        var now = e.GetPosition(VideoArea);
+        var now = CursorPixels();
         _panFrom = now;
-        SetZoom(_zoom.PanBy((now.X - from.X) / VideoArea.ActualWidth, (now.Y - from.Y) / VideoArea.ActualHeight));
+        var scale = VisualTreeHelper.GetDpi(VideoArea).DpiScaleX;
+        var (dx, dy) = ZoomGeometry.ViewDelta(now.X - from.X, now.Y - from.Y, VideoArea.ActualWidth, VideoArea.ActualHeight, scale);
+        SetZoom(_zoom.Pan(dx, dy));
     }
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    static extern bool GetCursorPos(out NativePoint point);
 
     void Tile_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
-        if (_panFrom is not null)
+        if (_panFrom is not null || IsMouseCaptured) // also after a double click that started as a drag
         {
             _panFrom = null;
             ReleaseMouseCapture();
         }
+        Mouse.OverrideCursor = null;
+    }
+
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        Mouse.OverrideCursor = null; // a drag ended without a button-up (Alt+Tab, another capture)
     }
 
     void Activate()
