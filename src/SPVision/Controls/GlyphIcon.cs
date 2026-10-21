@@ -30,6 +30,16 @@ public sealed class GlyphIcon : FrameworkElement
         nameof(StrokeThickness), typeof(double), typeof(GlyphIcon),
         new FrameworkPropertyMetadata(2.0, FrameworkPropertyMetadataOptions.AffectsRender));
 
+    /// <summary>Optional short text drawn inside the icon (the "30" of the seek buttons), bold, 7.5 design units high.</summary>
+    public static readonly DependencyProperty LabelProperty = DependencyProperty.Register(
+        nameof(Label), typeof(string), typeof(GlyphIcon),
+        new FrameworkPropertyMetadata(null, FrameworkPropertyMetadataOptions.AffectsRender));
+
+    /// <summary>Horizontal centre of <see cref="Label"/> in design units (baseline at 15).</summary>
+    public static readonly DependencyProperty LabelXProperty = DependencyProperty.Register(
+        nameof(LabelX), typeof(double), typeof(GlyphIcon),
+        new FrameworkPropertyMetadata(12.0, FrameworkPropertyMetadataOptions.AffectsRender));
+
     public static readonly DependencyProperty ForegroundProperty = TextElement.ForegroundProperty.AddOwner(
         typeof(GlyphIcon),
         new FrameworkPropertyMetadata(Brushes.White, FrameworkPropertyMetadataOptions.Inherits | FrameworkPropertyMetadataOptions.AffectsRender));
@@ -65,6 +75,18 @@ public sealed class GlyphIcon : FrameworkElement
         set => SetValue(StrokeThicknessProperty, value);
     }
 
+    public string? Label
+    {
+        get => (string?)GetValue(LabelProperty);
+        set => SetValue(LabelProperty, value);
+    }
+
+    public double LabelX
+    {
+        get => (double)GetValue(LabelXProperty);
+        set => SetValue(LabelXProperty, value);
+    }
+
     public Brush Foreground
     {
         get => (Brush)GetValue(ForegroundProperty);
@@ -90,6 +112,13 @@ public sealed class GlyphIcon : FrameworkElement
         if (FillData is { } fill)
         {
             dc.DrawGeometry(Foreground, null, fill);
+        }
+        if (!string.IsNullOrEmpty(Label))
+        {
+            var text = new FormattedText(Label, System.Globalization.CultureInfo.InvariantCulture, FlowDirection.LeftToRight,
+                new Typeface(new FontFamily("Segoe UI"), FontStyles.Normal, FontWeights.Bold, FontStretches.Normal),
+                7.5, Foreground, VisualTreeHelper.GetDpi(this).PixelsPerDip * scale);
+            dc.DrawText(text, new Point(LabelX - text.Width / 2, 15 - text.Baseline));
         }
         dc.Pop();
     }

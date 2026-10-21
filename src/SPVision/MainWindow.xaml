@@ -8,7 +8,7 @@
         FontFamily="{StaticResource UiFont}" FontSize="{StaticResource FontSizeBase}"
         KeyDown="Window_KeyDown">
     <DockPanel>
-        <!-- ===== Top bar, 52 px: wordmark · tabs · (live) layout, quality, actions · settings (gear = third view) ===== -->
+        <!-- ===== Top bar, 52 px: wordmark · tabs · (live) layout picker, quality, actions / (playback) layout picker · settings (gear = third view) ===== -->
         <Border x:Name="Header" DockPanel.Dock="Top" Height="52" Background="{DynamicResource BarBg}"
                 BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" Padding="12,0">
             <Grid>
@@ -31,21 +31,10 @@
                     <ToggleButton x:Name="PlaybackTab" Content="Kayıt Oynatma" Style="{StaticResource TabButton}" Click="PlaybackTab_Click" />
                 </StackPanel>
 
-                <!-- Every control here is 36 px tall: segmented groups (1 + 2 + 30 + 2 + 1) and icon buttons. -->
+                <!-- Every control here is 36 px tall: layout picker, segmented group (1 + 2 + 30 + 2 + 1) and icon buttons. -->
                 <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
                     <StackPanel x:Name="LiveTools" Orientation="Horizontal">
-                        <Border Style="{StaticResource SegmentGroup}" AutomationProperties.Name="Izgara düzeni">
-                            <StackPanel Orientation="Horizontal">
-                                <ToggleButton x:Name="Layout6" Content="6" Tag="6" Style="{StaticResource SegmentButton}" Click="Layout_Click"
-                                              ToolTip="1 büyük + 5 küçük kare" AutomationProperties.Name="6'lı ızgara" />
-                                <ToggleButton x:Name="Layout8" Content="8" Tag="8" Style="{StaticResource SegmentButton}" Click="Layout_Click" Margin="2,0,0,0"
-                                              ToolTip="1 büyük + 7 küçük kare" AutomationProperties.Name="8'li ızgara" />
-                                <ToggleButton x:Name="Layout25" Content="25" Tag="25" Style="{StaticResource SegmentButton}" Click="Layout_Click" Margin="2,0,0,0"
-                                              ToolTip="5×5" AutomationProperties.Name="25'li ızgara" />
-                                <ToggleButton x:Name="Layout32" Content="32" Tag="32" Style="{StaticResource SegmentButton}" Click="Layout_Click" Margin="2,0,0,0"
-                                              ToolTip="8×4" AutomationProperties.Name="32'li ızgara" />
-                            </StackPanel>
-                        </Border>
+                        <c:LayoutPicker x:Name="LivePicker" />
                         <Border Style="{StaticResource SegmentGroup}" Margin="12,0,0,0" AutomationProperties.Name="Görüntü kalitesi">
                             <StackPanel Orientation="Horizontal">
                                 <ToggleButton x:Name="QualityAuto" Content="Oto" Style="{StaticResource SegmentButton}" Click="QualityAuto_Click"
@@ -73,6 +62,11 @@
                                 ToolTip="Tam ekran (F11)" AutomationProperties.Name="Tam ekran (F11)">
                             <c:GlyphIcon Data="{StaticResource IconFullScreen}" />
                         </Button>
+                        <Rectangle Width="1" Height="24" Margin="12,0" Fill="{DynamicResource Border}" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <!-- Playback: layout picker limited to 16 tiles (synchronous playback). -->
+                    <StackPanel x:Name="PlaybackTools" Orientation="Horizontal" Visibility="Collapsed">
+                        <c:LayoutPicker x:Name="PlaybackPicker" />
                         <Rectangle Width="1" Height="24" Margin="12,0" Fill="{DynamicResource Border}" VerticalAlignment="Center" />
                     </StackPanel>
                     <ToggleButton x:Name="SettingsButton" Style="{StaticResource IconToggleButton}" Click="Settings_Click"
@@ -114,7 +108,7 @@
             </Grid>
         </Border>
 
-        <!-- ===== Sidebar, 260 px, 10 px padding on every side ===== -->
+        <!-- ===== Sidebar (live view), 260 px, 10 px padding on every side. Playback has its own, equally wide. ===== -->
         <Border x:Name="SidePanel" DockPanel.Dock="Left" Width="260" Background="{DynamicResource BarBg}"
                 BorderBrush="{DynamicResource Border}" BorderThickness="0,0,1,0">
             <DockPanel>

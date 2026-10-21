@@ -133,7 +133,7 @@ public partial class VideoTile : UserControl
         }
     }
 
-    /// <summary>Small tiles (25/32 layouts) use the 22 px header, large ones 26 px.</summary>
+    /// <summary>Small tiles (layouts of 16 tiles or more) use the 22 px header, the others 26 px.</summary>
     public bool IsCompact
     {
         get => _compact;

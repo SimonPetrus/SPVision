@@ -48,6 +48,12 @@ public partial class MainWindow : Window
         DarkTitleBar.Attach(this);
         Live.StateChanged += LiveStateChanged;
         Live.Message += ShowMessage;
+        LivePicker.LayoutSelected += Live.SelectLayout;
+        PlaybackPicker.SetLayouts(GridLayout.PlaybackStandard, GridLayout.PlaybackBigTile);
+        PlaybackPicker.Current = Playback.Layout;
+        PlaybackPicker.LayoutSelected += Playback.SelectLayout;
+        Playback.StateChanged += PlaybackStateChanged;
+        Playback.Message += ShowMessage;
         SettingsPanel.Message += ShowMessage;
         SettingsPanel.LiveStateOf = DeviceLiveState;
         SettingsPanel.DeviceSaved += DeviceSaved;
@@ -74,7 +80,7 @@ public partial class MainWindow : Window
         {
             _statusTimer.Stop();
             Live.StopAll();
-            Playback.Stop();
+            Playback.Shutdown();
         };
         Loaded += (_, _) =>
         {
@@ -269,14 +275,7 @@ public partial class MainWindow : Window
         {
             return;
         }
-        if (_section == MainSection.Playback)
-        {
-            Playback.SelectCamera(source);
-        }
-        else
-        {
-            Live.ShowCamera(source);
-        }
+        Live.ShowCamera(source); // this list belongs to the live view; playback has its own
         e.Handled = true;
     }
 
@@ -333,6 +332,7 @@ public partial class MainWindow : Window
         }
         DevicesChanged();
         Live.ReloadDevice(device);
+        Playback.ReloadDevice(device);
         if (App.Settings.Devices.Count == 1 && Live.VisibleTiles.All(t => t.Camera is null))
         {
             ShowLive(device); // first device (e.g. first run): show its cameras right away
@@ -342,6 +342,7 @@ public partial class MainWindow : Window
     void DeviceRemoved(Device device)
     {
         Live.RemoveDevice(device.Id);
+        Playback.RemoveDevice(device.Id);
         HikSession.Find(device.Id)?.Dispose();
         DevicesChanged();
     }
@@ -386,11 +387,7 @@ public partial class MainWindow : Window
 
     void LiveStateChanged()
     {
-        var layout = Live.LayoutTileCount.ToString(CultureInfo.InvariantCulture);
-        foreach (var button in new[] { Layout6, Layout8, Layout25, Layout32 })
-        {
-            button.IsChecked = (string)button.Tag == layout;
-        }
+        LivePicker.Current = Live.Layout;
         var quality = Live.GlobalQuality;
         QualityAuto.IsChecked = quality is null;
         QualityHd.IsChecked = quality == StreamQuality.Main;
@@ -406,7 +403,14 @@ public partial class MainWindow : Window
         UpdateStatusBar();
     }
 
-    void Layout_Click(object sender, RoutedEventArgs e) => Live.SelectLayout(int.Parse((string)((ToggleButton)sender).Tag, CultureInfo.InvariantCulture));
+    void PlaybackStateChanged()
+    {
+        PlaybackPicker.Current = Playback.Layout;
+        if (_section == MainSection.Playback)
+        {
+            UpdateStatusBar();
+        }
+    }
 
     void QualityAuto_Click(object sender, RoutedEventArgs e) => Live.SelectQuality(null);
 
@@ -422,12 +426,21 @@ public partial class MainWindow : Window
 
     // ---- Status bar ----
 
+    /// <summary>What the status bar needs of one tile, live or playback.</summary>
+    readonly record struct TileInfo(Device Device, CameraRef Source, TileState State, bool UsesSdk, bool IsReconnecting);
+
+    /// <summary>Connection, cameras on screen and video path of the shown view (Settings: the live wall, which keeps running).</summary>
     void UpdateStatusBar()
     {
-        var tiles = Live.VisibleTiles.Where(t => t.Device is not null).ToList();
+        var playback = _section == MainSection.Playback;
+        var tiles = playback
+            ? Playback.VisibleTiles.Where(t => t.Device is not null)
+                .Select(t => new TileInfo(t.Device!, t.Source!, t.State, t.UsesSdk, false)).ToList()
+            : Live.VisibleTiles.Where(t => t.Device is not null)
+                .Select(t => new TileInfo(t.Device!, t.Source!, t.State, t.UsesSdk, t.IsReconnecting)).ToList();
 
         // Connection: the device of the selected tile (or the first one) and how its streams are doing.
-        var device = Live.SelectedDevice ?? tiles.FirstOrDefault()?.Device ?? App.Settings.Devices.FirstOrDefault();
+        var device = (playback ? null : Live.SelectedDevice) ?? tiles.FirstOrDefault().Device ?? App.Settings.Devices.FirstOrDefault();
         if (device is null)
         {
             ConnectionDot.SetResourceReference(Shape.FillProperty, "Offline");
@@ -435,20 +448,22 @@ public partial class MainWindow : Window
         }
         else
         {
-            var own = tiles.Where(t => t.Device!.Id == device.Id).ToList();
+            var own = tiles.Where(t => t.Device.Id == device.Id).ToList();
             var (dot, state) =
                 own.Any(t => t.State == TileState.Playing) ? ("Online", "Bağlı") :
                 own.Any(t => t.State == TileState.Connecting) ? ("Warning", "Bağlanıyor…") :
                 own.Any(t => t.State == TileState.Failed) ? ("Danger", "Bağlantı yok") :
                 ("Offline", "Görüntü açık değil");
             ConnectionDot.SetResourceReference(Shape.FillProperty, dot);
-            var others = tiles.Select(t => t.Device!.Id).Distinct().Count(id => id != device.Id);
+            var others = tiles.Select(t => t.Device.Id).Distinct().Count(id => id != device.Id);
             ConnectionText.Text = others > 0 ? $"{state} · {device.Name} (+{others} cihaz)" : $"{state} · {device.Name}";
         }
 
-        var total = App.Settings.Devices.Sum(d => d.Cameras.Count);
         var onScreen = tiles.Select(t => t.Source).Distinct().Count();
-        OnScreenText.Text = $"{onScreen} / {total} kamera ekranda";
+        var total = App.Settings.Devices.Sum(d => d.Cameras.Count);
+        OnScreenText.Text = playback
+            ? $"{onScreen} kamera eş zamanlı · {Playback.Day.ToString("dd.MM.yyyy", Turkish)}"
+            : $"{onScreen} / {total} kamera ekranda";
 
         var reconnecting = tiles.Count(t => t.IsReconnecting);
         ReconnectPanel.Visibility = reconnecting > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -499,7 +514,8 @@ public partial class MainWindow : Window
 
     /// <summary>
     /// Shows one of the three views. The live wall keeps streaming behind the other two (it is only hidden);
-    /// playback stops when it is left. The camera sidebar belongs to live/playback, Settings has its own nav.
+    /// playback stops when it is left and resumes (same cameras, day and time) when it is shown again. The camera
+    /// sidebar belongs to the live view; playback has its own (calendar + camera list), Settings its own nav.
     /// </summary>
     void SelectSection(MainSection section)
     {
@@ -513,13 +529,18 @@ public partial class MainWindow : Window
         PlaybackTab.IsChecked = section == MainSection.Playback;
         SettingsButton.IsChecked = section == MainSection.Settings;
         LiveTools.Visibility = section == MainSection.Live ? Visibility.Visible : Visibility.Collapsed;
-        SidePanel.Visibility = section == MainSection.Settings || _fullScreen ? Visibility.Collapsed : Visibility.Visible;
+        PlaybackTools.Visibility = section == MainSection.Playback ? Visibility.Visible : Visibility.Collapsed;
+        SidePanel.Visibility = section != MainSection.Live || _fullScreen ? Visibility.Collapsed : Visibility.Visible;
         Live.Visibility = section == MainSection.Live ? Visibility.Visible : Visibility.Collapsed;
         Playback.Visibility = section == MainSection.Playback ? Visibility.Visible : Visibility.Collapsed;
         SettingsPanel.Visibility = section == MainSection.Settings ? Visibility.Visible : Visibility.Collapsed;
         if (previous == MainSection.Playback && section != MainSection.Playback)
         {
             Playback.Stop();
+        }
+        else if (section == MainSection.Playback && previous != MainSection.Playback)
+        {
+            Playback.Activate();
         }
         if (section == MainSection.Settings && previous != MainSection.Settings)
         {
@@ -529,13 +550,15 @@ public partial class MainWindow : Window
         {
             SettingsPanel.Close();
         }
+        UpdateStatusBar();
     }
 
     void ToggleFullScreen()
     {
         _fullScreen = !_fullScreen;
         Header.Visibility = StatusBar.Visibility = _fullScreen ? Visibility.Collapsed : Visibility.Visible;
-        SidePanel.Visibility = _fullScreen || _section == MainSection.Settings ? Visibility.Collapsed : Visibility.Visible;
+        SidePanel.Visibility = _fullScreen || _section != MainSection.Live ? Visibility.Collapsed : Visibility.Visible;
+        Playback.SidebarVisible = !_fullScreen;
         if (_fullScreen)
         {
             _stateBeforeFullScreen = WindowState;

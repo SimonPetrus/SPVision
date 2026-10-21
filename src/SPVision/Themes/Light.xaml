@@ -91,10 +91,4 @@
     <SolidColorBrush x:Key="WallLine" Color="{StaticResource WallLineColor}" />
     <SolidColorBrush x:Key="ScrimBg" Color="{StaticResource ScrimColor}" />
     <SolidColorBrush x:Key="FlashBg" Color="{StaticResource FlashColor}" />
-
-    <!-- Aliases used by views that are not redesigned yet (playback) -->
-    <SolidColorBrush x:Key="PanelBg" Color="{StaticResource BarColor}" />
-    <SolidColorBrush x:Key="PanelBorder" Color="{StaticResource BorderColor}" />
-    <SolidColorBrush x:Key="MutedFg" Color="{StaticResource TextSecondaryColor}" />
-    <SolidColorBrush x:Key="AccentSoft" Color="{StaticResource SelectedColor}" />
 </ResourceDictionary>

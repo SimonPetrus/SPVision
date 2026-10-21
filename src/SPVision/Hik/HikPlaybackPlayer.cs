@@ -8,7 +8,12 @@ namespace SPVision.Hik;
 /// PlayCtrl (same SYSHEAD pipeline as live view). Timeline position comes from
 /// NET_DVR_PlayBackControl_V40(NET_DVR_PLAYGETTIME); seeks re-issue PlayBackByTime_V40
 /// (PLAYSETTIME support varies by device, a fresh open is always reliable).
-/// Callbacks arrive on SDK threads; UI code must dispatch.
+/// Speed and pause are "requested state" (<see cref="RequestedSpeedSteps"/>, <see cref="RequestedPaused"/>)
+/// that <see cref="SyncControls"/> applies idempotently: the recorder side with NET_DVR_PLAYFAST /
+/// NET_DVR_PLAYSLOW (one speed step each) and NET_DVR_PLAYPAUSE / NET_DVR_PLAYRESTART, the local
+/// PlayCtrl port with the matching PlayM4_Fast / PlayM4_Slow / PlayM4_Pause so it consumes the data at
+/// the same rate. A fresh open always starts at normal speed, so the steps are counted from there.
+/// Callbacks arrive on SDK threads; UI code must dispatch. Control calls block: call them off the UI thread.
 /// </summary>
 public sealed class HikPlaybackPlayer : IDisposable
 {
@@ -19,6 +24,7 @@ public sealed class HikPlaybackPlayer : IDisposable
     int _port = -1;
     bool _saving;
     bool _paused;
+    int _appliedSteps;          // speed steps applied to the current handle (0 = normal)
     volatile bool _started;
     volatile bool _disposed;
 
@@ -44,6 +50,11 @@ public sealed class HikPlaybackPlayer : IDisposable
 
     public bool IsSaving { get { lock (_lock) return _saving; } }
     public bool IsPaused { get { lock (_lock) return _paused; } }
+
+    /// <summary>Wanted speed relative to normal: +n = n × PLAYFAST (2^n ×), −n = n × PLAYSLOW (2^−n ×).</summary>
+    public int RequestedSpeedSteps { get; set; }
+
+    public bool RequestedPaused { get; set; }
     public bool IsDisposed => _disposed;
 
     /// <summary>Opens playback for an absolute time range; hWnd is the window PlayCtrl draws into.</summary>
@@ -55,6 +66,7 @@ public sealed class HikPlaybackPlayer : IDisposable
         {
             _started = false;
             _paused = false;
+            _appliedSteps = 0;
             _callback = OnPlayData;
             streamKeyPending = string.IsNullOrEmpty(streamKey) ? null : streamKey;
             windowHandlePending = hWnd.ToInt32();
@@ -133,35 +145,58 @@ public sealed class HikPlaybackPlayer : IDisposable
         }
     }
 
-    public bool Pause()
+    /// <summary>
+    /// Brings speed and pause of the running playback to <see cref="RequestedSpeedSteps"/> /
+    /// <see cref="RequestedPaused"/>. Safe to call any number of times (only the difference is sent) and
+    /// from any thread; before the first frame it does nothing (call it again on <see cref="Started"/>).
+    /// Blocking (the recorder is asked over the network). Throws <see cref="HikException"/> when the
+    /// recorder refuses a command.
+    /// </summary>
+    public void SyncControls()
     {
         lock (_lock)
         {
-            if (_playHandle < 0 || _paused) return _paused;
-            if (!Control(_playHandle, HikNative.PlayPause))
-                throw HikException.LastError("Duraklatılamadı");
-            _paused = true;
-            return true;
+            if (_playHandle < 0 || _port < 0 || !_started)
+            {
+                return;
+            }
+            var target = Math.Clamp(RequestedSpeedSteps, -4, 4);
+            while (_appliedSteps < target)
+            {
+                if (!Control(_playHandle, HikNative.PlayFast))
+                    throw HikException.LastError("Hızlandırılamadı");
+                HikNative.PlayM4_Fast(_port);
+                _appliedSteps++;
+            }
+            while (_appliedSteps > target)
+            {
+                if (!Control(_playHandle, HikNative.PlaySlow))
+                    throw HikException.LastError("Yavaşlatılamadı");
+                HikNative.PlayM4_Slow(_port);
+                _appliedSteps--;
+            }
+            var pause = RequestedPaused;
+            if (pause != _paused)
+            {
+                if (!Control(_playHandle, pause ? HikNative.PlayPause : HikNative.PlayRestart))
+                    throw HikException.LastError(pause ? "Duraklatılamadı" : "Devam ettirilemedi");
+                HikNative.PlayM4_Pause(_port, pause ? 1u : 0u);
+                _paused = pause;
+            }
         }
     }
 
-    public bool Resume()
-    {
-        lock (_lock)
-        {
-            if (_playHandle < 0) return false;
-            if (!_paused) return true;
-            if (!Control(_playHandle, HikNative.PlayRestart))
-                throw HikException.LastError("Devam ettirilemedi");
-            _paused = false;
-            return true;
-        }
-    }
-
-    /// <summary>Recorder wall-clock time of the frame on screen; null when not playing.</summary>
+    /// <summary>
+    /// Recorder wall-clock time of the frame on screen; null when not playing, or when an open or control
+    /// command is in progress (the UI asks often and must never wait for the network).
+    /// </summary>
     public DateTime? GetTime()
     {
-        lock (_lock)
+        if (!Monitor.TryEnter(_lock, 20))
+        {
+            return null;
+        }
+        try
         {
             if (_playHandle < 0) return null;
             var time = new HikNative.DvrTime();
@@ -179,6 +214,10 @@ public sealed class HikPlaybackPlayer : IDisposable
             {
                 Marshal.FreeHGlobal(ptr);
             }
+        }
+        finally
+        {
+            Monitor.Exit(_lock);
         }
     }
 
@@ -246,8 +285,9 @@ public sealed class HikPlaybackPlayer : IDisposable
     {
         try
         {
-            int port;
-            lock (_lock) port = _port;
+            // No lock on the hot path: control calls (which hold the lock while the recorder answers)
+            // must never stall the SDK's data thread.
+            int port = Volatile.Read(ref _port);
 
             if (dataType == HikNative.SysHead)
             {

@@ -68,7 +68,7 @@ public sealed class SavedView
 {
     public string Name { get; set; } = "";
 
-    /// <summary>Tile count of the <see cref="GridLayout"/> (6, 8, 25 or 32).</summary>
+    /// <summary>Tile count of the <see cref="GridLayout"/> (1, 4, 6, 7, 8, 9, 10, 13, 16, 22, 25 or 36; a legacy 32 opens as 36).</summary>
     public int? Layout { get; set; }
 
     /// <summary>Legacy (1/4/9/16 grids): column count of a square grid. Only read to migrate old settings.</summary>

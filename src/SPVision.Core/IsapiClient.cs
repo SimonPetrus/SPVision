@@ -115,6 +115,17 @@ public sealed class IsapiClient : IDisposable
         return result;
     }
 
+    /// <summary>
+    /// Whether the camera has any recording in the range: the same read-only search as
+    /// <see cref="SearchRecordingsAsync"/>, asking for a single result (calendar day marks).
+    /// </summary>
+    public async Task<bool> HasRecordingsAsync(int channel, DateTime from, DateTime to, CancellationToken ct = default)
+    {
+        var body = BuildSearchRequest(Guid.NewGuid().ToString().ToUpperInvariant(), StreamUrls.TrackId(channel, StreamQuality.Main), from, to, 0, 1);
+        var (segments, _) = ParseSearchResult(await PostXmlAsync("ISAPI/ContentMgmt/search", body, ct));
+        return segments.Count > 0;
+    }
+
     async Task<XDocument> GetXmlAsync(string path, CancellationToken ct)
     {
         using var response = await SendAsync(new HttpRequestMessage(HttpMethod.Get, path), ct);

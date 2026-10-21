@@ -1,0 +1,82 @@
+<UserControl x:Class="SPVision.Controls.PlaybackTile"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:fl="clr-namespace:FlyleafLib.Controls.WPF;assembly=FlyleafLib"
+             xmlns:local="clr-namespace:SPVision.Controls"
+             Focusable="True" FocusVisualStyle="{x:Null}"
+             MouseLeftButtonDown="Tile_MouseLeftButtonDown">
+    <!-- Same chrome as the live tile (VideoTile): 2 px margin here + 2 px around the grid = 4 px gutter and gaps. -->
+    <Grid x:Name="LayoutRoot" Margin="2" Background="{StaticResource HitTestBg}">
+        <!-- Empty tile: dashed outline on the (always dark) wall. -->
+        <Grid x:Name="EmptyFrame">
+            <Rectangle RadiusX="3" RadiusY="3" StrokeThickness="1" StrokeDashArray="4 3"
+                       Stroke="{DynamicResource WallLine}" SnapsToDevicePixels="True" />
+            <TextBlock Text="Listeden kamera seçin" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{DynamicResource WallText}" FontSize="{StaticResource FontSizeStatus}"
+                       TextTrimming="CharacterEllipsis" Margin="8,0" />
+        </Grid>
+
+        <!-- Tile with a camera: header strip (WPF) above the video host (HWND); nothing overlaps the video. -->
+        <Border x:Name="Frame" Visibility="Collapsed" Background="{DynamicResource TileBg}" BorderThickness="1"
+                BorderBrush="{DynamicResource TileBorder}" CornerRadius="3" SnapsToDevicePixels="True">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="HeaderRow" Height="26" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border x:Name="Header" Background="{DynamicResource TileHeaderBg}" BorderBrush="{DynamicResource Border}"
+                        BorderThickness="0,0,0,1" Padding="8,0" CornerRadius="2,2,0,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Ellipse x:Name="StatusDot" Style="{StaticResource StatusDot}" Margin="0,0,6,0" />
+                        <TextBlock x:Name="CameraName" Grid.Column="1" FontWeight="SemiBold" FontSize="{StaticResource FontSizeTile}"
+                                   Foreground="{DynamicResource TextFg}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        <TextBlock x:Name="StateText" Grid.Column="2" Foreground="{DynamicResource WarningText}"
+                                   FontSize="{StaticResource FontSizeSmall}" VerticalAlignment="Center" Margin="6,0,0,0"
+                                   Visibility="Collapsed" />
+                        <Border x:Name="ClipBadge" Grid.Column="3" Background="{DynamicResource Danger}" CornerRadius="3" Padding="5,1"
+                                Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="5" Height="5" Fill="{DynamicResource SelectedFg}" VerticalAlignment="Center" Margin="0,0,4,0" />
+                                <TextBlock Text="KLİP" FontSize="{StaticResource FontSizeBadge}" FontWeight="Bold"
+                                           Foreground="{DynamicResource SelectedFg}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                        <Border Grid.Column="4" BorderBrush="{DynamicResource BadgeBorder}" BorderThickness="1"
+                                CornerRadius="3" Padding="5,0" Margin="6,0,0,0" VerticalAlignment="Center"
+                                ToolTip="Kayıtlar ana akıştan oynatılır">
+                            <TextBlock Text="HD" FontSize="{StaticResource FontSizeBadge}" FontWeight="Bold"
+                                       Foreground="{DynamicResource IconFg}" />
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <Grid Grid.Row="1" Background="{DynamicResource VideoBg}">
+                    <!-- Shown only while the video hosts are hidden (no recording / failed) -->
+                    <TextBlock x:Name="MessageText" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
+                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="12"
+                               Foreground="{DynamicResource WallText}" FontSize="{StaticResource FontSizeStatus}" />
+                    <Grid x:Name="VideoLayer">
+                        <!-- SDK path: plain child HWND PlayCtrl draws into (encrypted recordings) -->
+                        <local:HikVideoHost x:Name="HikHost" Visibility="Collapsed" />
+                        <!-- FFmpeg path (unencrypted recordings) -->
+                        <fl:FlyleafHost x:Name="Host"
+                                        KeyBindings="None" MouseBindings="None"
+                                        ToggleFullScreenOnDoubleClick="None"
+                                        PanMoveOnCtrl="None" PanZoomOnCtrlWheel="None" PanRotateOnShiftWheel="None"
+                                        AttachedDragMove="None" DetachedDragMove="None" AttachedResize="None" DetachedResize="None"
+                                        OpenOnDrop="None" SwapOnDrop="None" SwapDragEnterOnShift="None"
+                                        BringToFrontOnClick="False" VideoBackground="{StaticResource VideoBg}" />
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

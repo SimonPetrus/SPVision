@@ -60,8 +60,8 @@ public partial class LiveView : UserControl
     /// </summary>
     public event Action? StateChanged;
 
-    /// <summary>Tile count of the current layout (6, 8, 25 or 32).</summary>
-    public int LayoutTileCount => _layout.TileCount;
+    /// <summary>Current layout (any of <see cref="GridLayout.All"/>).</summary>
+    public GridLayout Layout => _layout;
 
     /// <summary>null = automatic per tile size, otherwise forced for every tile.</summary>
     public StreamQuality? GlobalQuality => App.Settings.LiveQuality;
@@ -189,8 +189,8 @@ public partial class LiveView : UserControl
         }
     }
 
-    /// <summary>Top bar: 6/8/25/32 segmented group.</summary>
-    public void SelectLayout(int tileCount) => SetLayout(GridLayout.Fitting(tileCount));
+    /// <summary>Top bar: layout picker.</summary>
+    public void SelectLayout(GridLayout layout) => SetLayout(layout);
 
     /// <summary>Top bar: Oto/HD/SD segmented group.</summary>
     public void SelectQuality(StreamQuality? quality) => SetGlobalQuality(quality);
@@ -303,8 +303,9 @@ public partial class LiveView : UserControl
     void ArrangeTiles()
     {
         ResetGrid(_layout.Columns, _layout.Rows);
-        // 25/32 tiles are small: slimmer 22 px header strip; 6/8 use 26 px.
-        var compact = _layout.TileCount >= 25;
+        // From 16 tiles on they are small: slimmer 22 px header strip; fewer tiles use 26 px. One height per layout,
+        // so the headers of neighbouring tiles always line up.
+        var compact = _layout.TileCount >= 16;
         for (var i = 0; i < _layout.TileCount; i++)
         {
             _tiles[i].IsCompact = compact;
@@ -338,7 +339,7 @@ public partial class LiveView : UserControl
 
     /// <summary>
     /// Small tiles use the sub stream, large ones the main stream — decided per tile from the height of
-    /// its video area (the header strip is not video), so the large tile of the 6/8 layouts can get HD
+    /// its video area (the header strip is not video), so the big tiles of the "büyük kareli" layouts can get HD
     /// while its neighbours stay SD. The old client always pulled main streams, which is what kept a CPU
     /// core busy.
     /// </summary>
@@ -365,7 +366,7 @@ public partial class LiveView : UserControl
         SetGlobalQuality(App.Settings.LiveQuality);
         // "Açılışta son görünümü geri yükle" off: start with the default layout and empty tiles.
         var view = App.Settings.RestoreLastView ? App.Settings.LastView : null;
-        // Settings from the 1/4/9/16 era map to the smallest layout that holds as many tiles.
+        // A saved 32 opens as 36; settings from the 1/4/9/16 era keep their old mapping (GridLayout.ForSavedView).
         SetLayout(GridLayout.ForSavedView(view));
         if (view is null)
         {
