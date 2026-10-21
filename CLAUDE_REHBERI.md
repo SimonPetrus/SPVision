@@ -226,16 +226,52 @@ dotnet run --project src\SPVision
   göstermez (SDK'nın istenen başlangıçtan tahmini; pencere verilmezse hata 12 döner), bu yüzden sapma düzeltmesi hiç
   görmedi. `NET_DVR_PLAYSETTIME` (26) çalışan tutamaçta görünür bir şey değiştirmedi. **Kural:** SDK karesinin zamanı
   **daima** kendi portumuzdan `PlayM4_GetSystemTime` (akıştaki mutlak zaman = kameranın OSD'si, ms'li, yerel çağrı) ile
-  okunur; `PLAYGETTIME` yalnız yedektir. İlk karenin zamanı bilinince (`HikPlaybackPlayer.FirstFrameTime`) kare
+  okunur; `PLAYGETTIME` yalnız yedektir. İlk karenin zamanı bilinince kare
   [`PlaybackStart.IsWrong`](src/SPVision.Core/PlaybackSync.cs) ile denetlenir: istenenden 30 sn'den erken ise yanlış başlangıçtır,
   kare hemen (ortak saatin ilerlediği kadar ileriye) yeniden açılır ("Konum düzeltiliyor…", en çok 2 kez). Doğru bir açılış da
-  istenen saatten **önceki anahtar kareden** başlar (sondada 00:00:00 için 23:59:56,8; 12:30:00 için 12:29:58,4). Denetim
-  bitene kadar karenin `CurrentTime`'ı yoktur (ortak saat yanlış zamana çekilmez; 4 sn içinde zaman gelmezse yedek kullanılır).
-  Sapma: SDK karelerinde [`PlaybackSync.Decide`](src/SPVision.Core/PlaybackSync.cs) (dürtme aşırı yüklemesi) birkaç saniyelik
+  istenen saatten **önceki anahtar kareden** başlar (sondada 00:00:00 için 23:59:56,19 = 3,8 sn önce; 12:30:00 için 12:29:57,75;
+  bu kamerada GOP ~6,7 sn).
+- **"İstenen saatten öncesi asla görünmez" kuralı (21.10.2026, cihazda okuma sondasıyla ölçüldü; uygulamada elle denenmedi):**
+  Eski hata: takvimde güne çift tıklayınca kare önce **önceki günün 23:59:56'sını** (kameranın OSD'si, görüntüye yakılı) ~4 sn
+  normal hızda oynatıyordu; ortak saat/çizelge `ClampDay` sayesinde 00:00'ın altına inmiyordu ama 12:30 gibi gün içi aramalarda
+  odak karesinin zamanını izleyerek 12:29:57'yi de gösterebiliyordu. Dosya başından açılışta (23:11) yanlış görüntü yeniden
+  açılana kadar görünüyordu. **Şimdi (SDK yolu):** her açılışta (`SeekCore` → `OpenHik`: takvim, çizelge, ±30 sn, "Saate git",
+  sapma düzeltmesi, Durdur sonrası Oynat) `HikVideoHost` **`Visibility.Hidden`** olur (HWND ve boyutu kalır, PlayCtrl çizmeye
+  devam eder, kullanıcı görmez; başlıkta "Bağlanıyor…"). `Started` → karenin `_sdkGate` kuyruğunda `HikPlaybackPlayer.CatchUp`:
+  5 ms'de bir yerel `PlayM4_GetSystemTime` (bizim port + `NET_DVR_GetPlayBackPlayerIndex` ile SDK'nın aynı pencereye çizen kendi
+  portu), karar saf Core [`PlaybackCatchUp.Decide`](src/SPVision.Core/PlaybackSync.cs) (birim testli): istenen saatten 1 sn'den
+  (`SlowLead`) fazla gerideyse **4×** (`Steps` = 2: kayıt cihazına 2 × `PLAYFAST` + portumuza 2 × `PlayM4_Fast`; **8× ve üstünde
+  kayıt cihazı yalnız anahtar kare gönderir** — sondada 23:59:56 → 00:00:02,9 → 00:00:09,6 atladı — bu yüzden 4×), son saniye
+  normal hızda (yavaşlatma ~250 ms geç işler: 4×'te 1,1 sn kayıt), **iki port da istenen saat + 120 ms'yi** (`Margin`) geçince
+  paylaşılan hız/duraklat uygulanır (duraklatılmışsa duraklatma burada), pencere gösterilir (`OnCatchUpDone`; ardından
+  `PlayM4_RefreshPlay` — duraklatılmış görüntü yeniden gösterilen pencerede siyah kalmasın), kare `Playing` olur ve ancak o
+  zaman `CurrentTime` verir. Ölçüm: 3,8 sn geride → ~1,0–1,3 sn gizli, 2,2 sn → ~0,9 sn; görünen ilk kare T+0,5–0,6 sn, sonra
+  düz 1×. 4 sn içinde zaman gelmezse (`TimeWait`) ya da 10 sn'de (`Limit`) yetişemezse yine gösterilir. Yakalama sürerken
+  anlık görüntü ve **klip başlatılamaz** (`IsCaughtUp`/`_timeVerified`; `HikFrameRecorder` istenen saatten önceki kareyi
+  kaydetmez), dürtme yapılmaz (`CanNudge`), kullanıcının hız/duraklat komutları kuyrukta yakalamadan sonra uygulanır; yeni arama /
+  park / durdurma / kapanış yakalamayı nesil numarasıyla keser. `UsesSdk` artık `HikHost.Visibility != Collapsed`'dır (gizli de
+  SDK yoludur). Ortak saat: `PlaybackView._seekFloor` = son istenen saat; saat odaklı kareyi yalnız
+  `PlaybackCatchUp.MayFollow` (≥ taban) ise izler, böylece saat/çizelge/"Saate git" istenen saatten öncesini hiç göstermez.
+  **Flyleaf (şifresiz RTSP) yolunda bu yapılamaz:** FFmpeg karelerin mutlak zamanını vermez (zaman `_openedAt + CurTime`
+  tahminidir), kayıt cihazının anahtar kareden başlattığı birkaç saniye OSD'de görünebilir; saat yine tabanın altına inmez.
+  **Bilinen yan durum (sondada görüldü, eskiden de vardı):** pencereye iki çizici çizer (bizim port + SDK'nın portu); her hız
+  değişiminden sonra aralarında ~0,1–0,4 sn fark kalabilir. Tamamen gidermek için SDK'ya ayrı gizli bir pencere vermek gerekir
+  (`VodPara.Wnd`); yapılmadı.
+- Sapma: SDK karelerinde [`PlaybackSync.Decide`](src/SPVision.Core/PlaybackSync.cs) (dürtme aşırı yüklemesi) birkaç saniyelik
   farkı **yeniden açmadan** düzeltir: geride → bir hız adımı hızlı (`CatchUp`), önde → duraklat (`Hold`), 0,5 sn içine
   gelince eski hız (`Resume`); her tik (250 ms) denetlenir. 20 sn'den (1× üstünde hızla orantılı) fazla fark ya da 25 sn'de
   sonuç vermeyen dürtme yeniden açılır. Odaklı kare (referans) ve Flyleaf kareleri dürtülmez (eski kural: 2 sn → yeniden aç).
-  Kullanıcı hız/duraklat/arama yapınca dürtme biter.
+  Kullanıcı hız/duraklat/arama yapınca dürtme biter. Yakalama süren (gizli, `Connecting`) kare denetlenmez.
+- **Durdur düğmesi (21.10.2026, cihazda denenmedi):** kontrol çubuğunda Oynat'ın hemen sağında, aynı stil
+  (`PlayerAccentButton` 30×30, 4 px aralık), simge `IconStop` (Segoe Fluent Icons E71A'nın şekli: 11×11 yuvarlak köşeli dolu
+  kare, uygulamanın simgeleri gibi geometri), ipucu/ad "Durdur", AutomationId `PlaybackStop`. Sol grup 132 px, sağ grup 98 px;
+  yan sütunlar eşit `*` olduğu için orta grup tam ortada kalır. Kural saf Core [`PlaybackTransport`](src/SPVision.Core/PlaybackSync.cs)
+  (birim testli; `NoTime / Playing / Paused / Stopped`): Durdur yalnız oynarken/duraklatılmışken ve karede kamera varken etkin;
+  basınca saat durur (`_stopped`, `Master` = `_anchor`, çizelge imleci yerinde), her kare `PlaybackTile.Stop()`: klip bitirilir
+  ("Klip kaydedildi/kaydedilemedi" yine gelir), akış karenin `_sdkGate` kuyruğunda kapanır (UI beklemez), kamera kalır, kare
+  "Durduruldu · Oynat'a basın" der; bilgi çubuğunda "Durduruldu", Oynat simgesi. Oynat (`Restart`) = tüm kareler saklanan saate
+  `StartAt` (yukarıdaki gizli yakalama kuralıyla). Durdurulmuşken kareler kendiliğinden açılmaz (`TilesJoin`: eklenen kamera,
+  biten arama, görünüme dönüş, sapma döngüsü); arama (çizelge, ±30 sn, "Saate git") ve gün seçimi/çift tık oynatmayı yeniden başlatır.
 - **Hareket kutuları** (kayıt cihazının akışla gönderdiği yeşil hareket / akıllı analiz kutuları) PlayCtrl'ün
   "private data" çizimidir. Aç/kapa: `PlayM4_RenderPrivateData(port, tip, BOOL)` (plaympeg4.h); canlıda ek olarak
   `NET_DVR_RenderPrivateData(realHandle, tip, BOOL)` (HCNetSDK.h; RealPlay'e pencere de verildiği için SDK'nın kendi
@@ -330,7 +366,7 @@ dotnet run --project src\SPVision
 | `Controls/RoundedClip.cs` | Yuvarlak köşeli kartın içindeki satır arka planlarını köşeden taşırmadan kırpar |
 | `Views/LiveView.xaml(.cs)` | 1–36 kareli ızgara (düzen tanımı: Core `GridLayout`; kayıtlı 32 → 36), sayfalar (Core `LivePages`, `Sync`), sürükle-bırak/kare takası, düzeni + sayfayı kaydet/geri yükle; durumu `StateChanged`/`Message` ile ana pencereye bildirir |
 | `Controls/VideoTile.xaml(.cs)` | Tek kamera karesi — **çift yol** (Flyleaf/SDK), başlık şeridi + video alanı (Popup yok), yeniden bağlanma (3/10/30 sn), kayıt + anlık görüntü |
-| `Views/PlaybackView.xaml(.cs)` | Eş zamanlı kayıt oynatma — takvim + kamera listesi, bilgi çubuğu, ≤16 `PlaybackTile`, kontrol çubuğu (oynat/anlık görüntü/klip · 30 sn geri/ileri + "Saate git" · hız), zaman çizelgesi; eşitleme döngüsü |
+| `Views/PlaybackView.xaml(.cs)` | Eş zamanlı kayıt oynatma — takvim + kamera listesi, bilgi çubuğu, ≤16 `PlaybackTile`, kontrol çubuğu (oynat/durdur/anlık görüntü/klip · 30 sn geri/ileri + "Saate git" · hız), zaman çizelgesi; eşitleme döngüsü |
 | `Controls/PlaybackTile.xaml(.cs)` | Oynatma karesi: çift yol (SDK/Flyleaf), park, hız/duraklat, anlık görüntü, klip |
 | `Controls/LayoutPicker.xaml(.cs)`, `LayoutDiagram.cs`, `TransientPopup.cs` | Düzen seçici, mini diyagram, geçici Popup kuralları |
 | `Controls/TimelineBar.cs` | 50 px zaman çizelgesi (odaklı kamera): kutu, iz, oynatma başı; etiketler kutudan taşmaz (00:00 sola, 24:00 sağa yaslı); tık = ara, tekerlek/−/+ = yakınlaştır |
@@ -339,7 +375,7 @@ dotnet run --project src\SPVision
 | `Hik/HikSdk.cs` | Init/Cleanup, exception callback, `Available` |
 | `Hik/HikSession.cs` | Cihaz başına tek login; `SdkChannel()` çevirisi |
 | `Hik/HikLivePlayer.cs` | Canlı SDK oturumu (RealPlay + PlayCtrl) |
-| `Hik/HikPlaybackPlayer.cs` | Oynatma SDK oturumu (PlayBackByTime + PlayCtrl + `GetTime` = `PlayM4_GetSystemTime` + `FirstFrameTime` + MP4 klip + `SyncControls` hız/duraklat) |
+| `Hik/HikPlaybackPlayer.cs` | Oynatma SDK oturumu (PlayBackByTime + PlayCtrl + `GetTime` = `PlayM4_GetSystemTime` + `CatchUp` gizli 4× yakalama + MP4 klip + `SyncControls` hız/duraklat) |
 | `Hik/HikFrameRecorder.cs` | Kayıt/klip: ikinci PlayCtrl portu (yazılım çözücü, pencere yok) → çözülmüş YV12 → Core `VideoRecorder` (H.264 MP4) |
 | `Hik/HikException.cs` | SDK hata kodlarının Türkçe açıklamaları (`Describe`) |
 

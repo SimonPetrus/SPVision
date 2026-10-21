@@ -55,6 +55,8 @@
     <StreamGeometry x:Key="IconForward30">M20.5,12 A8.5,8.5 0 1 1 17.7,5.7 M21,3.5 V8.5 H16</StreamGeometry>
     <!-- Filled glyphs (GlyphIcon.FillData) -->
     <StreamGeometry x:Key="IconPlay">M7,4 L20,12 L7,20 Z</StreamGeometry>
+    <!-- Stop (the shape of Segoe Fluent Icons E71A): an 11 × 11 rounded square, centred; about the ink of play / pause. -->
+    <StreamGeometry x:Key="IconStop">M8,6.5 H16 A1.5,1.5 0 0 1 17.5,8 V16 A1.5,1.5 0 0 1 16,17.5 H8 A1.5,1.5 0 0 1 6.5,16 V8 A1.5,1.5 0 0 1 8,6.5 Z</StreamGeometry>
     <StreamGeometry x:Key="IconPause">M7,4 H9 A1,1 0 0 1 10,5 V19 A1,1 0 0 1 9,20 H7 A1,1 0 0 1 6,19 V5 A1,1 0 0 1 7,4 Z M15,4 H17 A1,1 0 0 1 18,5 V19 A1,1 0 0 1 17,20 H15 A1,1 0 0 1 14,19 V5 A1,1 0 0 1 15,4 Z</StreamGeometry>
     <StreamGeometry x:Key="IconSlower">M11.5,6 L4,12 L11.5,18 Z M20.5,6 L13,12 L20.5,18 Z</StreamGeometry>
     <StreamGeometry x:Key="IconFaster">M12.5,6 L20,12 L12.5,18 Z M3.5,6 L11,12 L3.5,18 Z</StreamGeometry>

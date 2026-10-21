@@ -38,7 +38,7 @@ public partial class PlaybackTile : UserControl
     string? _clipFile;
     bool _flyleafClipping;           // Flyleaf is remuxing the clip (audio switched off meanwhile: MP4 takes no G.711)
     bool _hikClipping;               // SDK clip asked for (the save itself runs in the SDK queue)
-    bool _timeVerified;              // SDK: the first frame's real time was checked against the requested time
+    bool _timeVerified;              // SDK: the requested time was reached (hidden catch-up done) and the video is shown
     int _startRetries;               // reopens of the current seek because the recorder started far too early
     int _clipGeneration;             // supersedes the failure report of an earlier clip start
     int _speedIndex = PlaybackSpeed.Normal;
@@ -90,7 +90,8 @@ public partial class PlaybackTile : UserControl
     /// <summary>How long the last open took until the first frame; the view leads drift re-seeks by it.</summary>
     public TimeSpan OpenLatency { get; private set; } = TimeSpan.FromSeconds(1);
 
-    public bool UsesSdk => Camera is not null && HikHost.Visibility == Visibility.Visible;
+    /// <summary>SDK path (the video window is hidden, not collapsed, while a fresh open catches up to the requested time).</summary>
+    public bool UsesSdk => Camera is not null && HikHost.Visibility != Visibility.Collapsed;
 
     public bool IsClipping => _flyleafClipping || _hikClipping;
 
@@ -137,7 +138,8 @@ public partial class PlaybackTile : UserControl
 
     /// <summary>
     /// Recorder time of the frame on screen; null when nothing plays. SDK path: the absolute time in the stream (what
-    /// the OSD shows), and only once the start position was checked (a wrong start is reopened before anyone sees it).
+    /// the OSD shows), and only once the video is shown: a fresh open first catches up, hidden, from the recorder's key
+    /// frame to the requested time (and a wrong start is reopened before anyone sees it).
     /// </summary>
     public DateTime? CurrentTime =>
         _player is { Status: Status.Playing or Status.Paused } p ? _openedAt + TimeSpan.FromTicks(Math.Max(0, p.CurTime))
@@ -373,9 +375,14 @@ public partial class PlaybackTile : UserControl
     /// <summary>Shared speed / pause plus the nudge, applied in the SDK queue.</summary>
     void ApplySdkControls(HikPlaybackPlayer hik)
     {
+        SetRequestedControls(hik);
+        SyncSdkControls(hik);
+    }
+
+    void SetRequestedControls(HikPlaybackPlayer hik)
+    {
         hik.RequestedSpeedSteps = PlaybackSpeed.Steps(_speedIndex) + (Nudge == SyncNudge.CatchUp ? 1 : 0);
         hik.RequestedPaused = _paused || Nudge == SyncNudge.Hold;
-        SyncSdkControls(hik);
     }
 
     /// <summary>
@@ -399,15 +406,19 @@ public partial class PlaybackTile : UserControl
         });
     }
 
-    /// <summary>Stops playback (view left); the camera stays assigned.</summary>
+    /// <summary>
+    /// Stops playback (Stop button, view left): a running clip is finalized and reported, the stream is closed in the
+    /// SDK queue (off the UI thread); the camera stays assigned and the next seek opens it again.
+    /// </summary>
     public void Stop()
     {
         StopClip();
+        Nudge = SyncNudge.None;
         StopPlayers();
         IsParked = false;
         if (Camera is not null)
         {
-            SetState(TileState.Stopped, "Durduruldu");
+            SetState(TileState.Stopped, "Durduruldu\nOynat'a basın");
         }
     }
 
@@ -430,6 +441,9 @@ public partial class PlaybackTile : UserControl
         HikHost.Visibility = Visibility.Visible;
         VideoLayer.Visibility = Visibility.Visible;
         HikHost.UpdateLayout(); // build the child HWND now
+        // Nothing before the requested time may show: the window stays hidden (Hidden keeps its size and its HWND,
+        // PlayCtrl keeps drawing into it) until the hidden catch-up reached the time (OnCatchUpDone).
+        HikHost.Visibility = Visibility.Hidden;
         SetState(TileState.Connecting);
 
         var device = Device!;
@@ -446,7 +460,6 @@ public partial class PlaybackTile : UserControl
             _hikPlayer.Started += OnHikStarted;
             _hikPlayer.Error += OnHikError;
             _hikPlayer.Ended += OnHikEnded;
-            _hikPlayer.FirstFrameTime += OnHikFirstFrameTime;
         }
         var player = _hikPlayer;
         player.ShowMotionBoxes = App.Settings.ShowMotionBoxes;
@@ -573,57 +586,106 @@ public partial class PlaybackTile : UserControl
             {
                 return;
             }
-            MeasureLatency();
             _preferHik = true;
-            SetState(TileState.Playing);
-            // Fresh handle = normal speed and playing: bring it to the shared speed / pause state.
-            ApplySdkControls(player);
+            // The shared speed / pause the catch-up returns to (a fresh handle plays at normal speed).
+            SetRequestedControls(player);
             if (!App.Settings.ShowMotionBoxes)
             {
                 ApplyMotionBoxes(false); // again on the running handle (the SDK's own port may open after ours)
             }
-            // PlayCtrl reports the first frame's real time shortly (OnHikFirstFrameTime). Should it never (a stream
-            // without absolute time), the SDK's own time is used after a while instead of none at all.
-            var generation = Volatile.Read(ref _openGeneration);
-            _ = Task.Delay(TimeSpan.FromSeconds(4)).ContinueWith(_ => Dispatcher.BeginInvoke(() =>
-            {
-                if (Volatile.Read(ref _openGeneration) == generation && ReferenceEquals(_hikPlayer, player))
-                {
-                    _timeVerified = true;
-                }
-            }), TaskScheduler.Default);
+            StartCatchUp(player);
         });
     }
 
     /// <summary>
-    /// The first decoded frame's absolute time (SDK thread). The recorder sometimes starts a playback by time at the
-    /// beginning of the recording file instead of the requested time (DIS KAPI: 23:11:04 for 00:00:00, the file
-    /// began at 23:10:49, and NET_DVR_PLAYGETTIME hid it). Such a start is reopened at once, at most
-    /// <see cref="PlaybackStart.MaxRetries"/> times; a start on the key frame before the request is fine.
+    /// The video stays hidden (state "Bağlanıyor…") while the stream is brought from the recorder's key frame — seconds
+    /// before the requested time, e.g. the previous day's 23:59:56 for 00:00:00 — to the requested time at 4×
+    /// (<see cref="HikPlaybackPlayer.CatchUp"/>, in the tile's SDK queue, off the UI thread). The recorder sometimes starts
+    /// at the beginning of the recording file instead (DIS KAPI: 23:11:04 for 00:00:00, the file began at 23:10:49):
+    /// such a start is reopened, at most <see cref="PlaybackStart.MaxRetries"/> times.
     /// </summary>
-    void OnHikFirstFrameTime(DateTime first)
+    void StartCatchUp(HikPlaybackPlayer player)
     {
         var generation = Volatile.Read(ref _openGeneration);
-        Dispatcher.BeginInvoke(() =>
+        var target = _seekTarget;
+        var canReopen = _startRetries < PlaybackStart.MaxRetries;
+        var turn = _sdkGate.WaitAsync(); // after the motion-box command queued just before
+        Task.Run(async () =>
         {
-            if (Volatile.Read(ref _openGeneration) != generation || _hikPlayer is null || Camera is null || IsParked)
+            await turn;
+            var outcome = CatchUpOutcome.Cancelled;
+            DateTime? first = null;
+            string? error = null;
+            try
             {
-                return; // an older open (the tile seeked meanwhile)
-            }
-            if (PlaybackStart.IsWrong(_seekTarget, first))
-            {
-                if (_startRetries < PlaybackStart.MaxRetries)
+                if (!IsStale(player, generation))
                 {
-                    _startRetries++;
-                    var target = PlaybackStart.RetryTarget(_seekTarget, _seekWatch.Elapsed, PlaybackSpeed.Rate(_speedIndex), _paused);
-                    SeekCore(target, _speedIndex, _paused);
-                    SetState(TileState.Connecting, header: "Konum düzeltiliyor…");
-                    return;
+                    (outcome, first) = player.CatchUp(target, canReopen, () => IsStale(player, generation));
                 }
-                Notice?.Invoke(this, $"{Camera.Name}: kayıt cihazı oynatmayı istenen saatten başlatmadı ({first:HH:mm:ss}); eşitleme yeniden deneyecek.");
             }
-            _timeVerified = true;
+            catch (HikException ex)
+            {
+                outcome = CatchUpOutcome.Reached; // the time is reached; only the shared speed / pause was refused
+                error = ex.Message;
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            finally
+            {
+                _sdkGate.Release();
+            }
+            if (outcome != CatchUpOutcome.Cancelled)
+            {
+                _ = Dispatcher.BeginInvoke(() => OnCatchUpDone(player, generation, outcome, first, error));
+            }
         });
+    }
+
+    void OnCatchUpDone(HikPlaybackPlayer player, int generation, CatchUpOutcome outcome, DateTime? first, string? error)
+    {
+        if (Volatile.Read(ref _openGeneration) != generation || !ReferenceEquals(_hikPlayer, player) || Camera is null || IsParked)
+        {
+            return; // an older open (the tile seeked or stopped meanwhile)
+        }
+        if (outcome == CatchUpOutcome.WrongStart)
+        {
+            _startRetries++;
+            var target = PlaybackStart.RetryTarget(_seekTarget, _seekWatch.Elapsed, PlaybackSpeed.Rate(_speedIndex), _paused);
+            SeekCore(target, _speedIndex, _paused);
+            SetState(TileState.Connecting, header: "Konum düzeltiliyor…");
+            return;
+        }
+        if (first is { } start && PlaybackStart.IsWrong(_seekTarget, start))
+        {
+            Notice?.Invoke(this, $"{Camera.Name}: kayıt cihazı oynatmayı istenen saatten başlatmadı ({start:HH:mm:ss}); eşitleme yeniden deneyecek.");
+        }
+        if (error is not null)
+        {
+            Notice?.Invoke(this, $"{Camera.Name}: {Shorten(error)}");
+        }
+        // The requested time is on screen: show the video; its time now drives the clock / sync.
+        MeasureLatency();
+        _timeVerified = true;
+        HikHost.Visibility = Visibility.Visible;
+        // The re-shown window repaints black; a paused stream draws no new frame: draw the current one again once the
+        // window is shown (it is shown asynchronously).
+        QueueSdk(() =>
+        {
+            Thread.Sleep(60);
+            if (!IsStale(player, generation))
+            {
+                player.RefreshDisplay();
+            }
+        });
+        if (_state != TileState.Failed)
+        {
+            SetState(TileState.Playing);
+        }
+        else
+        {
+            StateChanged?.Invoke(this);
+        }
     }
 
     void OnHikError(string message)
@@ -765,7 +827,7 @@ public partial class PlaybackTile : UserControl
         }
         System.IO.Directory.CreateDirectory(App.Settings.SnapshotFolder);
         var path = System.IO.Path.Combine(App.Settings.SnapshotFolder, $"{Safe(Camera.Name)}_{CurrentTime ?? DateTime.Now:yyyyMMdd_HHmmss}_kayit.jpg");
-        if (_hikPlayer is { IsStarted: true } hik && UsesSdk)
+        if (_hikPlayer is { IsStarted: true } hik && UsesSdk && _timeVerified)
         {
             return await Task.Run(() => hik.Snapshot(path));
         }
@@ -795,7 +857,7 @@ public partial class PlaybackTile : UserControl
         }
         System.IO.Directory.CreateDirectory(App.Settings.RecordingFolder);
         var file = System.IO.Path.Combine(App.Settings.RecordingFolder, $"{Safe(Camera.Name)}_{CurrentTime ?? DateTime.Now:yyyyMMdd_HHmmss}_klip.mp4");
-        if (_hikPlayer is { IsStarted: true } hik && UsesSdk)
+        if (_hikPlayer is { IsStarted: true } hik && UsesSdk && _timeVerified)
         {
             // NET_DVR_PlayBackSaveData waits for the SDK's data thread (and the player for a command in progress):
             // never on the UI thread. The badge shows at once; a refusal is reported and takes it back.
@@ -1052,7 +1114,6 @@ public partial class PlaybackTile : UserControl
         player.Started -= OnHikStarted;
         player.Error -= OnHikError;
         player.Ended -= OnHikEnded;
-        player.FirstFrameTime -= OnHikFirstFrameTime;
         _hikPlayer = null;
     }
 

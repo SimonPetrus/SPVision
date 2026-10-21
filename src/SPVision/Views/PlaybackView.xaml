@@ -119,8 +119,9 @@
                 </Button>
             </Grid>
 
-            <!-- ===== Control bar: 30 px controls, 8 px above and below. The side groups are both 98 px
-                 (3 × 30 + 2 × 4), so the centre group sits exactly in the middle. ===== -->
+            <!-- ===== Control bar: 30 px controls, 8 px above and below, 4 px between the buttons of a group. The two
+                 side columns are equal stars (left group 4 × 30 + 3 × 4 = 132 px, right group 98 px), so the centre
+                 group sits exactly in the middle whatever the side groups hold. ===== -->
             <Grid DockPanel.Dock="Bottom" Margin="12,8">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -131,6 +132,11 @@
                     <Button x:Name="PlayPauseButton" Style="{StaticResource PlayerAccentButton}" Click="PlayPause_Click"
                             ToolTip="Duraklat" AutomationProperties.Name="Duraklat">
                         <c:GlyphIcon x:Name="PlayPauseIcon" FillData="{StaticResource IconPause}" Size="14" />
+                    </Button>
+                    <Button x:Name="StopButton" Style="{StaticResource PlayerAccentButton}" Margin="4,0,0,0" Click="Stop_Click"
+                            IsEnabled="False" ToolTip="Durdur" ToolTipService.ShowOnDisabled="True"
+                            AutomationProperties.AutomationId="PlaybackStop" AutomationProperties.Name="Durdur">
+                        <c:GlyphIcon FillData="{StaticResource IconStop}" Size="14" />
                     </Button>
                     <Button x:Name="SnapshotButton" Style="{StaticResource PlayerButton}" Margin="4,0,0,0" Click="Snapshot_Click"
                             ToolTip="Anlık görüntü (seçili kare)" AutomationProperties.Name="Seçili kareden anlık görüntü">

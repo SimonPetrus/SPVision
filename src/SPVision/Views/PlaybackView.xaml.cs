@@ -68,6 +68,8 @@ public partial class PlaybackView : UserControl
     bool _holding;                     // after a seek: the clock waits for the focused tile's first frame
     bool _startFromMidnight;           // a day was double-clicked: start it at 00:00, not at the first recording
     bool _paused;
+    bool _stopped;                     // Stop pressed: streams closed, the shared time kept (Play restarts there)
+    DateTime _seekFloor = DateTime.Today; // last requested time: the clock never follows a tile to a moment before it
     bool _active;                      // the view is shown and playing
     bool _awaitUser;                   // restored cameras: no start until the user picks a day, plays, seeks or adds a camera
     IReadOnlyList<CameraRef>? _restoreCameras; // cameras of the last session, put on the tiles when the view is first shown
@@ -150,8 +152,10 @@ public partial class PlaybackView : UserControl
 
     double Rate => PlaybackSpeed.Rate(_speed);
 
-    /// <summary>The shared playback time: advances with the speed unless paused or waiting for the first frame.</summary>
-    DateTime Master => _holding || _paused || !_hasTime || !_active ? _anchor : ClampDay(_anchor + _clock.Elapsed * Rate);
+    /// <summary>The shared playback time: advances with the speed unless paused, stopped or waiting for the first frame.</summary>
+    DateTime Master => _holding || _paused || _stopped || !_hasTime || !_active ? _anchor : ClampDay(_anchor + _clock.Elapsed * Rate);
+
+    TransportState Transport => PlaybackTransport.State(_hasTime, _paused, _stopped);
 
     // ---- Main window ----
 
@@ -161,6 +165,12 @@ public partial class PlaybackView : UserControl
         _active = true;
         _tick.Start();
         RestoreCameras();
+        // Stopped before the view was left: it stays stopped (the tiles were stopped with the view); Play restarts.
+        if (Transport == TransportState.Stopped)
+        {
+            UpdateUi();
+            return;
+        }
         if (_hasTime && ActiveTiles.Any())
         {
             SetMaster(_anchor);
@@ -372,9 +382,13 @@ public partial class PlaybackView : UserControl
         {
             return;
         }
-        if (_hasTime)
+        if (PlaybackTransport.TilesJoin(Transport))
         {
             tile.SeekTo(LeadFor(tile), _speed, _paused);
+        }
+        else if (_hasTime)
+        {
+            tile.Stop(); // playback stopped: the new camera waits for Play like the others
         }
         else
         {
@@ -496,7 +510,9 @@ public partial class PlaybackView : UserControl
     void StartAt(DateTime time)
     {
         SetMaster(time);
+        _seekFloor = _anchor; // nothing before the requested time: clock and timeline never go below it
         _hasTime = true;
+        _stopped = false;
         _startFromMidnight = false;
         StartHold();
         foreach (var tile in ActiveTiles.Where(t => t.SearchDone))
@@ -537,7 +553,9 @@ public partial class PlaybackView : UserControl
         if (!_active)
         {
             _anchor = target;
+            _seekFloor = target;
             _hasTime = true;
+            _stopped = false;
             UpdateUi();
             return true;
         }
@@ -555,20 +573,21 @@ public partial class PlaybackView : UserControl
             if (focused is null || focused.State != TileState.Connecting || _holdWatch.Elapsed > HoldLimit)
             {
                 _holding = false;
-                if (focused is { State: TileState.Playing } && focused.CurrentTime is { } first)
+                if (focused is { State: TileState.Playing } && focused.CurrentTime is { } first && PlaybackCatchUp.MayFollow(first, _seekFloor))
                 {
                     _anchor = ClampDay(first);
                 }
                 _clock.Restart();
             }
         }
-        else if (_hasTime && !_paused && _tickCount % 4 == 0 && focused is { State: TileState.Playing } &&
-                 focused.CurrentTime is { } time && (time - Master).Duration() > FollowThreshold * Math.Max(1, Rate / 3))
+        else if (_hasTime && !_paused && !_stopped && _tickCount % 4 == 0 && focused is { State: TileState.Playing } &&
+                 focused.CurrentTime is { } time && PlaybackCatchUp.MayFollow(time, _seekFloor) &&
+                 (time - Master).Duration() > FollowThreshold * Math.Max(1, Rate / 3))
         {
-            SetMaster(time); // the focused tile is the reference (e.g. the recorder skipped a gap)
+            SetMaster(time); // the focused tile is the reference (e.g. the recorder skipped a gap); never before the request
         }
 
-        if (_hasTime && !_holding)
+        if (PlaybackTransport.TilesJoin(Transport) && !_holding)
         {
             var master = Master;
             var tolerance = PlaybackSync.Tolerance(_speed);
@@ -982,8 +1001,10 @@ public partial class PlaybackView : UserControl
         _awaitUser = false;
         _day = date.Date;
         _hasTime = false;
+        _stopped = false;
         _startFromMidnight = false;
         _anchor = _day;
+        _seekFloor = _day;
         _holding = false;
         ShowMessage(null);
         _dayCts.Cancel();
@@ -1014,8 +1035,10 @@ public partial class PlaybackView : UserControl
             return;
         }
         _hasTime = false;
+        _stopped = false;
         _holding = false;
         _anchor = _day;
+        _seekFloor = _day;
         _paused = false; // the tiles get it with the seek
         _startFromMidnight = true;
         TryStart(); // now if the searches of the day are done, otherwise when they finish
@@ -1179,15 +1202,26 @@ public partial class PlaybackView : UserControl
 
     void PlayPause_Click(object sender, RoutedEventArgs e)
     {
-        if (!_hasTime)
+        switch (PlaybackTransport.PlayPause(Transport))
         {
-            _awaitUser = false;
-            TryStart();
-            if (!_hasTime)
-            {
-                ShowMessage(FocusedTile is null ? PlaybackText.SelectCameraFirst : null);
-            }
-            return;
+            case PlayPauseAction.Start:
+                _awaitUser = false;
+                TryStart();
+                if (!_hasTime)
+                {
+                    ShowMessage(FocusedTile is null ? PlaybackText.SelectCameraFirst : null);
+                }
+                return;
+            case PlayPauseAction.Restart:
+                // After Stop: every tile reopens at the kept time (hidden until it is reached, like any seek).
+                _paused = false;
+                if (!ActiveTiles.Any())
+                {
+                    ShowMessage(PlaybackText.SelectCameraFirst);
+                    return;
+                }
+                StartAt(_anchor);
+                return;
         }
         _anchor = Master;
         _clock.Restart();
@@ -1195,6 +1229,27 @@ public partial class PlaybackView : UserControl
         foreach (var tile in ActiveTiles)
         {
             tile.SetPaused(_paused);
+        }
+        UpdateUi();
+    }
+
+    /// <summary>
+    /// Stop: every tile closes its stream (in its SDK queue, off the UI thread) and finalizes a running clip ("Klip
+    /// kaydedildi" follows), keeps its camera and waits; the clock stops where it is, so Play starts there again.
+    /// </summary>
+    void Stop_Click(object sender, RoutedEventArgs e)
+    {
+        if (!PlaybackTransport.CanStop(Transport, ActiveTiles.Any()))
+        {
+            return;
+        }
+        _anchor = Master;
+        _clock.Restart();
+        _holding = false;
+        _stopped = true;
+        foreach (var tile in ActiveTiles)
+        {
+            tile.Stop();
         }
         UpdateUi();
     }
@@ -1341,8 +1396,10 @@ public partial class PlaybackView : UserControl
     void UpdateUi()
     {
         DateText.Text = _day.ToString("dd.MM.yyyy", CultureInfo.InvariantCulture);
-        var playing = _hasTime && !_paused;
-        PlayStateText.Text = playing ? "Oynatılıyor" : "Duraklatıldı";
+        var transport = Transport;
+        var playing = PlaybackTransport.ShowsPause(transport);
+        PlayStateText.Text = transport == TransportState.Stopped ? "Durduruldu" : playing ? "Oynatılıyor" : "Duraklatıldı";
+        StopButton.IsEnabled = PlaybackTransport.CanStop(transport, ActiveTiles.Any());
         SpeedBadge.Text = PlaybackSpeed.Label(_speed);
         SpeedText.Text = PlaybackSpeed.Label(_speed);
         MessageText.Text = _message ?? "";

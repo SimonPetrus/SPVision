@@ -521,6 +521,142 @@ public static class PlaybackStart
         paused ? requested : requested + TimeSpan.FromTicks((long)(sinceSeek.Ticks * Math.Max(0, rate)));
 }
 
+/// <summary>What a freshly opened SDK playback needs before the user may see it (<see cref="PlaybackCatchUp"/>).</summary>
+public enum CatchUpAction
+{
+    /// <summary>The first frame's absolute time is not known yet: keep the video hidden and wait.</summary>
+    WaitForTime,
+
+    /// <summary>The recorder started at the beginning of the recording file (<see cref="PlaybackStart.IsWrong"/>): reopen.</summary>
+    Reopen,
+
+    /// <summary>Far before the requested time: play hidden at <see cref="PlaybackCatchUp.Steps"/>.</summary>
+    FastForward,
+
+    /// <summary>
+    /// Within <see cref="PlaybackCatchUp.SlowLead"/> of the requested time: play hidden at normal speed (a slow-down takes
+    /// effect late, so the last second is not fast-forwarded) until it is reached.
+    /// </summary>
+    Settle,
+
+    /// <summary>The requested time is on screen (or waiting longer makes no sense): show the video.</summary>
+    Reveal,
+}
+
+/// <summary>
+/// "Nothing before the requested time" rule of the SDK path. PlayBackByTime_V40 starts on the key frame before the
+/// requested time (measured on the DS-8632NI-I8: 3.8 s before 00:00:00 = the previous day's 23:59:56 in the camera OSD;
+/// 2.2 s before 12:30:00; the GOP there is ~6.7 s). The tile keeps its video window hidden while the stream plays at
+/// 4× (two PLAYFAST steps on the recorder + PlayM4_Fast on our port; 8× and above make the recorder send key frames
+/// only, which would jump past the requested time) up to <see cref="SlowLead"/> before it, then at normal speed until
+/// both renderers of the window — our port and the SDK's own playback port — are <see cref="Margin"/> past it; then
+/// the shared speed / pause is applied and the video shown. Measured: 3.8 s caught up in ~1.0 s, 2.2 s in ~0.6 s.
+/// </summary>
+public static class PlaybackCatchUp
+{
+    /// <summary>Speed steps while catching up (2 = 4×; the recorder still sends every frame).</summary>
+    public const int Steps = 2;
+
+    /// <summary>
+    /// Back to normal speed this far before the requested time: after PLAYSLOW / PlayM4_Slow the picture keeps running
+    /// at 4× for ~250 ms (measured: 1.1 s of recording), which would otherwise land a second past the requested time.
+    /// </summary>
+    public static TimeSpan SlowLead { get; } = TimeSpan.FromSeconds(1);
+
+    /// <summary>
+    /// How far past the requested time both renderers must be before the window is shown: a few frames, so the
+    /// last picture presented while hidden (which a renderer may show again) is already at the requested time.
+    /// </summary>
+    public static TimeSpan Margin { get; } = TimeSpan.FromMilliseconds(120);
+
+    /// <summary>A stream that reports no absolute time is shown after this long (as before: the SDK's estimate is used).</summary>
+    public static TimeSpan TimeWait { get; } = TimeSpan.FromSeconds(4);
+
+    /// <summary>Longest hidden catch-up (30 s early at 4× = 7.5 s); after it the video is shown anyway.</summary>
+    public static TimeSpan Limit { get; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>
+    /// <paramref name="frame"/>: absolute time of our port's current frame (null before the first one);
+    /// <paramref name="otherRenderer"/>: the SDK's own playback port drawing into the same window (null when unknown);
+    /// <paramref name="elapsed"/>: since the catch-up started; <paramref name="canReopen"/>: retries of a wrong start left.
+    /// </summary>
+    public static CatchUpAction Decide(DateTime requested, DateTime? frame, DateTime? otherRenderer, TimeSpan elapsed, bool canReopen)
+    {
+        if (frame is not { } ours)
+        {
+            return elapsed >= TimeWait ? CatchUpAction.Reveal : CatchUpAction.WaitForTime;
+        }
+        if (PlaybackStart.IsWrong(requested, ours))
+        {
+            return canReopen ? CatchUpAction.Reopen : CatchUpAction.Reveal; // minutes early: no catching up that
+        }
+        var shown = otherRenderer is { } other && other < ours ? other : ours;
+        if (shown >= requested + Margin || elapsed >= Limit)
+        {
+            return CatchUpAction.Reveal;
+        }
+        return ours >= requested - SlowLead ? CatchUpAction.Settle : CatchUpAction.FastForward;
+    }
+
+    /// <summary>
+    /// Whether the shared clock may take a tile's time: never before the last requested time (<paramref name="floor"/>),
+    /// so the clock and the timeline cursor never show a moment before what the user asked for.
+    /// </summary>
+    public static bool MayFollow(DateTime tileTime, DateTime floor) => tileTime >= floor;
+}
+
+/// <summary>State of the playback transport (play / pause / stop buttons of Kayıt Oynatma).</summary>
+public enum TransportState
+{
+    /// <summary>No shared time yet (no day picked / restored cameras waiting / searches running).</summary>
+    NoTime,
+    Playing,
+    Paused,
+
+    /// <summary>Stop pressed: streams closed, clips finalized, the shared time kept where it was.</summary>
+    Stopped,
+}
+
+/// <summary>What the play / pause button does in a <see cref="TransportState"/>.</summary>
+public enum PlayPauseAction
+{
+    /// <summary>No time yet: start at the first recording of the day (or 00:00 after a double-click).</summary>
+    Start,
+
+    /// <summary>Stopped: every tile reopens at the kept shared time and plays.</summary>
+    Restart,
+    Pause,
+    Resume,
+}
+
+/// <summary>Transport rules of Kayıt Oynatma (pure; the view applies them).</summary>
+public static class PlaybackTransport
+{
+    public static TransportState State(bool hasTime, bool paused, bool stopped) =>
+        !hasTime ? TransportState.NoTime : stopped ? TransportState.Stopped : paused ? TransportState.Paused : TransportState.Playing;
+
+    /// <summary>Stop is enabled while streams are open (playing or paused) and some tile has a camera.</summary>
+    public static bool CanStop(TransportState state, bool anyCamera) =>
+        anyCamera && state is TransportState.Playing or TransportState.Paused;
+
+    /// <summary>The play / pause button shows "pause" only while playing.</summary>
+    public static bool ShowsPause(TransportState state) => state == TransportState.Playing;
+
+    public static PlayPauseAction PlayPause(TransportState state) => state switch
+    {
+        TransportState.NoTime => PlayPauseAction.Start,
+        TransportState.Stopped => PlayPauseAction.Restart,
+        TransportState.Paused => PlayPauseAction.Resume,
+        _ => PlayPauseAction.Pause,
+    };
+
+    /// <summary>
+    /// Whether tiles open streams on their own (a camera added, a search finished, the view shown again, drift
+    /// correction): only while there is a shared time and playback is not stopped.
+    /// </summary>
+    public static bool TilesJoin(TransportState state) => state is TransportState.Playing or TransportState.Paused;
+}
+
 /// <summary>Month view of the playback calendar (weeks start on Monday, as in Turkey).</summary>
 public static class CalendarMonth
 {
