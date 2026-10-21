@@ -153,14 +153,11 @@ public partial class LiveView : UserControl
         }
     }
 
-    /// <summary>Window closing: recordings end and every SDK stream is released before the SDK is cleaned up.</summary>
-    public void Shutdown()
-    {
-        foreach (var tile in _tiles)
-        {
-            tile.Release();
-        }
-    }
+    /// <summary>
+    /// Window closing: recordings end (finalized) and every SDK stream is released, all tiles in parallel and off the
+    /// UI thread. The task ends when they are done; the SDK is cleaned up after it.
+    /// </summary>
+    public Task ShutdownAsync() => Task.WhenAll(_tiles.Select(tile => tile.ReleaseAsync()).ToList());
 
     /// <summary>Previous/next page (status bar arrows, PageUp/PageDown), wrapping around. A maximized tile is restored first.</summary>
     public void StepPage(int delta)
@@ -602,7 +599,7 @@ public partial class LiveView : UserControl
             return;
         }
         var file = _selected.ToggleRecording();
-        ShowToast(file is null ? "Kayıt durduruldu." : $"Kayıt: {file}");
+        ShowToast(file is null ? RecordingText.Finishing(clip: false) : RecordingText.Started(clip: false, file)); // "Kayıt kaydedildi" follows when the file is complete
         if (file is null)
         {
             _qualityTimer.Start(); // a recording tile keeps its stream: Oto may switch it now

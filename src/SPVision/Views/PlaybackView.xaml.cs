@@ -195,17 +195,17 @@ public partial class PlaybackView : UserControl
         UpdateUi();
     }
 
-    /// <summary>Window closing: every stream is released right away.</summary>
-    public void Shutdown()
+    /// <summary>
+    /// Window closing: clips end (finalized) and every stream is released, all tiles in parallel and off the UI thread.
+    /// The task ends when they are done.
+    /// </summary>
+    public Task ShutdownAsync()
     {
         _active = false;
         _tick.Stop();
         _dayCts.Cancel();
         CancelMarkLoaders(_ => true);
-        foreach (var tile in _tiles)
-        {
-            tile.Release();
-        }
+        return Task.WhenAll(_tiles.Select(tile => tile.ReleaseAsync()).ToList());
     }
 
     /// <summary>Top bar: layout picker (up to 16 tiles).</summary>
@@ -585,22 +585,38 @@ public partial class PlaybackView : UserControl
                 {
                     continue; // still starting, or refused by the recorder (retried on the next seek)
                 }
-                if (!tile.IsParked && (!driftCheck || _paused))
+                if (!tile.IsParked && tile.Nudge == SyncNudge.None && (!driftCheck || _paused))
                 {
-                    continue; // parked tiles are checked every tick, playing ones every 5 s
+                    continue; // parked and nudged tiles are checked every tick, playing ones every 5 s
                 }
                 if (tile.IsParked && tile.Segments is null)
                 {
                     continue; // recording ended and its recordings are unknown: wait for the next seek
                 }
                 var tileTime = tile.IsParked ? null : tile.CurrentTime;
-                switch (PlaybackSync.Decide(master, tileTime, tile.IsParked, tile.Segments, tolerance))
+                // SDK tiles report the real frame time (PlayM4_GetSystemTime) and are nudged back in step (faster /
+                // held) instead of reopened for a few seconds of key-frame offset; the focused tile is the reference.
+                var canNudge = tile.CanNudge && !ReferenceEquals(tile, focused);
+                if (!canNudge && tile.Nudge != SyncNudge.None)
+                {
+                    tile.SetNudge(SyncNudge.None); // became the focused tile (the reference), or left the SDK path
+                }
+                switch (PlaybackSync.Decide(master, tileTime, tile.IsParked, tile.Segments, tolerance, Rate, canNudge, tile.Nudge, tile.NudgeAge))
                 {
                     case SyncAction.Seek:
                         tile.SeekTo(LeadFor(tile), _speed, _paused);
                         break;
                     case SyncAction.Park:
                         tile.Park(tile.Segments, master);
+                        break;
+                    case SyncAction.CatchUp:
+                        tile.SetNudge(SyncNudge.CatchUp);
+                        break;
+                    case SyncAction.Hold:
+                        tile.SetNudge(SyncNudge.Hold);
+                        break;
+                    case SyncAction.Resume:
+                        tile.SetNudge(SyncNudge.None);
                         break;
                 }
             }

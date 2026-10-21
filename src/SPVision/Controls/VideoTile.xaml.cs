@@ -57,6 +57,7 @@ public partial class VideoTile : UserControl
     StreamQuality _quality = StreamQuality.Sub;
     StreamQuality _autoQuality = StreamQuality.Sub;
     string? _pendingRecordFile;
+    string? _flyleafRecordFile;  // MP4 Flyleaf is remuxing into (checked when it ends)
     bool _hikRecording;          // SDK recording asked for (the save itself runs in the SDK queue)
     int _recordGeneration;       // supersedes the failure report of an earlier recording start
     TileState _state = TileState.Empty;
@@ -235,16 +236,32 @@ public partial class VideoTile : UserControl
     }
 
     /// <summary>
-    /// Window closing: ends the recording and releases the SDK stream before returning (the SDK is cleaned up
-    /// right after). Blocks the closing window briefly; the data callbacks never wait for the UI thread.
+    /// Window closing: ends the recording and releases the stream. The SDK part (stop, MP4 finalization) runs on a
+    /// worker thread, so all tiles release in parallel and the UI never waits; the returned task ends when this
+    /// tile's SDK stream is released and its recording file is complete (the SDK is cleaned up after all of them).
     /// </summary>
-    public void Release()
+    public Task ReleaseAsync()
     {
         _wantPlaying = false;
         _retryTimer.Stop();
-        StopRecording();
+        _pendingRecordFile = null;
+        if (_player?.IsRecording == true)
+        {
+            _player.StopRecording(); // Flyleaf writes the MP4 index here, synchronously
+        }
         _player?.Stop();
-        DisposeHikPlayer(wait: true);
+        System.Threading.Volatile.Write(ref _openGeneration, _openGeneration + 1);
+        _hikRecording = false;
+        if (_hikPlayer is not { } player)
+        {
+            return Task.CompletedTask;
+        }
+        player.Error -= OnHikError;
+        player.Started -= OnHikStarted;
+        _hikPlayer = null;
+        // Not in the tile's SDK queue: an open stuck on the network must not hold the exit up. The player lock
+        // orders the dispose after a command in progress; Dispose finalizes a running recording.
+        return Task.Run(() => player.Dispose());
     }
 
     // ---- Opening: mode selection ----
@@ -259,13 +276,9 @@ public partial class VideoTile : UserControl
         _wantPlaying = true;
         _retryTimer.Stop();
         _triedHikFallback = false;
-        if (_hikRecording)
-        {
-            // Reopening (reconnect) replaces the RealPlay handle, which ends its recording.
-            _hikRecording = false;
-            _recordGeneration++;
-            RecBadge.Visibility = Visibility.Collapsed;
-        }
+        // Reopening (reconnect, quality switch) replaces the stream: the recording ends with it, finalized and
+        // reported (a recording asked for on the sub stream stays pending until the main stream plays).
+        FinishRecording();
         EmptyFrame.Visibility = Visibility.Collapsed;
         Frame.Visibility = Visibility.Visible;
         CameraName.Text = Camera.Name;
@@ -427,6 +440,11 @@ public partial class VideoTile : UserControl
                 return;
             }
             RecBadge.Visibility = _player.IsRecording ? Visibility.Visible : Visibility.Collapsed;
+            if (!_player.IsRecording && _flyleafRecordFile is { } ended)
+            {
+                _flyleafRecordFile = null; // Flyleaf ended it (stream lost / reopened): check what was written
+                Report(Recordings.VerifyAsync(ended));
+            }
             switch (_player.Status)
             {
                 case Status.Opening:
@@ -439,7 +457,7 @@ public partial class VideoTile : UserControl
                     {
                         var file = _pendingRecordFile;
                         _pendingRecordFile = null;
-                        _player.StartRecording(ref file, false);
+                        StartFlyleafRecording(file);
                     }
                     break;
                 case Status.Failed when HikSdk.Available && !_triedHikFallback:
@@ -590,7 +608,7 @@ public partial class VideoTile : UserControl
         player.Error -= OnHikError;
         player.Started -= OnHikStarted;
         _hikPlayer = null;
-        _hikRecording = false; // the dispose ends the recording
+        _hikRecording = false; // the dispose ends the recording (finalized by HikLivePlayer.Dispose)
         if (wait)
         {
             player.Dispose();
@@ -639,7 +657,11 @@ public partial class VideoTile : UserControl
         return null;
     }
 
-    /// <summary>Records the main stream to MP4 (remux only, no re-encode).</summary>
+    /// <summary>
+    /// Records the main stream to MP4. SDK path: the decrypted picture encoded to H.264 (HikFrameRecorder);
+    /// Flyleaf path: the RTSP video remuxed (no re-encode). The "Kayıt kaydedildi" notice comes when the file is
+    /// finalized and verified. Returns the file being started, or null when a recording was stopped.
+    /// </summary>
     public string? ToggleRecording()
     {
         if (Device is null || Camera is null || (!HikModeActive && _player is null))
@@ -666,14 +688,33 @@ public partial class VideoTile : UserControl
         }
         else
         {
-            _player!.StartRecording(ref file, false);
+            StartFlyleafRecording(file);
         }
         return file;
     }
 
+    void StartFlyleafRecording(string file)
+    {
+        if (_player is null)
+        {
+            return;
+        }
+        _player.StartRecording(ref file, false);
+        if (_player.IsRecording)
+        {
+            _flyleafRecordFile = file;
+            return;
+        }
+        // Flyleaf could not set the MP4 up (e.g. a stream the container does not take): no empty file behind.
+        _ = Recordings.DeleteIfEmptyAsync(file);
+        Notice?.Invoke(this, RecordingText.StartFailed(clip: false, "akış MP4 olarak kaydedilemiyor"));
+        StateChanged?.Invoke(this);
+    }
+
     /// <summary>
-    /// NET_DVR_SaveRealData_V30 waits for the SDK's data thread: it runs in the SDK queue, never on the UI thread.
-    /// The button and the KAYIT badge switch at once; a refusal is reported and switches them back.
+    /// The recording start takes the player's control lock (which an open in progress holds while the recorder
+    /// answers): it runs in the SDK queue, never on the UI thread. The button and the KAYIT badge switch at once; a
+    /// refusal is reported and switches them back.
     /// </summary>
     void TryStartHikSave(string file)
     {
@@ -690,7 +731,7 @@ public partial class VideoTile : UserControl
             string? error;
             try
             {
-                error = player.StartSave(file) ? null : "görüntü açık değil";
+                error = player.StartSave(file) ? null : "görüntü henüz gelmedi";
             }
             catch (HikException ex)
             {
@@ -711,28 +752,55 @@ public partial class VideoTile : UserControl
         }
         _hikRecording = false;
         RecBadge.Visibility = Visibility.Collapsed;
-        Notice?.Invoke(this, $"Kayıt başlatılamadı: {Shorten(error)}");
+        Notice?.Invoke(this, RecordingText.StartFailed(clip: false, Shorten(error)));
         StateChanged?.Invoke(this);
     }
 
     void StopRecording()
     {
         _pendingRecordFile = null;
+        FinishRecording();
+    }
+
+    /// <summary>
+    /// Ends a running recording (not a pending one). The file is finalized in the background; the notice
+    /// ("Kayıt kaydedildi: …" or why not) comes when it is complete and verified.
+    /// </summary>
+    void FinishRecording()
+    {
         if (_player?.IsRecording == true)
         {
-            _player.StopRecording();
+            _player.StopRecording(); // Flyleaf writes the MP4 index here
+            if (_flyleafRecordFile is { } file)
+            {
+                Report(Recordings.VerifyAsync(file));
+            }
         }
+        _flyleafRecordFile = null;
         if (_hikRecording)
         {
             _hikRecording = false;
             _recordGeneration++;
             if (_hikPlayer is { } player)
             {
-                QueueSdk(player.StopSave); // blocking: in the SDK queue, ahead of a following open
+                // In the SDK queue, after a start still in progress and ahead of a following open.
+                QueueSdk(() => Report(player.StopSave()));
             }
             RecBadge.Visibility = Visibility.Collapsed;
             StateChanged?.Invoke(this);
         }
+    }
+
+    /// <summary>Shows the outcome once the file is finalized (any thread; the tile may show another camera by then).</summary>
+    void Report(Task<RecordingResult>? finishing)
+    {
+        finishing?.ContinueWith(t =>
+        {
+            var message = t.IsCompletedSuccessfully
+                ? RecordingText.Finished(t.Result, clip: false)
+                : RecordingText.Finished(new RecordingResult("", false, 0, TimeSpan.Zero, 0, null, t.Exception?.InnerException?.Message), clip: false);
+            Dispatcher.BeginInvoke(() => Notice?.Invoke(this, message));
+        }, TaskScheduler.Default);
     }
 
     static string Safe(string name) =>
@@ -922,11 +990,11 @@ public partial class VideoTile : UserControl
         var file = ToggleRecording();
         if (file is not null)
         {
-            Notice?.Invoke(this, $"Kayıt: {file}");
+            Notice?.Invoke(this, RecordingText.Started(clip: false, file));
         }
         else if (wasRecording)
         {
-            Notice?.Invoke(this, "Kayıt durduruldu.");
+            Notice?.Invoke(this, RecordingText.Finishing(clip: false));
         }
         StateChanged?.Invoke(this);
     }

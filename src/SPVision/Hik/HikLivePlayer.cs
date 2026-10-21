@@ -24,7 +24,9 @@ public sealed class HikLivePlayer : IDisposable
     HikNative.DataCallback? _callback;
     volatile int _realHandle = -1;
     int _port = -1;             // set by the data callback (stream header), read lock-free
-    volatile bool _saving;
+    byte[]? _header;            // the stream header PlayCtrl was opened with (a recording port needs it too)
+    HikFrameRecorder? _recorder; // MP4 recording in progress; read lock-free by the data callback
+    Task<RecordingResult>? _lastRecording; // finalization of the recording a Stop ended (Dispose waits for it)
     volatile bool _showMotionBoxes = true;
     volatile bool _started;
     volatile bool _disposed;
@@ -49,7 +51,7 @@ public sealed class HikLivePlayer : IDisposable
 
     public bool IsRunning => _realHandle >= 0;
     public bool IsStarted => _started;
-    public bool IsSaving => _saving;
+    public bool IsSaving => Volatile.Read(ref _recorder) is not null;
     public bool IsDisposed => _disposed;
 
     /// <summary>userId: HCNetSDK login id; channel: ISAPI channel id (1-based); hWnd: window PlayCtrl draws into.</summary>
@@ -95,13 +97,15 @@ public sealed class HikLivePlayer : IDisposable
         lock (_lock)
         {
             int handle = _realHandle;
-            bool wasSaving = _saving;
             _realHandle = -1;
-            _saving = false;
             _started = false;
+            // A recording ends with its stream (reconnect, quality switch, dispose): finalized, never cut off.
+            if (StopRecorder() is { } finishing)
+            {
+                _lastRecording = finishing;
+            }
             if (handle >= 0)
             {
-                if (wasSaving) HikNative.NET_DVR_StopSaveRealData(handle);
                 HikNative.NET_DVR_StopRealPlay(handle); // the SDK stops calling back
             }
             // Read after StopRealPlay: the callback may have opened the port while we were stopping.
@@ -113,6 +117,7 @@ public sealed class HikLivePlayer : IDisposable
                 HikNative.PlayM4_FreePort(port);
             }
             _callback = null; // only now: the SDK no longer calls it
+            _header = null;
         }
     }
 
@@ -131,32 +136,34 @@ public sealed class HikLivePlayer : IDisposable
     }
 
     /// <summary>
-    /// Saves the stream (as received, including the SDK's MP4 muxing) via NET_DVR_SaveRealData_V30.
-    /// False when no stream runs. Blocking: the SDK waits for its data thread.
+    /// Starts an MP4 recording of the decrypted picture (<see cref="HikFrameRecorder"/>: a second PlayCtrl port decodes
+    /// the same data, H.264 is encoded off this thread). False when no stream runs yet. Takes the control lock.
     /// </summary>
     public bool StartSave(string path)
     {
         lock (_lock)
         {
-            if (_disposed || _realHandle < 0) return false;
-            if (_saving) return true;
-            if (!HikNative.NET_DVR_SaveRealData_V30(_realHandle, HikNative.TransTypeMp4, path))
-                throw HikException.LastError("Kayıt başlatılamadı");
-            _saving = true;
+            if (_disposed || _realHandle < 0 || Volatile.Read(ref _header) is not { } header) return false;
+            if (Volatile.Read(ref _recorder) is not null) return true;
+            Volatile.Write(ref _recorder, HikFrameRecorder.Start(header, streamKeyPending, fileMode: false, path));
             return true;
         }
     }
 
-    /// <summary>Ends the recording (the stream keeps running). Blocking.</summary>
-    public void StopSave()
+    /// <summary>
+    /// Ends the recording (the stream keeps running). The task ends when the MP4 is finalized and checked; null
+    /// when nothing was recording. Takes the control lock; PlayCtrl calls only (no network).
+    /// </summary>
+    public Task<RecordingResult>? StopSave()
     {
         lock (_lock)
         {
-            if (_realHandle < 0 || !_saving) return;
-            HikNative.NET_DVR_StopSaveRealData(_realHandle);
-            _saving = false;
+            // A Stop (reopen) may have ended it already: then its finalization is handed over instead.
+            return StopRecorder() ?? Interlocked.Exchange(ref _lastRecording, null);
         }
     }
+
+    Task<RecordingResult>? StopRecorder() => Interlocked.Exchange(ref _recorder, null)?.Stop();
 
     /// <summary>Grabs the currently displayed frame via PlayM4_GetJPEG; null when not playing. Blocking.</summary>
     public string? Snapshot(string path)
@@ -209,6 +216,9 @@ public sealed class HikLivePlayer : IDisposable
                 HikNative.PlayM4_SetStreamOpenMode(port, HikNative.StreamRealtime);
                 if (!HikNative.PlayM4_OpenStream(port, buffer, size, 2 * 1024 * 1024))
                     throw HikException.LastError("PlayCtrl akışı açamadı");
+                var header = new byte[size];
+                Marshal.Copy(buffer, header, 0, (int)size);
+                Volatile.Write(ref _header, header);
                 HikNative.PlayM4_SetDisplayBuf(port, 15);
                 HikNative.PlayM4_SetOverlayMode(port, false, 0);
                 if (!ShowMotionBoxes)
@@ -231,9 +241,10 @@ public sealed class HikLivePlayer : IDisposable
                 // The demo retries while the decoder buffer is full.
                 for (int i = 0; i < 50; i++)
                 {
-                    if (HikNative.PlayM4_InputData(port, buffer, size)) return;
+                    if (HikNative.PlayM4_InputData(port, buffer, size)) break;
                     Thread.Sleep(2);
                 }
+                Volatile.Read(ref _recorder)?.Input(buffer, size);
             }
         }
         catch (Exception ex)
@@ -254,11 +265,23 @@ public sealed class HikLivePlayer : IDisposable
     string? streamKeyPending;
     int windowHandlePending;
 
-    /// <summary>Stops the stream (and the recording). Blocking: off the UI thread, except at shutdown.</summary>
-    public void Dispose()
+    /// <summary>
+    /// Stops the stream and finalizes a recording still running (waits for its MP4: 5 s by default,
+    /// or the given time). Blocking: off the UI thread.
+    /// </summary>
+    public void Dispose() => Dispose(TimeSpan.FromSeconds(5));
+
+    public void Dispose(TimeSpan recordingWait)
     {
         _disposed = true;
         HikSdk.ExceptionRaised -= OnSdkException;
         Stop();
+        try
+        {
+            Volatile.Read(ref _lastRecording)?.Wait(recordingWait);
+        }
+        catch (AggregateException)
+        {
+        }
     }
 }

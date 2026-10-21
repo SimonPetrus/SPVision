@@ -103,8 +103,59 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        StartExitWatchdog(); // also when the exit did not come through the main window's close
         ThemeManager.Shutdown();
-        HikSdk.Shutdown();
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        var cleaned = HikSdk.Shutdown(TimeSpan.FromSeconds(2));
+        LogShutdown(cleaned ? $"SDK temizlendi ({watch.ElapsedMilliseconds} ms)" : "NET_DVR_Cleanup 2 sn içinde bitmedi; çıkılıyor");
         base.OnExit(e);
+    }
+
+    /// <summary>How long the whole close may take before the process is ended anyway.</summary>
+    static readonly TimeSpan ExitLimit = TimeSpan.FromSeconds(8);
+
+    static int _watchdogStarted;
+
+    /// <summary>
+    /// Safety net for the close: if the process is still alive <see cref="ExitLimit"/> after the close began (a
+    /// native SDK call hanging, a window keeping the dispatcher alive…), it is logged and the process exits with
+    /// <see cref="Environment.Exit"/>; should even that hang (e.g. in a DLL's unload), it is killed 3 s later. A
+    /// lingering process would keep the exe and the SDK DLLs locked. Idempotent.
+    /// </summary>
+    public static void StartExitWatchdog()
+    {
+        if (Interlocked.Exchange(ref _watchdogStarted, 1) != 0)
+        {
+            return;
+        }
+        new Thread(() =>
+        {
+            Thread.Sleep(ExitLimit);
+            LogShutdown($"Kapanış {ExitLimit.TotalSeconds:0} sn içinde bitmedi; süreç sonlandırılıyor (Environment.Exit)");
+            new Thread(() =>
+            {
+                Thread.Sleep(TimeSpan.FromSeconds(3));
+                System.Diagnostics.Process.GetCurrentProcess().Kill();
+            }) { IsBackground = true }.Start();
+            Environment.Exit(0);
+        })
+        {
+            IsBackground = true,
+            Name = "SPVision kapanış bekçisi",
+        }.Start();
+    }
+
+    /// <summary>One line in logs\shutdown.log (close diagnostics; never throws).</summary>
+    public static void LogShutdown(string text)
+    {
+        try
+        {
+            var dir = Path.Combine(Path.GetDirectoryName(Store.Path)!, "logs");
+            Directory.CreateDirectory(dir);
+            File.AppendAllText(Path.Combine(dir, "shutdown.log"), $"{DateTime.Now:yyyy-MM-dd HH:mm:ss.fff} {text}{Environment.NewLine}");
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+        }
     }
 }

@@ -396,6 +396,23 @@ public enum SyncAction
 
     /// <summary>The camera has no recording at the shared time: stop it and wait.</summary>
     Park,
+
+    /// <summary>The tile is behind: play it one speed step faster until it is in step (no reopen).</summary>
+    CatchUp,
+
+    /// <summary>The tile is ahead: pause it until the shared time reaches it (no reopen).</summary>
+    Hold,
+
+    /// <summary>The nudged tile is in step again: back to the shared speed / pause state.</summary>
+    Resume,
+}
+
+/// <summary>How a playing tile is being brought back in step without reopening it.</summary>
+public enum SyncNudge
+{
+    None,
+    CatchUp,
+    Hold,
 }
 
 /// <summary>Drift correction of synchronous playback: every tile follows the focused tile's time.</summary>
@@ -429,6 +446,79 @@ public static class PlaybackSync
         }
         return tileTime is { } time && (time - master).Duration() > tolerance ? SyncAction.Seek : SyncAction.None;
     }
+
+    /// <summary>
+    /// Farthest a tile may be off (of recording, scaled by speeds above 1×) and still be nudged; beyond it — a wrong
+    /// start position, a recorder that skipped — it is re-seeked.
+    /// </summary>
+    public static TimeSpan NudgeLimit { get; } = TimeSpan.FromSeconds(20);
+
+    /// <summary>A nudge ends when the tile is this close (of recording, scaled by speeds above 1×).</summary>
+    public static TimeSpan Settle { get; } = TimeSpan.FromSeconds(0.5);
+
+    /// <summary>A nudge that has not brought the tile in step after this long (real time) becomes a re-seek.</summary>
+    public static TimeSpan NudgeTimeout { get; } = TimeSpan.FromSeconds(25);
+
+    /// <summary>
+    /// Drift correction for tiles whose time is the real frame time (SDK path: PlayM4_GetSystemTime). The recorder
+    /// starts a playback on a key frame up to a GOP (seconds) before the requested time, so re-seeking a tile that is
+    /// a few seconds off would land it off again, every 5 s. Such a tile is nudged instead: one speed step faster while
+    /// behind (<see cref="SyncAction.CatchUp"/>), paused while ahead (<see cref="SyncAction.Hold"/>), back to normal
+    /// within <see cref="Settle"/> (<see cref="SyncAction.Resume"/>). Only a tile more than <see cref="NudgeLimit"/> off,
+    /// or a nudge older than <see cref="NudgeTimeout"/>, is re-seeked. <paramref name="canNudge"/> false (Flyleaf,
+    /// whose RTSP is paced by the recorder) = the plain rule of the other overload.
+    /// </summary>
+    public static SyncAction Decide(DateTime master, DateTime? tileTime, bool parked, IReadOnlyList<RecordingSegment>? segments,
+        TimeSpan tolerance, double rate, bool canNudge, SyncNudge nudge, TimeSpan nudgeAge)
+    {
+        var plain = Decide(master, tileTime, parked, segments, tolerance);
+        if (!canNudge || parked || plain == SyncAction.Park)
+        {
+            return plain;
+        }
+        if (tileTime is not { } time)
+        {
+            return SyncAction.None; // not known right now (control command in progress): keep what runs
+        }
+        var scale = Math.Max(1, rate);
+        var diff = time - master;
+        if (diff.Duration() > NudgeLimit * scale || (nudge != SyncNudge.None && nudgeAge > NudgeTimeout))
+        {
+            return SyncAction.Seek;
+        }
+        var settle = Settle * scale;
+        return nudge switch
+        {
+            SyncNudge.CatchUp => diff >= -settle ? SyncAction.Resume : SyncAction.None,
+            SyncNudge.Hold => diff <= settle ? SyncAction.Resume : SyncAction.None,
+            _ => diff < -tolerance ? SyncAction.CatchUp : diff > tolerance ? SyncAction.Hold : SyncAction.None,
+        };
+    }
+}
+
+/// <summary>Checks where the recorder really started a playback (SDK path: absolute time of the first frame).</summary>
+public static class PlaybackStart
+{
+    /// <summary>
+    /// How far before the requested time a correct start may land: the recorder starts on the key frame before it
+    /// (one GOP; ~3 s measured on the DS-8632NI-I8, longer with H.265+ / smart codecs). A start earlier than this is
+    /// the recorder starting at the beginning of the recording file instead (seen: 23:11:04 for a request of
+    /// 00:00:00, the file began at 23:10:49).
+    /// </summary>
+    public static TimeSpan MaxEarly { get; } = TimeSpan.FromSeconds(30);
+
+    /// <summary>Re-opens of one seek for a wrong start before the tile accepts it (drift correction takes over).</summary>
+    public const int MaxRetries = 2;
+
+    /// <summary>
+    /// True when the first frame is too early to be the key frame before <paramref name="requested"/>. A later start
+    /// is not wrong: a request inside a gap starts at the next recording.
+    /// </summary>
+    public static bool IsWrong(DateTime requested, DateTime firstFrame) => firstFrame < requested - MaxEarly;
+
+    /// <summary>Where to reopen: the requested time plus what the shared clock advanced since the seek.</summary>
+    public static DateTime RetryTarget(DateTime requested, TimeSpan sinceSeek, double rate, bool paused) =>
+        paused ? requested : requested + TimeSpan.FromTicks((long)(sinceSeek.Ticks * Math.Max(0, rate)));
 }
 
 /// <summary>Month view of the playback calendar (weeks start on Monday, as in Turkey).</summary>

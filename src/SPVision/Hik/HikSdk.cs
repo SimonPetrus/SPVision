@@ -45,12 +45,25 @@ public static class HikSdk
         }
     }
 
-    public static void Shutdown()
+    /// <summary>
+    /// NET_DVR_Cleanup on a worker thread, waiting at most <paramref name="timeout"/> (it can block on SDK threads
+    /// that are still winding down; the process exits anyway). True when it finished in time.
+    /// </summary>
+    public static bool Shutdown(TimeSpan timeout)
     {
-        if (!Available) return;
+        if (!Available) return true;
         Available = false;
-        try { HikNative.NET_DVR_Cleanup(); }
-        catch { /* ignore during process exit */ }
+        var cleanup = new Thread(() =>
+        {
+            try { HikNative.NET_DVR_Cleanup(); }
+            catch { /* ignore during process exit */ }
+        })
+        {
+            IsBackground = true,
+            Name = "SPVision SDK temizliği",
+        };
+        cleanup.Start();
+        return cleanup.Join(timeout);
     }
 
     static void OnException(uint type, int userId, int handle, IntPtr user) =>

@@ -56,11 +56,54 @@ public static class HikNative
     /// <summary>The private-data types toggled by the "Hareket kutularını göster" setting.</summary>
     public static readonly int[] MotionBoxRenderTypes = [RenderAnaIntelData, RenderMotionDetection];
 
-    // NET_DVR_SaveRealData_V30 dwTransType: 0 = ASF, 1 = MP4, 2 = AVI
-    public const uint TransTypeMp4 = 1;
+    // Recordings are NOT made with NET_DVR_SaveRealData_V30 / NET_DVR_PlayBackSaveData: they store the stream as the
+    // recorder sends it (packing type 1 = PS, the "IMKH" Hikvision file; per the developer guide 1-PS, 2-TS, 3-RTP,
+    // 5-MP4/3GPP) and the payload stays stream-encrypted — no standard player can show it. See HikFrameRecorder.
+
+    // PlayCtrl decode callback (plaympeg4.h): picture type of FRAME_INFO.nType, stream selector of PlayM4_SetDecCBStream.
+    public const int FrameTypeYv12 = 3;    // T_YV12
+    public const uint DecodeVideoOnly = 1; // PlayM4_SetDecCBStream: 1 = video, 2 = audio, 3 = both
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     public delegate void DataCallback(int handle, uint dataType, IntPtr buffer, uint size, IntPtr user);
+
+    /// <summary>
+    /// plaympeg4.h FRAME_INFO (all <c>long</c> = 32-bit on Windows): picture size, stream timestamp in ms, type
+    /// (<see cref="FrameTypeYv12"/> for video), frame rate and frame number.
+    /// </summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct FrameInfo
+    {
+        public int Width;
+        public int Height;
+        public int Stamp;
+        public int Type;
+        public int FrameRate;
+        public uint FrameNum;
+    }
+
+    /// <summary>plaympeg4.h PLAYM4_SYSTEM_TIME: absolute (recorder wall-clock) time of the frame on screen.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Pm4SystemTime
+    {
+        public uint Year;
+        public uint Month;
+        public uint Day;
+        public uint Hour;
+        public uint Minute;
+        public uint Second;
+        public uint Millisecond;
+
+        public DateTime? ToDateTime() =>
+            Year is >= 2000 and < 2100 && Month is >= 1 and <= 12 && Day is >= 1 and <= 31 && Hour < 24 && Minute < 60 && Second < 60
+                ? new DateTime((int)Year, (int)Month, Math.Min((int)Day, DateTime.DaysInMonth((int)Year, (int)Month)),
+                    (int)Hour, (int)Minute, (int)Second, (int)Math.Min(Millisecond, 999u))
+                : null;
+    }
+
+    // void (CALLBACK* DecCBFun)(long nPort, char* pBuf, long nSize, FRAME_INFO* pFrameInfo, long nUser, long nReserved2)
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    public delegate void DecodeCallback(int port, IntPtr buffer, int size, ref FrameInfo info, int user, int reserved);
 
     [UnmanagedFunctionPointer(CallingConvention.StdCall)]
     public delegate void ExceptionCallback(uint type, int userId, int handle, IntPtr user);
@@ -280,6 +323,13 @@ public static class HikNative
     // PLAYM4_API BOOL __stdcall PlayM4_RenderPrivateData(LONG nPort, int nIntelType, BOOL bTrue);
     // LONG and BOOL are 32-bit on Windows x64 (int / 4-byte bool); display-only, per port.
     [DllImport(PlayCtrl)] public static extern bool PlayM4_RenderPrivateData(int port, int intelType, bool enable);
+    // PLAYM4_API BOOL __stdcall PlayM4_SetDecCallBackMend(LONG nPort, DecCBFun, long nUser): decoded (decrypted) pictures.
+    [DllImport(PlayCtrl)] public static extern bool PlayM4_SetDecCallBackMend(int port, DecodeCallback? callback, int user);
+    [DllImport(PlayCtrl)] public static extern bool PlayM4_SetDecCBStream(int port, uint stream);
+
+    // PLAYM4_API BOOL __stdcall PlayM4_GetSystemTime(LONG nPort, PLAYM4_SYSTEM_TIME* pstSystemTime): the absolute time
+    // carried by the stream for the current frame (the time the camera's OSD shows). Local call, no network.
+    [DllImport(PlayCtrl)] public static extern bool PlayM4_GetSystemTime(int port, ref Pm4SystemTime time);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_PlaySound(int port);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_StopSound();
 }

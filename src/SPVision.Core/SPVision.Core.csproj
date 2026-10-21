@@ -5,10 +5,14 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <RootNamespace>SPVision.Core</RootNamespace>
+    <!-- Recording/Mp4VideoWriter.cs talks to FFmpeg through pointers. -->
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="System.Security.Cryptography.ProtectedData" Version="10.0.0" />
+    <!-- FFmpeg 9 bindings (same version FlyleafLib uses): MP4 recording of decoded SDK pictures. -->
+    <PackageReference Include="Flyleaf.FFmpeg.ABI" Version="9.0.0" />
   </ItemGroup>
 
   <ItemGroup>

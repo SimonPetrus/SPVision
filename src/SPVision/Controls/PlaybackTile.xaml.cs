@@ -24,6 +24,7 @@ public partial class PlaybackTile : UserControl
 
     readonly SemaphoreSlim _sdkGate = new(1, 1); // serializes SDK commands of this tile (open, stop, controls, clip)
     readonly Stopwatch _openWatch = new();
+    readonly Stopwatch _seekWatch = new();       // since the view's seek (a wrong-start reopen keeps counting)
 
     Player? _player;                 // FFmpeg path
     HikPlaybackPlayer? _hikPlayer;   // SDK path (stream encryption)
@@ -35,7 +36,10 @@ public partial class PlaybackTile : UserControl
     DateTime _openedAt;              // Flyleaf: recorder time at CurTime 0
     DateTime _seekTarget;
     string? _clipFile;
+    bool _flyleafClipping;           // Flyleaf is remuxing the clip (audio switched off meanwhile: MP4 takes no G.711)
     bool _hikClipping;               // SDK clip asked for (the save itself runs in the SDK queue)
+    bool _timeVerified;              // SDK: the first frame's real time was checked against the requested time
+    int _startRetries;               // reopens of the current seek because the recorder started far too early
     int _clipGeneration;             // supersedes the failure report of an earlier clip start
     int _speedIndex = PlaybackSpeed.Normal;
     bool _paused;
@@ -88,7 +92,21 @@ public partial class PlaybackTile : UserControl
 
     public bool UsesSdk => Camera is not null && HikHost.Visibility == Visibility.Visible;
 
-    public bool IsClipping => _player?.IsRecording == true || _hikClipping;
+    public bool IsClipping => _flyleafClipping || _hikClipping;
+
+    /// <summary>How the view is bringing this tile back in step without reopening it (SDK path only).</summary>
+    public SyncNudge Nudge { get; private set; }
+
+    DateTime _nudgeSince;
+
+    /// <summary>How long the current nudge runs (real time).</summary>
+    public TimeSpan NudgeAge => Nudge == SyncNudge.None ? TimeSpan.Zero : DateTime.UtcNow - _nudgeSince;
+
+    /// <summary>
+    /// The tile's time is the real frame time and it can be sped up / held (SDK path). Flyleaf's RTSP playback is paced
+    /// by the recorder and its time is estimated from the open: those tiles are re-seeked instead.
+    /// </summary>
+    public bool CanNudge => UsesSdk && _hikPlayer is { IsStarted: true } && _timeVerified;
 
     public bool IsFocusedTile
     {
@@ -117,10 +135,13 @@ public partial class PlaybackTile : UserControl
         }
     }
 
-    /// <summary>Recorder time of the frame on screen; null when nothing plays.</summary>
+    /// <summary>
+    /// Recorder time of the frame on screen; null when nothing plays. SDK path: the absolute time in the stream (what
+    /// the OSD shows), and only once the start position was checked (a wrong start is reopened before anyone sees it).
+    /// </summary>
     public DateTime? CurrentTime =>
         _player is { Status: Status.Playing or Status.Paused } p ? _openedAt + TimeSpan.FromTicks(Math.Max(0, p.CurTime))
-        : _hikPlayer?.IsStarted == true && HikHost.Visibility == Visibility.Visible ? _hikPlayer.GetTime()
+        : _hikPlayer?.IsStarted == true && _timeVerified && HikHost.Visibility == Visibility.Visible ? _hikPlayer.GetTime()
         : null;
 
     /// <summary>New camera for this tile; it waits ("Kayıtlar aranıyor…") until the view seeks it.</summary>
@@ -144,8 +165,27 @@ public partial class PlaybackTile : UserControl
 
     public void Clear() => Clear(waitForSdk: false);
 
-    /// <summary>Window closing: releases the SDK stream before returning (the SDK is cleaned up right after).</summary>
-    public void Release() => Clear(waitForSdk: true);
+    /// <summary>
+    /// Window closing: ends the clip and releases the stream. The SDK part (stop, MP4 finalization) runs on a worker
+    /// thread, so all tiles release in parallel and the UI never waits; the task ends when it is done.
+    /// </summary>
+    public Task ReleaseAsync()
+    {
+        _hikClipping = false;
+        StopFlyleafClip(report: false);
+        _clipFile = null;
+        Interlocked.Increment(ref _openGeneration);
+        _showGeneration++;
+        DisposeFlyleafPlayer();
+        if (_hikPlayer is not { } player)
+        {
+            return Task.CompletedTask;
+        }
+        DetachHik(player);
+        // Not in the tile's SDK queue (an open stuck on the network must not hold the exit up); the player lock
+        // orders the dispose after a command in progress, and Dispose finalizes a running clip.
+        return Task.Run(() => player.Dispose());
+    }
 
     void Clear(bool waitForSdk)
     {
@@ -224,8 +264,16 @@ public partial class PlaybackTile : UserControl
     /// </summary>
     public void SeekTo(DateTime time, int speedIndex, bool paused)
     {
+        _startRetries = 0;
+        _seekWatch.Restart();
+        SeekCore(time, speedIndex, paused);
+    }
+
+    void SeekCore(DateTime time, int speedIndex, bool paused)
+    {
         _speedIndex = speedIndex;
         _paused = paused;
+        Nudge = SyncNudge.None; // a fresh open starts at the shared speed
         if (Device is null || Camera is null)
         {
             return;
@@ -257,6 +305,7 @@ public partial class PlaybackTile : UserControl
     public void Park(IReadOnlyList<RecordingSegment>? segments, DateTime time)
     {
         StopClip();
+        Nudge = SyncNudge.None;
         StopPlayers();
         IsParked = true;
         var next = segments is null ? null : RecordingJump.NextStart(segments, time);
@@ -270,10 +319,10 @@ public partial class PlaybackTile : UserControl
     public void SetSpeed(int speedIndex)
     {
         _speedIndex = speedIndex;
+        Nudge = SyncNudge.None;
         if (_hikPlayer is { } hik && UsesSdk)
         {
-            hik.RequestedSpeedSteps = PlaybackSpeed.Steps(speedIndex);
-            SyncSdkControls(hik);
+            ApplySdkControls(hik);
         }
         else if (_player is { Status: Status.Playing or Status.Paused })
         {
@@ -284,10 +333,10 @@ public partial class PlaybackTile : UserControl
     public void SetPaused(bool paused)
     {
         _paused = paused;
+        Nudge = SyncNudge.None;
         if (_hikPlayer is { } hik && UsesSdk)
         {
-            hik.RequestedPaused = paused;
-            SyncSdkControls(hik);
+            ApplySdkControls(hik);
         }
         else if (_player is { } player)
         {
@@ -300,6 +349,33 @@ public partial class PlaybackTile : UserControl
                 player.Play();
             }
         }
+    }
+
+    /// <summary>
+    /// The view's drift correction: <see cref="SyncNudge.CatchUp"/> plays the tile one speed step faster,
+    /// <see cref="SyncNudge.Hold"/> pauses it, <see cref="SyncNudge.None"/> returns to the shared speed / pause state.
+    /// No reopen, so no black frame and no key-frame offset (SDK path; see <see cref="CanNudge"/>).
+    /// </summary>
+    public void SetNudge(SyncNudge nudge)
+    {
+        if (nudge == Nudge || (nudge != SyncNudge.None && !CanNudge))
+        {
+            return;
+        }
+        Nudge = nudge;
+        _nudgeSince = DateTime.UtcNow;
+        if (_hikPlayer is { } hik && UsesSdk)
+        {
+            ApplySdkControls(hik);
+        }
+    }
+
+    /// <summary>Shared speed / pause plus the nudge, applied in the SDK queue.</summary>
+    void ApplySdkControls(HikPlaybackPlayer hik)
+    {
+        hik.RequestedSpeedSteps = PlaybackSpeed.Steps(_speedIndex) + (Nudge == SyncNudge.CatchUp ? 1 : 0);
+        hik.RequestedPaused = _paused || Nudge == SyncNudge.Hold;
+        SyncSdkControls(hik);
     }
 
     /// <summary>
@@ -361,6 +437,7 @@ public partial class PlaybackTile : UserControl
         var key = device.StreamKeyFor(camera);
         var end = time.Date.AddDays(1).AddSeconds(-1);
         var generation = Interlocked.Increment(ref _openGeneration);
+        _timeVerified = false;
 
         // Created and stored on the UI thread, so every dispose path (UI thread) sees it.
         if (_hikPlayer is null)
@@ -369,6 +446,7 @@ public partial class PlaybackTile : UserControl
             _hikPlayer.Started += OnHikStarted;
             _hikPlayer.Error += OnHikError;
             _hikPlayer.Ended += OnHikEnded;
+            _hikPlayer.FirstFrameTime += OnHikFirstFrameTime;
         }
         var player = _hikPlayer;
         player.ShowMotionBoxes = App.Settings.ShowMotionBoxes;
@@ -499,13 +577,52 @@ public partial class PlaybackTile : UserControl
             _preferHik = true;
             SetState(TileState.Playing);
             // Fresh handle = normal speed and playing: bring it to the shared speed / pause state.
-            player.RequestedSpeedSteps = PlaybackSpeed.Steps(_speedIndex);
-            player.RequestedPaused = _paused;
-            SyncSdkControls(player);
+            ApplySdkControls(player);
             if (!App.Settings.ShowMotionBoxes)
             {
                 ApplyMotionBoxes(false); // again on the running handle (the SDK's own port may open after ours)
             }
+            // PlayCtrl reports the first frame's real time shortly (OnHikFirstFrameTime). Should it never (a stream
+            // without absolute time), the SDK's own time is used after a while instead of none at all.
+            var generation = Volatile.Read(ref _openGeneration);
+            _ = Task.Delay(TimeSpan.FromSeconds(4)).ContinueWith(_ => Dispatcher.BeginInvoke(() =>
+            {
+                if (Volatile.Read(ref _openGeneration) == generation && ReferenceEquals(_hikPlayer, player))
+                {
+                    _timeVerified = true;
+                }
+            }), TaskScheduler.Default);
+        });
+    }
+
+    /// <summary>
+    /// The first decoded frame's absolute time (SDK thread). The recorder sometimes starts a playback by time at the
+    /// beginning of the recording file instead of the requested time (DIS KAPI: 23:11:04 for 00:00:00, the file
+    /// began at 23:10:49, and NET_DVR_PLAYGETTIME hid it). Such a start is reopened at once, at most
+    /// <see cref="PlaybackStart.MaxRetries"/> times; a start on the key frame before the request is fine.
+    /// </summary>
+    void OnHikFirstFrameTime(DateTime first)
+    {
+        var generation = Volatile.Read(ref _openGeneration);
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (Volatile.Read(ref _openGeneration) != generation || _hikPlayer is null || Camera is null || IsParked)
+            {
+                return; // an older open (the tile seeked meanwhile)
+            }
+            if (PlaybackStart.IsWrong(_seekTarget, first))
+            {
+                if (_startRetries < PlaybackStart.MaxRetries)
+                {
+                    _startRetries++;
+                    var target = PlaybackStart.RetryTarget(_seekTarget, _seekWatch.Elapsed, PlaybackSpeed.Rate(_speedIndex), _paused);
+                    SeekCore(target, _speedIndex, _paused);
+                    SetState(TileState.Connecting, header: "Konum düzeltiliyor…");
+                    return;
+                }
+                Notice?.Invoke(this, $"{Camera.Name}: kayıt cihazı oynatmayı istenen saatten başlatmadı ({first:HH:mm:ss}); eşitleme yeniden deneyecek.");
+            }
+            _timeVerified = true;
         });
     }
 
@@ -526,6 +643,7 @@ public partial class PlaybackTile : UserControl
         {
             if (_hikPlayer is not null && Camera is not null && !IsParked)
             {
+                StopClip(); // the clip ends with the recording: finalized and reported
                 StopPlayers();
                 IsParked = true; // resumed by the view if the shared time is still recorded (e.g. after a network blip)
                 SetState(TileState.Stopped, "Kayıt sonu");
@@ -538,6 +656,7 @@ public partial class PlaybackTile : UserControl
     void OpenFlyleaf(DateTime time)
     {
         DisposeHikPlayer();
+        StopFlyleafClip(report: true);
         HikHost.Visibility = Visibility.Collapsed;
         Host.Visibility = Visibility.Visible;
         VideoLayer.Visibility = Visibility.Visible;
@@ -548,10 +667,6 @@ public partial class PlaybackTile : UserControl
             Host.Player = _player;
         }
         _player.Audio.Mute = !_focused;
-        if (_player.IsRecording)
-        {
-            _player.StopRecording();
-        }
         _openedAt = time;
         SetState(TileState.Connecting);
         _player.OpenAsync(StreamUrls.Playback(Device!, Camera!.Channel, time, time.Date.AddDays(1).AddSeconds(-1)));
@@ -568,6 +683,10 @@ public partial class PlaybackTile : UserControl
             if (_player is not { } player || Camera is null || IsParked)
             {
                 return;
+            }
+            if (_flyleafClipping && !player.IsRecording)
+            {
+                StopClip(); // Flyleaf ended the recording itself (stream lost): finalize the badge and report the file
             }
             switch (player.Status)
             {
@@ -598,6 +717,7 @@ public partial class PlaybackTile : UserControl
                     SetState(TileState.Failed, $"Oynatılamadı\n{Shorten(player.LastError)}");
                     break;
                 case Status.Ended:
+                    StopClip();
                     player.Stop();
                     IsParked = true;
                     SetState(TileState.Stopped, "Kayıt sonu");
@@ -657,7 +777,12 @@ public partial class PlaybackTile : UserControl
         return null;
     }
 
-    /// <summary>Starts or ends an MP4 clip of what plays. Returns the user message.</summary>
+    /// <summary>
+    /// Starts or ends an MP4 clip of what plays. Returns the immediate user message; "Klip kaydedildi: …" (or why not)
+    /// follows as a <see cref="Notice"/> once the file is finalized and verified.
+    /// SDK path: the decrypted picture is encoded to H.264 (HikFrameRecorder). The SDK's own NET_DVR_PlayBackSaveData
+    /// wrote the encrypted PS stream — 0 bytes here, the old 0-byte clip — and the message came before the stop had even run.
+    /// </summary>
     public string ToggleClip()
     {
         if (Camera is null)
@@ -666,7 +791,7 @@ public partial class PlaybackTile : UserControl
         }
         if (IsClipping)
         {
-            return StopClip() ?? "Klip kaydedildi.";
+            return StopClip() ?? RecordingText.Finishing(clip: true);
         }
         System.IO.Directory.CreateDirectory(App.Settings.RecordingFolder);
         var file = System.IO.Path.Combine(App.Settings.RecordingFolder, $"{Safe(Camera.Name)}_{CurrentTime ?? DateTime.Now:yyyyMMdd_HHmmss}_klip.mp4");
@@ -681,7 +806,7 @@ public partial class PlaybackTile : UserControl
                 string? error;
                 try
                 {
-                    error = hik.StartSave(file) ? null : "oynatma durdu";
+                    error = hik.StartSave(file) ? null : "oynatma durdu ya da görüntü henüz gelmedi";
                 }
                 catch (HikException ex)
                 {
@@ -695,7 +820,10 @@ public partial class PlaybackTile : UserControl
         }
         else if (_player?.Status == Status.Playing)
         {
-            _player.StartRecording(ref file, false);
+            if (!StartFlyleafClip(ref file))
+            {
+                return RecordingText.StartFailed(clip: true, "akış MP4 olarak kaydedilemiyor");
+            }
         }
         else
         {
@@ -704,7 +832,77 @@ public partial class PlaybackTile : UserControl
         _clipFile = file;
         ClipBadge.Visibility = Visibility.Visible;
         StateChanged?.Invoke(this);
-        return $"Klip kaydediliyor: {file}";
+        return RecordingText.Started(clip: true, file);
+    }
+
+    /// <summary>
+    /// Flyleaf remuxes the RTSP streams into the MP4. Hikvision cameras send G.711 audio, which MP4 cannot hold (the
+    /// header write fails and leaves a 0-byte file), so audio is switched off for the clip: video only.
+    /// </summary>
+    bool StartFlyleafClip(ref string file)
+    {
+        var player = _player!;
+        try
+        {
+            player.Config.Audio.Enabled = false;
+        }
+        catch (Exception)
+        {
+            // Audio stays: a G.711 stream then fails the MP4 start below, which is reported.
+        }
+        player.StartRecording(ref file, false);
+        if (player.IsRecording)
+        {
+            _flyleafClipping = true;
+            return true;
+        }
+        RestoreFlyleafAudio(player);
+        _ = Recordings.DeleteIfEmptyAsync(file);
+        return false;
+    }
+
+    /// <summary>Ends a Flyleaf clip; <paramref name="report"/>: verify the file and tell the user.</summary>
+    void StopFlyleafClip(bool report)
+    {
+        if (!_flyleafClipping || _player is not { } player)
+        {
+            _flyleafClipping = false;
+            return;
+        }
+        _flyleafClipping = false;
+        if (player.IsRecording)
+        {
+            player.StopRecording(); // Flyleaf writes the MP4 index here
+        }
+        RestoreFlyleafAudio(player);
+        if (report && _clipFile is { } file)
+        {
+            Report(Recordings.VerifyAsync(file));
+        }
+    }
+
+    static void RestoreFlyleafAudio(Player player)
+    {
+        try
+        {
+            player.Config.Audio.Enabled = true;
+        }
+        catch (Exception)
+        {
+            // The next open of the tile starts with audio again anyway.
+        }
+    }
+
+    /// <summary>Shows the outcome once the file is finalized (any thread; the tile may show another camera by then).</summary>
+    void Report(Task<RecordingResult>? finishing)
+    {
+        finishing?.ContinueWith(t =>
+        {
+            var message = t.IsCompletedSuccessfully
+                ? RecordingText.Finished(t.Result, clip: true)
+                : RecordingText.Finished(new RecordingResult("", false, 0, TimeSpan.Zero, 0, null, t.Exception?.InnerException?.Message), clip: true);
+            Dispatcher.BeginInvoke(() => Notice?.Invoke(this, message));
+        }, TaskScheduler.Default);
     }
 
     void ClipStartFailed(int generation, string error)
@@ -716,33 +914,34 @@ public partial class PlaybackTile : UserControl
         _hikClipping = false;
         _clipFile = null;
         ClipBadge.Visibility = Visibility.Collapsed;
-        Notice?.Invoke(this, $"Klip başlatılamadı: {Shorten(error)}");
+        Notice?.Invoke(this, RecordingText.StartFailed(clip: true, Shorten(error)));
         StateChanged?.Invoke(this);
     }
 
-    /// <summary>Ends a running clip (also before every seek: a clip is one continuous piece). Returns the message, if any.</summary>
+    /// <summary>
+    /// Ends a running clip (also before every seek: a clip is one continuous piece). Returns the immediate message,
+    /// if any; the final one ("Klip kaydedildi: …" or why not) comes when the file is complete.
+    /// </summary>
     string? StopClip()
     {
         if (!IsClipping)
         {
             return null;
         }
-        if (_player?.IsRecording == true)
-        {
-            _player.StopRecording();
-        }
+        StopFlyleafClip(report: true);
         if (_hikClipping)
         {
             _hikClipping = false;
             _clipGeneration++;
             if (_hikPlayer is { } hik)
             {
-                QueueSdk(hik.StopSave); // blocking: in the SDK queue, ahead of the next seek's open
+                // In the SDK queue: after a start still in progress, ahead of the next seek's open.
+                QueueSdk(() => Report(hik.StopSave()));
             }
         }
         ClipBadge.Visibility = Visibility.Collapsed;
-        var message = $"Klip kaydedildi: {_clipFile}";
         _clipFile = null;
+        var message = RecordingText.Finishing(clip: true);
         Notice?.Invoke(this, message);
         StateChanged?.Invoke(this);
         return message;
@@ -837,10 +1036,7 @@ public partial class PlaybackTile : UserControl
         {
             return;
         }
-        player.Started -= OnHikStarted;
-        player.Error -= OnHikError;
-        player.Ended -= OnHikEnded;
-        _hikPlayer = null;
+        DetachHik(player);
         if (wait)
         {
             player.Dispose();
@@ -849,6 +1045,15 @@ public partial class PlaybackTile : UserControl
         {
             Task.Run(player.Dispose);
         }
+    }
+
+    void DetachHik(HikPlaybackPlayer player)
+    {
+        player.Started -= OnHikStarted;
+        player.Error -= OnHikError;
+        player.Ended -= OnHikEnded;
+        player.FirstFrameTime -= OnHikFirstFrameTime;
+        _hikPlayer = null;
     }
 
     // ---- Input: WPF parts, the SDK HWND (transparent to hit testing) and Flyleaf's surface window ----

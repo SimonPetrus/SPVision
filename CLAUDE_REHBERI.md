@@ -89,8 +89,35 @@ dotnet run --project src\SPVision
   **UI iş parçacığında çağrılmaz**: karenin `_sdkGate` kuyruğunda (`QueueSdk`; sıra UI'de alınır, komutlar verildiği
   sırayla çalışır) yürür, sonuç `Dispatcher.BeginInvoke` ile döner. Kayıt düğmesi ve KAYIT/klip rozeti karenin kendi
   bayrağına (`_hikRecording` / `_hikClipping`) bakar, hemen değişir; SDK reddederse geri alınır ve bildirilir. `IsSaving`,
-  `IsRunning` kilitsiz okunur. Tek istisna kapanış: `LiveView.Shutdown` / `PlaybackView.Shutdown` SDK oynatıcısını UI'de
-  eş zamanlı bırakır (hemen ardından `NET_DVR_Cleanup` gelir; callback'ler UI'yi beklemediği için güvenli).
+  `IsRunning` kilitsiz okunur. Kapanış da artık UI'de beklemez: bkz. §8 "Kapanış".
+- **Kayıt ve klip biçimi (21.10.2026 düzeltmesi, kayıt kısmı cihazda denenmedi):** Eskiden canlı kayıt
+  `NET_DVR_SaveRealData_V30(…, 1, …)` ile yapılıyordu: 1 = **PS** (kılavuz: 1-PS, 2-TS, 3-RTP, 5-MP4/3GPP; koddaki "1 = MP4"
+  yorumu yanlıştı) → dosya `IMKH` başlıklı Hikvision PS'iydi, içerik de **hâlâ şifreliydi** (SDK kaydederken çözmez; anahtar
+  yalnız PlayCtrl'dedir). Oynatma klibi `NET_DVR_PlayBackSaveData` ile aynı akışı yazmaya çalışıyordu: **0 bayt**; üstelik
+  "Klip kaydedildi" mesajı durdurma kuyrukta daha çalışmadan gösteriliyordu. PlayCtrl çözülmüş sıkıştırılmış akış vermez.
+  **Şimdi** ([`HikFrameRecorder`](src/SPVision/Hik/HikFrameRecorder.cs)): kayıt/klip başlayınca **ikinci bir PlayCtrl portu**
+  açılır (SYSHEAD başlığının kopyası + `PlayM4_SetSecretKey` + yazılım çözücü + `PlayM4_SetDecCBStream(1)` +
+  `PlayM4_SetDecCallBackMend` + `PlayM4_Play(port, NULL)` — pencere yok); veri callback'i her paketi ekran portundan sonra
+  bu porta da verir. Çözülmüş YV12 kareler Core [`VideoRecorder`](src/SPVision.Core/Recording/VideoRecorder.cs)'a gider:
+  havuzdan tampona kopyala, sınırlı kuyruğa koy (dolu → kare düşer, **asla beklemez**), kendi iş parçacığında
+  [`Mp4VideoWriter`](src/SPVision.Core/Recording/Mp4VideoWriter.cs) ile **H.264 / standart MP4** (FlyleafLib'in FFmpeg 9'u,
+  `Flyleaf.FFmpeg.ABI` bağlamaları; B-kare yok, 2 sn'de bir anahtar kare, ~1 bit/12 piksel, 1–8 Mb/sn). Kodlayıcı sırası:
+  `h264_nvenc`, `h264_qsv`, `h264_amf` (GPU), `libopenh264`, `h264_mf`, `mpeg4` (son çare, yine gerçek MP4); açılamayan
+  atlanır. Zaman damgası PlayCtrl `FRAME_INFO.nStamp` (ms) → [`FrameClock`](src/SPVision.Core/Recording/FrameClock.cs):
+  0'dan başlar, kesin artar; geri giden / >3 sn atlayan damga bir nominal kare ilerler (4× oynatmadaki klip de normal hızda
+  oynar). Oynatmada kayıt portu ekran portuyla aynı hız adımı/duraklatmayı alır (`SyncControls`). Durdurma: port önce
+  yayından çekilir (callback sayacı sıfırlanana kadar beklenir), `PlayM4_Stop` (çözücü iş parçacığını bekler; geri çağrı yalnız
+  kuyruğa koyduğu için güvenli), sonra kodlayıcı kalan kareleri yazar, `moov` yazılır, dosya
+  [`Mp4Inspector`](src/SPVision.Core/Recording/Mp4Inspector.cs) ile denetlenir (ftyp + dolu mdat + moov içinde video
+  örnekleri; IMKH/boş/yarım dosya geçersiz). "Kayıt kaydedildi: <yol>" / "Klip kaydedildi: <yol>" **ancak bundan sonra**
+  gelir; hiç kare yoksa ya da dosya geçersizse dosya silinir ve "Kayıt/Klip kaydedilemedi: <sebep>" yazar. Başlarken
+  "Kayıt başladı: …" / "Klip kaydediliyor: …", durdururken "… tamamlanıyor…". Kayıt; durdur, kamera/sayfa değişimi, kalite
+  değişimi, yeniden bağlanma (`Open` → `FinishRecording`), oynatmada her arama/park/kayıt sonu ve kapanışta sonlandırılır
+  (oynatıcının `Stop`'u da kaydı keser değil **bitirir**; `StopSave` o bitişi devralıp raporlar). Flyleaf (şifresiz) yolunda
+  Flyleaf'in remuxer'ı kalır (yeniden kodlama yok); durunca aynı denetim yapılır. Oynatma klibinde Flyleaf sesi klip boyunca
+  kapatılır: Hikvision G.711 sesi MP4'e girmez, başlık yazılamaz ve 0 baytlık dosya kalırdı. H.265 kameralarda Flyleaf
+  kaydı H.265 MP4 olur (VLC açar; Windows oynatıcısı HEVC uzantısı ister). Tüm bitişler `Recordings` kaydında izlenir,
+  kapanış onları bekler.
 - **ÇOK ÖNEMLİ — kanal numarası:** NVR'larda SDK kanal no ≠ ISAPI kanal no. Dijital kanallar
   `DeviceInfoV40.DeviceV30.StartDChan`'dan başlar (bu cihazda **33**). **Mutlaka**
   [`HikSession.SdkChannel(isapiChannel)`](src/SPVision/Hik/HikSession.cs) ile çevir; yanlış
@@ -193,6 +220,22 @@ dotnet run --project src\SPVision
   parçacığında, karenin SDK komut kuyruğunda (`_sdkGate`) uygulanır; `GetTime` kilidi beklemez.
 - Flyleaf (şifresiz RTSP) yolunda hız `Player.Speed`; RTSP kaydı cihaz hızında akar, 1×'ten hızlıda kare geride kalabilir —
   sapma düzeltmesi yeniden arar.
+- **Oynatma zamanı kuralı (21.10.2026, gece yarısı hatası; cihazda okuma sondasıyla doğrulandı):** Kayıt cihazı
+  `PlayBackByTime_V40`'ı bazen istenen saatten değil **kayıt dosyasının başından** başlatır: 21 Ekim 00:00 istenince DIS KAPI
+  20 Ekim 23:11:04'ten açıldı (o kayıt parçası 23:10:49'da başlıyor; KARŞILAMA'da da 23:21). `NET_DVR_PLAYGETTIME` bunu
+  göstermez (SDK'nın istenen başlangıçtan tahmini; pencere verilmezse hata 12 döner), bu yüzden sapma düzeltmesi hiç
+  görmedi. `NET_DVR_PLAYSETTIME` (26) çalışan tutamaçta görünür bir şey değiştirmedi. **Kural:** SDK karesinin zamanı
+  **daima** kendi portumuzdan `PlayM4_GetSystemTime` (akıştaki mutlak zaman = kameranın OSD'si, ms'li, yerel çağrı) ile
+  okunur; `PLAYGETTIME` yalnız yedektir. İlk karenin zamanı bilinince (`HikPlaybackPlayer.FirstFrameTime`) kare
+  [`PlaybackStart.IsWrong`](src/SPVision.Core/PlaybackSync.cs) ile denetlenir: istenenden 30 sn'den erken ise yanlış başlangıçtır,
+  kare hemen (ortak saatin ilerlediği kadar ileriye) yeniden açılır ("Konum düzeltiliyor…", en çok 2 kez). Doğru bir açılış da
+  istenen saatten **önceki anahtar kareden** başlar (sondada 00:00:00 için 23:59:56,8; 12:30:00 için 12:29:58,4). Denetim
+  bitene kadar karenin `CurrentTime`'ı yoktur (ortak saat yanlış zamana çekilmez; 4 sn içinde zaman gelmezse yedek kullanılır).
+  Sapma: SDK karelerinde [`PlaybackSync.Decide`](src/SPVision.Core/PlaybackSync.cs) (dürtme aşırı yüklemesi) birkaç saniyelik
+  farkı **yeniden açmadan** düzeltir: geride → bir hız adımı hızlı (`CatchUp`), önde → duraklat (`Hold`), 0,5 sn içine
+  gelince eski hız (`Resume`); her tik (250 ms) denetlenir. 20 sn'den (1× üstünde hızla orantılı) fazla fark ya da 25 sn'de
+  sonuç vermeyen dürtme yeniden açılır. Odaklı kare (referans) ve Flyleaf kareleri dürtülmez (eski kural: 2 sn → yeniden aç).
+  Kullanıcı hız/duraklat/arama yapınca dürtme biter.
 - **Hareket kutuları** (kayıt cihazının akışla gönderdiği yeşil hareket / akıllı analiz kutuları) PlayCtrl'ün
   "private data" çizimidir. Aç/kapa: `PlayM4_RenderPrivateData(port, tip, BOOL)` (plaympeg4.h); canlıda ek olarak
   `NET_DVR_RenderPrivateData(realHandle, tip, BOOL)` (HCNetSDK.h; RealPlay'e pencere de verildiği için SDK'nın kendi
@@ -296,7 +339,8 @@ dotnet run --project src\SPVision
 | `Hik/HikSdk.cs` | Init/Cleanup, exception callback, `Available` |
 | `Hik/HikSession.cs` | Cihaz başına tek login; `SdkChannel()` çevirisi |
 | `Hik/HikLivePlayer.cs` | Canlı SDK oturumu (RealPlay + PlayCtrl) |
-| `Hik/HikPlaybackPlayer.cs` | Oynatma SDK oturumu (PlayBackByTime + PlayCtrl + GetTime + klip SaveData + `SyncControls` hız/duraklat) |
+| `Hik/HikPlaybackPlayer.cs` | Oynatma SDK oturumu (PlayBackByTime + PlayCtrl + `GetTime` = `PlayM4_GetSystemTime` + `FirstFrameTime` + MP4 klip + `SyncControls` hız/duraklat) |
+| `Hik/HikFrameRecorder.cs` | Kayıt/klip: ikinci PlayCtrl portu (yazılım çözücü, pencere yok) → çözülmüş YV12 → Core `VideoRecorder` (H.264 MP4) |
 | `Hik/HikException.cs` | SDK hata kodlarının Türkçe açıklamaları (`Describe`) |
 
 Core tarafı: [`IsapiClient`](src/SPVision.Core/IsapiClient.cs) (Digest auth; cihaz bilgisi,
@@ -311,6 +355,10 @@ kamera anahtarı yoksa cihaz anahtarını kullanır), [`SettingsStore`](src/SPVi
 (yenilenen kamera listesinde anahtarı ve "listede göster" seçimini korur), [`DeviceKind`](src/SPVision.Core/DeviceKind.cs)
 ("NVR · 32 kanal" metni), [`AutoStart`](src/SPVision.Core/AutoStart.cs) (Run değeri), [`AutoStreamQuality`](src/SPVision.Core/AutoStreamQuality.cs) (Oto kalite kuralı),
 [`PlaybackRestore`](src/SPVision.Core/PlaybackRestore.cs) (son oynatma düzeni + kameraları) ve [`HttpsPort`](src/SPVision.Core/HttpsPort.cs) (HTTPS kutusu ↔ 80/443 portu, HTTP'ye düşme sorusunun kuralı).
+Kayıt (§4 "Kayıt ve klip biçimi"): `Recording/` — `Mp4VideoWriter` (FFmpeg H.264 → MP4; Core bu yüzden `Flyleaf.FFmpeg.ABI`
+9.0.0'a ve `AllowUnsafeBlocks`'a bağlıdır), `VideoRecorder` (kuyruk + kodlayıcı iş parçacığı + doğrulama, `RecordingResult`,
+`RecordingText`, `Recordings`), `FrameClock`, `Mp4Inspector`. `RecordingTests` sentetik YV12 karelerden MP4 yazıp FFmpeg ile
+açar/çözer (depodaki `ffmpeg\` DLL'leri yoksa bu testler bir şey yapmadan geçer).
 Cihaz ayarları (§9): [`IsapiWritePolicy`](src/SPVision.Core/IsapiWritePolicy.cs) (yazma izin listesi + yasak kelimeler),
 [`IsapiConfig.cs`](src/SPVision.Core/IsapiConfig.cs) (`IsapiPaths`, `IsapiResponseStatus`, `IsapiXml`, `ConfigEdit`/`SetValueEdit`,
 `ConfigWrite`, `ConfigChangeText`, `IConfigTransport`, `ConfigWriter`), [`IsapiClient.Config.cs`](src/SPVision.Core/IsapiClient.Config.cs)
@@ -353,6 +401,17 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
    doğrula.
 
 ## 8. Sık karşılaşılacak tuzaklar (öğrenilmiş dersler)
+
+- **Kapanış (21.10.2026, pencere kapanınca süreç sonlanmıyordu; cihazda denenmedi):** eski `Closing` 22 canlı + 16 oynatma
+  karesinin SDK akışını **UI iş parçacığında sırayla** bırakıyordu (her biri `StopRealPlay`/`StopPlayBack`, süren bir açılışın
+  ağ zaman aşımını bekleyebilir) ve çıkışı WPF'in `OnMainWindowClose` yoluna bırakıyordu: pencere kayboluyor, süreç 40+ sn ya da
+  hiç bitmiyordu. **Şimdi** (`MainWindow.OnClosing`): ilk kapatmada `e.Cancel`, pencere **hemen gizlenir**, `App.StartExitWatchdog`
+  başlar; `LiveView.ShutdownAsync` + `PlaybackView.ShutdownAsync` tüm kareleri **paralel ve UI dışında** bırakır
+  (`VideoTile/PlaybackTile.ReleaseAsync` → `Task.Run(player.Dispose)`; Dispose süren kaydı bitirir ve MP4'ü 5 sn'ye kadar
+  bekler), sonra `Recordings.WhenAllFinished`; toplam en çok 5 sn. Ardından **açıkça** `Application.Current.Shutdown()`;
+  `App.OnExit` `HikSdk.Shutdown(2 sn)` (`NET_DVR_Cleanup` ayrı iş parçacığında, beklemesi sınırlı). Bekçi: kapanış başladıktan
+  8 sn sonra süreç hâlâ yaşıyorsa `logs\shutdown.log`'a yazar ve `Environment.Exit(0)`; o da takılırsa 3 sn sonra
+  `Process.Kill`. Her aşamanın süresi `%APPDATA%\SPVision\logs\shutdown.log`'a yazılır.
 
 - **wpftmp derleme geçişi** `ImplicitUsings`'i düşürür → `File`/`Directory` gibi tipleri
   `System.IO.` ile nitelendir; `error CS0103` görürsen önce bunu kontrol et.

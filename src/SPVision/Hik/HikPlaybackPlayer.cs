@@ -5,9 +5,10 @@ namespace SPVision.Hik;
 
 /// <summary>
 /// One SDK playback session: NET_DVR_PlayBackByTime_V40 with the data callback fed into
-/// PlayCtrl (same SYSHEAD pipeline as live view). Timeline position comes from
-/// NET_DVR_PlayBackControl_V40(NET_DVR_PLAYGETTIME); seeks re-issue PlayBackByTime_V40
-/// (PLAYSETTIME support varies by device, a fresh open is always reliable).
+/// PlayCtrl (same SYSHEAD pipeline as live view). Timeline position is the absolute time the stream carries for the
+/// frame on screen (PlayM4_GetSystemTime on our port = the time the camera OSD shows); NET_DVR_PLAYGETTIME is only the
+/// fallback (the SDK's estimate from the requested start: it did not see a recorder that started 49 min early, and it
+/// fails without a play window). Seeks re-issue PlayBackByTime_V40 (PLAYSETTIME had no visible effect on the DS-8632NI-I8).
 /// Speed and pause are "requested state" (<see cref="RequestedSpeedSteps"/>, <see cref="RequestedPaused"/>)
 /// that <see cref="SyncControls"/> applies idempotently: the recorder side with NET_DVR_PLAYFAST /
 /// NET_DVR_PLAYSLOW (one speed step each) and NET_DVR_PLAYPAUSE / NET_DVR_PLAYRESTART, the local
@@ -28,7 +29,11 @@ public sealed class HikPlaybackPlayer : IDisposable
     HikNative.DataCallback? _callback;
     volatile int _playHandle = -1;
     int _port = -1;             // set by the data callback (stream header), read lock-free
-    volatile bool _saving;
+    byte[]? _header;            // the stream header PlayCtrl was opened with (a clip port needs it too)
+    HikFrameRecorder? _recorder; // MP4 clip in progress; read lock-free by the data callback
+    Task<RecordingResult>? _lastRecording; // finalization of the clip a Stop ended (Dispose waits for it)
+    int _timePackets;           // data packets since the open, while the first frame time is not known yet
+    volatile bool _timeKnown;
     volatile bool _paused;
     int _appliedSteps;          // speed steps applied to the current handle (0 = normal)
     int _sdkPortTries;          // data packets left to look for the SDK's own port of this handle (motion boxes off)
@@ -53,6 +58,13 @@ public sealed class HikPlaybackPlayer : IDisposable
     /// <summary>Raised when the device reports end-of-recording (SDK thread).</summary>
     public event Action? Ended;
 
+    /// <summary>
+    /// Raised once per open, as soon as PlayCtrl knows the absolute time of the first decoded frame (SDK thread).
+    /// The tile compares it with the requested time: the recorder sometimes starts at the beginning of the recording
+    /// file instead (e.g. 23:11 for a request of 00:00 when the file began at 23:10).
+    /// </summary>
+    public event Action<DateTime>? FirstFrameTime;
+
     public bool IsRunning => _playHandle >= 0;
     public bool IsStarted => _started;
 
@@ -62,7 +74,7 @@ public sealed class HikPlaybackPlayer : IDisposable
     /// </summary>
     public bool ShowMotionBoxes { get => _showMotionBoxes; set => _showMotionBoxes = value; }
 
-    public bool IsSaving => _saving;
+    public bool IsSaving => Volatile.Read(ref _recorder) is not null;
     public bool IsPaused => _paused;
 
     /// <summary>Wanted speed relative to normal: +n = n × PLAYFAST (2^n ×), −n = n × PLAYSLOW (2^−n ×).</summary>
@@ -83,6 +95,8 @@ public sealed class HikPlaybackPlayer : IDisposable
             _paused = false;
             _appliedSteps = 0;
             _sdkPortTries = 0;
+            _timePackets = 0;
+            _timeKnown = false;
             _callback = OnPlayData;
             streamKeyPending = string.IsNullOrEmpty(streamKey) ? null : streamKey;
             windowHandlePending = hWnd.ToInt32();
@@ -139,14 +153,16 @@ public sealed class HikPlaybackPlayer : IDisposable
         lock (_lock)
         {
             int handle = _playHandle;
-            bool wasSaving = _saving;
             _playHandle = -1;
-            _saving = false;
             _paused = false;
             _started = false;
+            // A clip ends with its stream (seek, park, dispose): finalized, never cut off.
+            if (StopRecorder() is { } finishing)
+            {
+                _lastRecording = finishing;
+            }
             if (handle >= 0)
             {
-                if (wasSaving) HikNative.NET_DVR_StopPlayBackSave(handle);
                 HikNative.NET_DVR_StopPlayBack(handle); // the SDK stops calling back
             }
             // Read after StopPlayBack: the callback may have opened the port while we were stopping.
@@ -158,6 +174,7 @@ public sealed class HikPlaybackPlayer : IDisposable
                 HikNative.PlayM4_FreePort(port);
             }
             _callback = null; // only now: the SDK no longer calls it
+            _header = null;
         }
     }
 
@@ -183,6 +200,7 @@ public sealed class HikPlaybackPlayer : IDisposable
                 if (!Control(_playHandle, HikNative.PlayFast))
                     throw HikException.LastError("Hızlandırılamadı");
                 HikNative.PlayM4_Fast(port);
+                Volatile.Read(ref _recorder)?.Fast();
                 _appliedSteps++;
             }
             while (_appliedSteps > target)
@@ -190,6 +208,7 @@ public sealed class HikPlaybackPlayer : IDisposable
                 if (!Control(_playHandle, HikNative.PlaySlow))
                     throw HikException.LastError("Yavaşlatılamadı");
                 HikNative.PlayM4_Slow(port);
+                Volatile.Read(ref _recorder)?.Slow();
                 _appliedSteps--;
             }
             var pause = RequestedPaused;
@@ -198,14 +217,16 @@ public sealed class HikPlaybackPlayer : IDisposable
                 if (!Control(_playHandle, pause ? HikNative.PlayPause : HikNative.PlayRestart))
                     throw HikException.LastError(pause ? "Duraklatılamadı" : "Devam ettirilemedi");
                 HikNative.PlayM4_Pause(port, pause ? 1u : 0u);
+                Volatile.Read(ref _recorder)?.Pause(pause);
                 _paused = pause;
             }
         }
     }
 
     /// <summary>
-    /// Recorder wall-clock time of the frame on screen; null when not playing, or when an open or control
-    /// command is in progress (the UI asks often and must never wait for the network).
+    /// Recorder wall-clock time of the frame on screen: the absolute time in the stream (PlayM4_GetSystemTime, what
+    /// the OSD shows), else NET_DVR_PLAYGETTIME. Null when not playing, or when an open or control command is in
+    /// progress (the UI asks often and must never wait for the network).
     /// </summary>
     public DateTime? GetTime()
     {
@@ -216,6 +237,10 @@ public sealed class HikPlaybackPlayer : IDisposable
         try
         {
             if (_playHandle < 0) return null;
+            if (FrameTime(Volatile.Read(ref _port)) is { } frameTime)
+            {
+                return frameTime;
+            }
             var time = new HikNative.DvrTime();
             var ptr = Marshal.AllocHGlobal(Marshal.SizeOf<HikNative.DvrTime>());
             try
@@ -238,33 +263,52 @@ public sealed class HikPlaybackPlayer : IDisposable
         }
     }
 
+    /// <summary>Absolute time of the current frame of a PlayCtrl port (local call); null before the first frame.</summary>
+    static DateTime? FrameTime(int port)
+    {
+        if (port < 0)
+        {
+            return null;
+        }
+        var time = new HikNative.Pm4SystemTime();
+        return HikNative.PlayM4_GetSystemTime(port, ref time) ? time.ToDateTime() : null;
+    }
+
     /// <summary>
-    /// Saves the stream as received (SDK muxes to MP4) via NET_DVR_PlayBackSaveData. False when nothing plays.
-    /// Blocking: the SDK waits for its data thread, and the lock for a control command in progress.
+    /// Starts an MP4 clip of the decrypted picture (<see cref="HikFrameRecorder"/>; the SDK's NET_DVR_PlayBackSaveData
+    /// would store the encrypted PS stream). False when nothing plays. Takes the control lock (waits for a command in
+    /// progress): off the UI thread.
     /// </summary>
     public bool StartSave(string path)
     {
         lock (_lock)
         {
-            if (_disposed || _playHandle < 0) return false;
-            if (_saving) return true;
-            if (!HikNative.NET_DVR_PlayBackSaveData(_playHandle, path))
-                throw HikException.LastError("Klip kaydı başlatılamadı");
-            _saving = true;
+            if (_disposed || _playHandle < 0 || Volatile.Read(ref _header) is not { } header) return false;
+            if (Volatile.Read(ref _recorder) is not null) return true;
+            var recorder = HikFrameRecorder.Start(header, streamKeyPending, fileMode: true, path);
+            // The clip port consumes at the display port's rate: same speed steps and pause.
+            for (int i = 0; i < _appliedSteps; i++) recorder.Fast();
+            for (int i = 0; i > _appliedSteps; i--) recorder.Slow();
+            if (_paused) recorder.Pause(true);
+            Volatile.Write(ref _recorder, recorder);
             return true;
         }
     }
 
-    /// <summary>Ends the clip (playback continues). Blocking.</summary>
-    public void StopSave()
+    /// <summary>
+    /// Ends the clip (playback continues). The task ends when the MP4 is finalized and checked; null when no clip ran.
+    /// Takes the control lock; PlayCtrl calls only.
+    /// </summary>
+    public Task<RecordingResult>? StopSave()
     {
         lock (_lock)
         {
-            if (_playHandle < 0 || !_saving) return;
-            HikNative.NET_DVR_StopPlayBackSave(_playHandle);
-            _saving = false;
+            // A Stop (reopen) may have ended it already: then its finalization is handed over instead.
+            return StopRecorder() ?? Interlocked.Exchange(ref _lastRecording, null);
         }
     }
+
+    Task<RecordingResult>? StopRecorder() => Interlocked.Exchange(ref _recorder, null)?.Stop();
 
     /// <summary>Grabs the currently displayed frame via PlayM4_GetJPEG; null when not playing.</summary>
     public string? Snapshot(string path)
@@ -344,6 +388,9 @@ public sealed class HikPlaybackPlayer : IDisposable
                 HikNative.PlayM4_SetStreamOpenMode(port, HikNative.StreamFile); // file/kill mode for VOD
                 if (!HikNative.PlayM4_OpenStream(port, buffer, size, 10 * 1024 * 1024))
                     throw HikException.LastError("PlayCtrl akışı açamadı");
+                var header = new byte[size];
+                Marshal.Copy(buffer, header, 0, (int)size);
+                Volatile.Write(ref _header, header);
                 HikNative.PlayM4_SetDisplayBuf(port, 15);
                 HikNative.PlayM4_SetOverlayMode(port, false, 0);
                 if (!ShowMotionBoxes)
@@ -375,8 +422,15 @@ public sealed class HikPlaybackPlayer : IDisposable
                 }
                 for (int i = 0; i < 50; i++)
                 {
-                    if (HikNative.PlayM4_InputData(port, buffer, size)) return;
+                    if (HikNative.PlayM4_InputData(port, buffer, size)) break;
                     Thread.Sleep(2);
+                }
+                Volatile.Read(ref _recorder)?.Input(buffer, size);
+                // Until the first frame's absolute time is known: ask PlayCtrl every 8th packet (local, cheap).
+                if (!_timeKnown && ++_timePackets % 8 == 0 && FrameTime(port) is { } first)
+                {
+                    _timeKnown = true;
+                    FirstFrameTime?.Invoke(first);
                 }
             }
         }
@@ -398,11 +452,23 @@ public sealed class HikPlaybackPlayer : IDisposable
     string? streamKeyPending;
     int windowHandlePending;
 
-    /// <summary>Stops the playback (and the clip). Blocking: off the UI thread, except at shutdown.</summary>
-    public void Dispose()
+    /// <summary>
+    /// Stops the playback and finalizes a clip still running (waits for its MP4: 5 s by default,
+    /// or the given time). Blocking: off the UI thread.
+    /// </summary>
+    public void Dispose() => Dispose(TimeSpan.FromSeconds(5));
+
+    public void Dispose(TimeSpan recordingWait)
     {
         _disposed = true;
         HikSdk.ExceptionRaised -= OnSdkException;
         Stop();
+        try
+        {
+            Volatile.Read(ref _lastRecording)?.Wait(recordingWait);
+        }
+        catch (AggregateException)
+        {
+        }
     }
 }

@@ -76,12 +76,7 @@ public partial class MainWindow : Window
         UpdateClockAndCpu();
         UpdateStatusBar();
 
-        Closing += (_, _) =>
-        {
-            _statusTimer.Stop();
-            Live.Shutdown();
-            Playback.Shutdown();
-        };
+        Closing += OnClosing;
         Loaded += (_, _) =>
         {
             if (App.Settings.Devices.Count == 0)
@@ -93,6 +88,55 @@ public partial class MainWindow : Window
                 ToggleFullScreen();
             }
         };
+    }
+
+    /// <summary>Streams and recordings get this long to finish before the app exits anyway (the watchdog allows 8 s in all).</summary>
+    static readonly TimeSpan ReleaseLimit = TimeSpan.FromSeconds(5);
+
+    bool _closeStarted;
+    bool _closeDone;
+
+    /// <summary>
+    /// Closing (X, Alt+F4, CloseMainWindow): the window disappears at once and the close is held back until every
+    /// recording is finalized and every stream released (all tiles in parallel, off the UI thread, at most
+    /// <see cref="ReleaseLimit"/>); then the app shuts down explicitly, which cleans the SDK up (App.OnExit). The exit
+    /// no longer depends on WPF noticing the main window's destruction (the old close blocked the UI thread on the
+    /// SDK stops of every tile, one after another, and the process could stay alive without a window). A watchdog
+    /// ends the process if anything still hangs after 8 s.
+    /// </summary>
+    async void OnClosing(object? sender, System.ComponentModel.CancelEventArgs e)
+    {
+        if (_closeDone)
+        {
+            return; // Application.Shutdown closing the window for good
+        }
+        e.Cancel = true;
+        if (_closeStarted)
+        {
+            return;
+        }
+        _closeStarted = true;
+        App.StartExitWatchdog();
+        App.LogShutdown("Kapanış başladı");
+        _statusTimer.Stop();
+        _messageTimer.Stop();
+        Hide();
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var release = Task.WhenAll(Live.ShutdownAsync(), Playback.ShutdownAsync());
+            var released = await Task.WhenAny(release, Task.Delay(ReleaseLimit)) == release;
+            var left = ReleaseLimit - watch.Elapsed;
+            var finished = await Recordings.WhenAllFinished(left > TimeSpan.Zero ? left : TimeSpan.Zero);
+            App.LogShutdown($"Akışlar {(released ? "bırakıldı" : "zamanında bırakılamadı")}, kayıtlar " +
+                $"{(finished ? "tamamlandı" : "tamamlanamadı")} ({watch.ElapsedMilliseconds} ms)");
+        }
+        catch (Exception ex)
+        {
+            App.LogShutdown($"Kapanışta hata: {ex.GetType().Name}: {ex.Message}");
+        }
+        _closeDone = true;
+        Application.Current.Shutdown();
     }
 
     // ---- Sidebar: device rows + camera list ----
