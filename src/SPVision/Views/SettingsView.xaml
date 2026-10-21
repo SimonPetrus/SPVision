@@ -159,14 +159,14 @@
                                         <ColumnDefinition Width="240" />
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
-                                        <TextBlock Text="Ekran kartıyla çözme" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Text="Donanım hızlandırma" Style="{StaticResource RowLabel}" />
                                         <TextBlock Style="{StaticResource RowHelp}"
-                                                   Text="Görüntüyü işlemci yerine ekran kartında çözer; işlemci yükünü düşürür. Şimdilik her zaman açık." />
+                                                   Text="Görüntüleri ekran kartında (dahili grafik dahil) çözer; işlemci yükünü azaltır. Siyah görüntü ya da bozulma olursa kapatın." />
                                     </StackPanel>
-                                    <!-- There is no decode-engine setting yet (both paths always decode on the GPU). -->
-                                    <CheckBox x:Name="GpuSwitch" Grid.Column="1" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
-                                              IsChecked="True" IsEnabled="False" ToolTip="Yakında" ToolTipService.ShowOnDisabled="True"
-                                              AutomationProperties.Name="Ekran kartıyla çözme (yakında)" />
+                                    <!-- AppSettings.HardwareDecoding: SDK ports (HikDecode) and Flyleaf players; applied at once, open streams reopen. -->
+                                    <CheckBox x:Name="HardwareDecodingSwitch" Grid.Column="1" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                              Checked="HardwareDecodingSwitch_Changed" Unchecked="HardwareDecodingSwitch_Changed"
+                                              AutomationProperties.AutomationId="HardwareDecodingToggle" AutomationProperties.Name="Donanım hızlandırma" />
                                 </Grid>
                             </Border>
                         </StackPanel>

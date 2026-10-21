@@ -286,6 +286,49 @@ public partial class PlaybackView : UserControl
         }
     }
 
+    /// <summary>
+    /// "Donanım hızlandırma" switched. Only while the view plays (leaving it — e.g. for Ayarlar — stops every tile and
+    /// ends the clips, and <see cref="Activate"/> re-seeks all of them with the new decoder anyway): every tile re-seeks
+    /// to the shared time like a timeline seek (the clock waits for the focused tile; nothing before that time is
+    /// shown). A tile cutting a clip keeps its stream, the others re-seek in step, and it follows when the clip is
+    /// stopped. Returns (reopened, kept for a clip).
+    /// </summary>
+    public (int Reopened, int Kept) ApplyHardwareDecoding()
+    {
+        var tiles = ActiveTiles.ToList();
+        var clipping = tiles.Where(t => t.IsClipping).ToList();
+        switch (DecoderSwitch.Playback(_active, Transport, clipping.Count))
+        {
+            case PlaybackReopen.RestartAll:
+                StartAt(Master);
+                return (tiles.Count(t => t.SearchDone), 0);
+            case PlaybackReopen.ReseekOthers:
+                var reopened = 0;
+                foreach (var tile in tiles.Where(t => t.SearchDone && !t.IsParked && !t.IsClipping))
+                {
+                    tile.SeekTo(LeadFor(tile), _speed, _paused);
+                    reopened++;
+                }
+                foreach (var tile in clipping)
+                {
+                    tile.DecoderStale = true;
+                }
+                UpdateUi();
+                return (reopened, clipping.Count);
+            default:
+                return (0, 0);
+        }
+    }
+
+    /// <summary>A clip that held its tile's stream back (decoder switch) was stopped: the tile re-seeks in step now.</summary>
+    void ReseekIfDecoderStale(PlaybackTile tile)
+    {
+        if (tile.DecoderStale && !tile.IsClipping && _active && PlaybackTransport.TilesJoin(Transport) && tile.SearchDone)
+        {
+            tile.SeekTo(LeadFor(tile), _speed, _paused);
+        }
+    }
+
     /// <summary>Devices or their camera lists changed: rebuild the list, drop cameras that no longer exist.</summary>
     public void RefreshCameras()
     {
@@ -1297,6 +1340,7 @@ public partial class PlaybackView : UserControl
             return;
         }
         Message?.Invoke(tile.ToggleClip());
+        ReseekIfDecoderStale(tile);
         UpdateUi();
     }
 
@@ -1634,6 +1678,7 @@ public partial class PlaybackView : UserControl
     void ToggleClip(PlaybackTile tile)
     {
         Message?.Invoke(tile.ToggleClip());
+        ReseekIfDecoderStale(tile);
         UpdateUi();
     }
 

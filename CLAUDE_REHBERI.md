@@ -3,7 +3,7 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 1211/1211 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 1226/1226 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
 > (21.10.2026'daki düzen seçici + eş zamanlı çoklu oynatma değişikliği ile cihaz düzenleyicideki HTTPS varsayılanı / HTTP'ye düşme sorusu henüz cihazda denenmedi; bkz. §4, §5.)
 > (Canlı izlemede sayfalar — §4 "Canlı izlemede sayfalar" — da henüz cihazda denenmedi.)
 > (Uygulama içi güncelleme — §11 — kod + testlerle hazır; anahtar, Worker ve ilk sürüm sahibinin bir kerelik adımlarını bekliyor, gerçek yayınla denenmedi.)
@@ -33,7 +33,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
 | `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SPVision.Core.Tests/` | 1211 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
+| `tests/SPVision.Core.Tests/` | 1226 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -47,7 +47,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ```powershell
 cd SPVision
 dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1211/1211 geçer
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1226/1226 geçer
 dotnet run --project src\SPVision
 ```
 
@@ -512,7 +512,7 @@ dotnet run --project src\SPVision
 | `WindowsStartup.cs` | "Windows ile birlikte başlat": `HKCU\…\Run` altında `SPVision` = tırnaklı exe yolu |
 | `Controls/GlyphIcon.cs` | 24×24 çizgi ikonları (`Icon*` geometrileri) ön plan rengiyle çizer; emoji kullanılmaz |
 | `MainWindow.xaml(.cs)` | Üç görünüm (`MainSection`: Canlı İzleme, Kayıt Oynatma, Ayarlar). Üst çubuk (SPVision yazısı, sekmeler, düzen seçici (`LayoutPicker`; oynatmada ≤16 kareli ikinci seçici), kalite Oto/HD/SD, hareket kutuları, anlık görüntü/kayıt/tam ekran (F11), Ayarlar dişlisi = seçili durumlu ToggleButton), kenar çubuğu (arama, cihaz satırı, kamera listesi — "listede göster" kapalı kameralar hariç — + kare no, sürükle-bırak), durum çubuğu. Cihaz yoksa ilk açılışta Ayarlar › Cihaz yönetimi yeni satır açık halde gelir |
-| `Views/SettingsView.xaml(.cs)` | **Ayarlar**: sol menü (260 px, kenar çubuğuyla aynı). *Cihaz yönetimi*: cihaz listesi (DURUM, CİHAZ ADI, ADRES, TÜR, KAMERA; durum için sayfa açılınca ISAPI deviceInfo GET), satır tıklanınca / Enter / Boşluk ile altında düzenleme paneli açılır (akordeon, bir seferde bir tane). *Uygulama ayarları*: tema, hareket kutuları, varsayılan kalite, GPU (ayarı yok → devre dışı, "Yakında"), klasörler (`OpenFolderDialog`), son görünüm, Windows ile başlat, tam ekranda aç. *Cihaz ayarları*: [`RecorderSettingsView`](src/SPVision/Views/RecorderSettingsView.xaml.cs) (§9) |
+| `Views/SettingsView.xaml(.cs)` | **Ayarlar**: sol menü (260 px, kenar çubuğuyla aynı). *Cihaz yönetimi*: cihaz listesi (DURUM, CİHAZ ADI, ADRES, TÜR, KAMERA; durum için sayfa açılınca ISAPI deviceInfo GET), satır tıklanınca / Enter / Boşluk ile altında düzenleme paneli açılır (akordeon, bir seferde bir tane). *Uygulama ayarları*: tema, hareket kutuları, varsayılan kalite, **Donanım hızlandırma** (`HardwareDecodingToggle`; §12 — anında uygulanır, açık akışlar yeniden açılır), klasörler (`OpenFolderDialog`), son görünüm, Windows ile başlat, tam ekranda aç. *Cihaz ayarları*: [`RecorderSettingsView`](src/SPVision/Views/RecorderSettingsView.xaml.cs) (§9) |
 | `Views/RecorderSettingsView.xaml(.cs)`, `Themes/RecorderControls.xaml` | **Cihaz ayarları** sayfası (§9): cihaz seçici + "Web arayüzünü aç" (180×32), 9 eşit sekme; kartlar (başlık + açıklama · Geri al / Cihaza uygula), satırlar (etiket + yardım · 240 px denetim). Sayfanın kendi stilleri (temalı ComboBox, `SettingsToggleButton`, sekme şeridi, rozet) `RecorderControls.xaml`'da, yalnız bu sayfada birleştirilir. Rozet zeminleri `OnlineSoftBg` / `WarningSoftBg` (Light/Dark) |
 | `Views/ConfirmDialog.cs` | Adlandırılmış düğmeli tema uyumlu soru; liste aşırı yüklemesi değişiklikleri satır satır (başlıklı bölümler: UYGULANDI / UYGULANMADI) kaydırmalı kutuda gösterir; `cancel` null = tek düğme |
 | `Views/RecorderSettingsView.{Events,Network,Users,Risky}.cs` | Cihaz ayarları 2. aşama (§9 "2. aşama"): Olaylar, Ağ (adres + portlar), Kullanıcılar sekmeleri; riskli işlemler (`RunRiskyAsync`, yeniden başlat, disk biçimlendir); `DeviceUpdated` olayı (adres / şifre değişince SettingsView kaydeder + yeniden bağlar) |
@@ -534,7 +534,7 @@ dotnet run --project src\SPVision
 | `Hik/HikNative.cs` | Tüm P/Invoke imzaları + struct'lar (`incEn` başlıklarıyla satır satır doğrulandı; `PlayM4_RenderPrivateData` ve `NET_DVR_RenderPrivateData` dahil) |
 | `Hik/HikRender.cs` | Hareket / akıllı analiz kutularını port için aç/kapa (SDK çizicisi yok: tutamaç −1) |
 | `Hik/HikSdk.cs` | Init/Cleanup, exception callback, `Available`; SDK log seviyesi (varsayılan 1 = yalnız hatalar, `AppSettings.SdkLogLevel`) |
-| `Hik/HikDecode.cs` | PlayCtrl GPU çözme: `TryHardware(port)` (OpenStream'den sonra, Play'den önce), `IsHardware`; `PreferHardware` = `AppSettings.HardwareDecoding` (§12) |
+| `Hik/HikDecode.cs` | PlayCtrl GPU çözme: `TryHardware(port)` (OpenStream'den sonra, Play'den önce), `IsHardware`; `PreferHardware` = `AppSettings.HardwareDecoding` (Ayarlar › "Donanım hızlandırma", §12; port açılırken okunur) |
 | `Hik/HikSession.cs` | Cihaz başına tek login; `SdkChannel()` çevirisi |
 | `Hik/HikChannelConfig.cs` | Kamera adı SDK ile (§9 "Kamera adı"): `NET_DVR_GET_PICCFG_V40` okuma, uygulamanın **tek** SDK yazması `NET_DVR_SET_PICCFG_V40` (`NET_DVR_SetDVRConfig` yalnız burada, `private` bildirilir; önce `SdkWritePolicy`). Engelleyen çağrılar: UI dışında |
 | `Hik/HikLivePlayer.cs` | Canlı SDK oturumu (RealPlay — SDK'ya pencere yok, tek çizici bizim PlayCtrl portu, GPU çözme, 6 karelik görüntü tamponu; `HardwareDecoding`) |
@@ -554,7 +554,7 @@ kamera anahtarı yoksa cihaz anahtarını kullanır), [`SettingsStore`](src/SPVi
 [`Theme.cs`](src/SPVision.Core/Theme.cs) (`AppTheme`, `ThemeResolver`), [`PlaybackSync.cs`](src/SPVision.Core/PlaybackSync.cs)
 (`PlaybackSlots`, `RecordingJump`, `PlaybackSpeed`, `PlaybackSync`, `CalendarMonth`, `PlaybackText` — oynatmanın saf mantığı, birim testli), [`LivePages`](src/SPVision.Core/LivePages.cs) (canlı sayfalar: global yuva sırası, sayfa sayısı/dilim/sınırlama/sarma, kare eşleme), [`CameraList`](src/SPVision.Core/CameraList.cs)
 (yenilenen kamera listesinde anahtarı ve "listede göster" seçimini korur), [`DeviceKind`](src/SPVision.Core/DeviceKind.cs)
-("NVR · 32 kanal" metni), [`AutoStart`](src/SPVision.Core/AutoStart.cs) (Run değeri), [`AutoStreamQuality`](src/SPVision.Core/AutoStreamQuality.cs) (Oto kalite kuralı), [`VideoPathText`](src/SPVision.Core/VideoPathText.cs) (durum çubuğundaki video yolu + gerçek GPU/CPU çözme metni), `SdkLog` (Models.cs; SDK log seviyesi kuralı),
+("NVR · 32 kanal" metni), [`AutoStart`](src/SPVision.Core/AutoStart.cs) (Run değeri), [`AutoStreamQuality`](src/SPVision.Core/AutoStreamQuality.cs) (Oto kalite kuralı), [`VideoPathText`](src/SPVision.Core/VideoPathText.cs) (durum çubuğundaki video yolu + gerçek GPU/CPU çözme metni), [`DecoderSwitch`](src/SPVision.Core/DecoderSwitch.cs) ("Donanım hızlandırma" değişince hangi akış yeniden açılır, hangisi kaydı bekler; bildirim metni), `SdkLog` (Models.cs; SDK log seviyesi kuralı),
 [`PlaybackRestore`](src/SPVision.Core/PlaybackRestore.cs) (son oynatma düzeni + kameraları) ve [`HttpsPort`](src/SPVision.Core/HttpsPort.cs) (HTTPS kutusu ↔ 80/443 portu, HTTP'ye düşme sorusunun kuralı).
 Kayıt (§4 "Kayıt ve klip biçimi"): `Recording/` — `Mp4VideoWriter` (FFmpeg H.264 → MP4; Core bu yüzden `Flyleaf.FFmpeg.ABI`
 9.0.0'a ve `AllowUnsafeBlocks`'a bağlıdır), `VideoRecorder` (kuyruk + kodlayıcı iş parçacığı + doğrulama, `RecordingResult`,
@@ -1085,8 +1085,32 @@ kapalı; Ayarlar kartı "Güncelleme imza anahtarı ayarlanmamış" gösterir).
   "GPU çözme (n/m)", henüz bilinmiyorsa hiç yazılmaz (Core `VideoPathText`, birim testli; Flyleaf: `VideoDecoder.VideoAccelerated`).
 - Canlı görüntü tamponu 6 kare (PlayCtrl donanım çözmede 6'nın altını kabul etmiyor); oynatma 15'te kaldı (4×/8× ve yakalama
   ayarları buna göre ölçülmüştü).
-- **Ayarlar (arayüz yok, settings.json):** `SdkLogLevel` (varsayılan **1** = yalnız hatalar; teşhis için 3), `HardwareDecoding`
-  (varsayılan true; false = tüm SDK portları CPU'da — sürücü sorununa karşı geri dönüş).
+- **Ayar (arayüz yok, settings.json):** `SdkLogLevel` (varsayılan **1** = yalnız hatalar; teşhis için 3).
+- **"Donanım hızlandırma" anahtarı (22.10.2026; uygulamada elle denenmedi):** Ayarlar › Uygulama ayarları › Görüntü kartı
+  (eski devre dışı "Ekran kartıyla çözme — Yakında" satırının yerinde; aynı 60 px satır, 240 px denetim sütunu, sağa yaslı
+  Windows 11 anahtarı; AutomationId `HardwareDecodingToggle`). `AppSettings.HardwareDecoding` (varsayılan **açık**; kapalı = tüm
+  görüntü CPU'da — siyah görüntü / bozulma gibi sürücü sorunlarına karşı geri dönüş). Değişince (`MainWindow.SetHardwareDecoding`)
+  **yeniden başlatmadan**: kaydedilir → `App.ApplyHardwareDecoding()` (`HikDecode.PreferHardware` + `Players.VideoAcceleration`)
+  → açık akışlar yeniden açılır:
+  - Her iki yol ayarı **akış açılırken** okur: SDK portu `TryHardware`'de; Flyleaf `VideoDecoder.Setup`'ta
+    `Config.Video.VideoAcceleration`'ı her açılışta okur (FlyleafLib 3.11.12'de doğrulandı), bu yüzden var olan oynatıcıya
+    her `OpenAsync`'ten önce `Players.Apply(player)` uygulanır.
+  - **Canlı** (`LiveView.ApplyHardwareDecoding` → `VideoTile.ApplyHardwareDecoding`): oynaması istenen her kare
+    "Yeniden bağlan" yoluyla (`Reconnect` → `Open`; SDK komutları karenin `_sdkGate` kuyruğunda, UI'de bekleme yok) yeniden açılır;
+    zaten istenen motordaysa (ör. kapatıldı ama GPU zaten reddetmişti) dokunulmaz. **Kayıt süren (ya da ana akışı bekleyen)
+    kare akışını korur** — yeniden açmak kaydı bitirirdi; `_decoderStale` işaretlenir, kayıt durdurulunca (ya da başlatma
+    reddedilince) kare kendiliğinden yeniden açılır (SDK kuyruğunda önce `StopSave` MP4'ü kapatır, sonra açılış). Durdurulmuş
+    kareler sonraki açılışta yeni ayarı alır.
+  - **Oynatma** (`PlaybackView.ApplyHardwareDecoding`): Ayarlar'a geçmek oynatmayı zaten durdurur (klipler biter); geri
+    dönünce `Activate` tüm kareleri paylaşılan zamana yeniden arar → yeni motor. Görünüm oynarken çağrılırsa: klip yoksa
+    `StartAt(Master)` (zaman çubuğu aramasıyla aynı: saat odaktaki kareyi bekler, "T'den önce hiçbir şey" kuralı); klip
+    varsa klip kesen kare akışını korur (`DecoderStale`), diğerleri sürüklenme yoluyla (`SeekTo(LeadFor)`) yeniden aranır,
+    klip durdurulunca o kare de aranır.
+  - Kayıt/klip (`HikFrameRecorder`) ve indirme (`HikRecordingDownload`) portları her durumda yazılımda; anahtar onlara dokunmaz.
+    İndirmeler `DownloadManager`'da sürer.
+  - Durum çubuğu kareler motorlarını bildirdikçe güncellenir: kapatınca "CPU çözme", açınca (GPU kabul ederse) "GPU çözme";
+    kayıt yüzünden bekleyen kare varken "GPU çözme (n/m)". Bildirim (`DecoderSwitch.Notice`): "Donanım hızlandırma
+    kapatıldı; görüntüler yeniden açılıyor." (+ "Kayıt süren N kamera, kayıt bitince yeni ayara geçer.").
 - Kayıt oynatma araç çubuğu: 100 ms'lik fare yoklaması imleç kıpırdamıyorsa ve çubuk kapalıysa hiçbir şey yapmaz;
   `TileToolBar.Update` durum değişmedikçe düğmelere dokunmaz (eskiden fare karedeyken saniyede 10 kez yeniden çiziliyordu).
 - Ölçülen ama değiştirilmeyen: kullanılmayan 52 `FlyleafHost` yüzeyi ~26 MB, CPU 0 (XAML'i bozmaya değmez); canlı akışlar oynatma

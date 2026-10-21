@@ -15,6 +15,16 @@ public partial class App : Application
 
     public static void SaveSettings() => Store.Save(Settings);
 
+    /// <summary>
+    /// "Donanım hızlandırma" (<see cref="AppSettings.HardwareDecoding"/>) for both video paths: SDK display ports and Flyleaf
+    /// players. Streams opened from now on use it; the main window reopens the running ones.
+    /// </summary>
+    public static void ApplyHardwareDecoding()
+    {
+        ApplyHardwareDecoding();
+        Players.VideoAcceleration = Settings.HardwareDecoding;
+    }
+
     protected override void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);

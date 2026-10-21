@@ -60,6 +60,7 @@ public partial class VideoTile : UserControl
     string? _flyleafRecordFile;  // MP4 Flyleaf is remuxing into (checked when it ends)
     bool _hikRecording;          // SDK recording asked for (the save itself runs in the SDK queue)
     int _recordGeneration;       // supersedes the failure report of an earlier recording start
+    bool _decoderStale;          // "Donanım hızlandırma" switched during a recording: reopen once it is stopped
     TileState _state = TileState.Empty;
     bool _selected;
     bool _compact;
@@ -218,6 +219,33 @@ public partial class VideoTile : UserControl
         QueueSdk(() => player.SetMotionBoxes(show));
     }
 
+    /// <summary>
+    /// "Donanım hızlandırma" was switched (<see cref="App.ApplyHardwareDecoding"/> already ran): the stream reopens through
+    /// the "Yeniden bağlan" path so its new port / decoder picks the setting up (SDK commands in the tile's queue, off the
+    /// UI thread). A recording running or waiting for the main stream is never cut: that tile keeps its stream and reopens
+    /// when the recording is stopped. Returns what was done.
+    /// </summary>
+    public LiveReopen ApplyHardwareDecoding(bool hardware)
+    {
+        var action = DecoderSwitch.Live(Camera is not null, _wantPlaying, IsRecording || _pendingRecordFile is not null,
+            GpuDecoding, hardware);
+        _decoderStale = action == LiveReopen.AfterRecording;
+        if (action == LiveReopen.Now)
+        {
+            Reconnect();
+        }
+        return action;
+    }
+
+    /// <summary>The recording that held the stream back ended: switch to the current decoder setting now.</summary>
+    void ReopenIfDecoderStale()
+    {
+        if (DecoderSwitch.ReopenAfterRecording(_decoderStale, Camera is not null, _wantPlaying) && !IsRecording)
+        {
+            Reconnect();
+        }
+    }
+
     /// <summary>The camera list was refreshed (names may have changed): update the header strip.</summary>
     public void RefreshCameraInfo()
     {
@@ -284,6 +312,7 @@ public partial class VideoTile : UserControl
         _wantPlaying = true;
         _retryTimer.Stop();
         _triedHikFallback = false;
+        _decoderStale = false; // the new stream uses the current decoder setting
         // Reopening (reconnect, quality switch) replaces the stream: the recording ends with it, finalized and
         // reported (a recording asked for on the sub stream stays pending until the main stream plays).
         FinishRecording();
@@ -316,6 +345,7 @@ public partial class VideoTile : UserControl
             _player.PropertyChanged += Player_PropertyChanged;
             Host.Player = _player;
         }
+        Players.Apply(_player); // "Donanım hızlandırma" may have changed since the player was made
         _player.OpenAsync(StreamUrls.Live(Device!, Camera!.Channel, _quality));
         StateChanged?.Invoke(this);
     }
@@ -676,6 +706,7 @@ public partial class VideoTile : UserControl
         if (IsRecording)
         {
             StopRecording();
+            ReopenIfDecoderStale(); // after the stop in the SDK queue: the MP4 is finalized, then the stream reopens
             return null;
         }
         var folder = App.Settings.RecordingFolder;
@@ -759,6 +790,7 @@ public partial class VideoTile : UserControl
         RecBadge.Visibility = Visibility.Collapsed;
         Notice?.Invoke(this, RecordingText.StartFailed(clip: false, Shorten(error)));
         StateChanged?.Invoke(this);
+        ReopenIfDecoderStale();
     }
 
     void StopRecording()

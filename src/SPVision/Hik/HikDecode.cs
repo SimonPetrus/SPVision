@@ -9,7 +9,10 @@ namespace SPVision.Hik;
 /// </summary>
 static class HikDecode
 {
-    /// <summary>Hardware decoding for new display ports; off = every port decodes on the CPU (diagnostics).</summary>
+    /// <summary>
+    /// Hardware decoding for display ports opened from now on ("Donanım hızlandırma"; off = every port decodes on the CPU).
+    /// Read when a port opens: running streams switch only when they are reopened (<see cref="App.ApplyHardwareDecoding"/>).
+    /// </summary>
     public static volatile bool PreferHardware = true;
 
     /// <summary>

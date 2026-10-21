@@ -115,6 +115,12 @@ public partial class PlaybackTile : UserControl
 
     public bool IsClipping => _flyleafClipping || _hikClipping;
 
+    /// <summary>
+    /// "Donanım hızlandırma" was switched while this tile's clip ran: the view kept its stream (a re-seek would end the
+    /// clip) and re-seeks it once the clip is stopped. Any seek clears it (the new stream uses the current setting).
+    /// </summary>
+    public bool DecoderStale { get; set; }
+
     /// <summary>A picture is on screen: snapshot and clip can start (the SDK path after its hidden catch-up).</summary>
     public bool HasPicture =>
         _player is { Status: Status.Playing or Status.Paused } ||
@@ -321,6 +327,7 @@ public partial class PlaybackTile : UserControl
     {
         _speedIndex = speedIndex;
         _paused = paused;
+        DecoderStale = false;
         ClearNudge(); // a fresh open starts at the shared speed
         if (Device is null || Camera is null)
         {
@@ -777,6 +784,7 @@ public partial class PlaybackTile : UserControl
             _player.PropertyChanged += Player_PropertyChanged;
             Host.Player = _player;
         }
+        Players.Apply(_player); // "Donanım hızlandırma" may have changed since the player was made
         _player.Audio.Mute = !_focused;
         _openedAt = time;
         SetState(TileState.Connecting);

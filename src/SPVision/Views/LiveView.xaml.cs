@@ -221,6 +221,29 @@ public partial class LiveView : UserControl
         }
     }
 
+    /// <summary>
+    /// "Donanım hızlandırma" switched: every tile with a running (or retrying) stream reopens with the new decoder; tiles
+    /// recording keep their stream until the recording is stopped. Returns (reopened, kept for a recording).
+    /// </summary>
+    public (int Reopened, int Kept) ApplyHardwareDecoding(bool hardware)
+    {
+        int reopened = 0, kept = 0;
+        foreach (var tile in _tiles)
+        {
+            switch (tile.ApplyHardwareDecoding(hardware))
+            {
+                case LiveReopen.Now:
+                    reopened++;
+                    break;
+                case LiveReopen.AfterRecording:
+                    kept++;
+                    break;
+            }
+        }
+        RaiseStateChanged();
+        return (reopened, kept);
+    }
+
     /// <summary>The device is already gone from the settings: its cameras leave the order.</summary>
     public void RemoveDevice(Guid deviceId)
     {

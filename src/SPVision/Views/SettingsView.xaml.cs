@@ -91,6 +91,9 @@ public partial class SettingsView : UserControl
 
     public event Action<StreamQuality?>? QualitySelected;
 
+    /// <summary>"Donanım hızlandırma" switched: the main window saves it, applies it and reopens the open streams.</summary>
+    public event Action<bool>? HardwareDecodingChanged;
+
     /// <summary>Live state of a device's tiles (best one), so "Bağlı" shows while its video plays.</summary>
     public Func<Guid, TileState?>? LiveStateOf { get; set; }
 
@@ -558,6 +561,7 @@ public partial class SettingsView : UserControl
             ThemeDark.IsChecked = settings.Theme == AppTheme.Dark;
             ThemeSystem.IsChecked = settings.Theme == AppTheme.System;
             MotionSwitch.IsChecked = settings.ShowMotionBoxes;
+            HardwareDecodingSwitch.IsChecked = settings.HardwareDecoding;
             QualityAuto.IsChecked = settings.LiveQuality is null;
             QualityHd.IsChecked = settings.LiveQuality == StreamQuality.Main;
             QualitySd.IsChecked = settings.LiveQuality == StreamQuality.Sub;
@@ -652,6 +656,14 @@ public partial class SettingsView : UserControl
         if (!_loadingSwitches)
         {
             MotionBoxesChanged?.Invoke(MotionSwitch.IsChecked == true);
+        }
+    }
+
+    void HardwareDecodingSwitch_Changed(object sender, RoutedEventArgs e)
+    {
+        if (!_loadingSwitches)
+        {
+            HardwareDecodingChanged?.Invoke(HardwareDecodingSwitch.IsChecked == true);
         }
     }
 

@@ -71,6 +71,7 @@ public partial class MainWindow : Window
         };
         SettingsPanel.MotionBoxesChanged += SetMotionBoxes;
         SettingsPanel.QualitySelected += quality => Live.SelectQuality(quality);
+        SettingsPanel.HardwareDecodingChanged += SetHardwareDecoding;
         MotionToggle.IsChecked = App.Settings.ShowMotionBoxes;
         UpdateController.Changed += UpdateBannerState;
         UpdateController.Message += ShowMessage;
@@ -600,6 +601,23 @@ public partial class MainWindow : Window
         Live.ApplyMotionBoxes(show);
         Playback.ApplyMotionBoxes(show);
         SettingsPanel.RefreshAppSettings();
+    }
+
+    /// <summary>
+    /// Ayarlar › "Donanım hızlandırma": saved and applied at once, no restart. SDK display ports and Flyleaf players read
+    /// the setting when a stream opens, so the open live tiles reconnect and a running playback re-seeks to its shared
+    /// time; streams carrying a recording or clip are kept until it is stopped (never cut). Recording, clip and
+    /// download ports decode in software either way. The status bar follows as the tiles report their decoder.
+    /// </summary>
+    void SetHardwareDecoding(bool hardware)
+    {
+        App.Settings.HardwareDecoding = hardware;
+        App.SaveSettings();
+        App.ApplyHardwareDecoding();
+        var live = Live.ApplyHardwareDecoding(hardware);
+        var playback = Playback.ApplyHardwareDecoding();
+        ShowMessage(DecoderSwitch.Notice(hardware, live.Reopened + playback.Reopened, live.Kept + playback.Kept));
+        UpdateStatusBar();
     }
 
     void MotionToggle_Click(object sender, RoutedEventArgs e) => SetMotionBoxes(MotionToggle.IsChecked == true);
