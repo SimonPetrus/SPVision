@@ -1,0 +1,43 @@
+﻿<Window x:Class="SP2026Lite.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:v="clr-namespace:SP2026Lite.Views"
+        Title="SP-2026 Lite" Width="1400" Height="860" MinWidth="900" MinHeight="560"
+        WindowStartupLocation="CenterScreen" Background="{StaticResource WindowBg}"
+        KeyDown="Window_KeyDown">
+    <DockPanel>
+        <!-- Header with view switcher -->
+        <Border x:Name="Header" DockPanel.Dock="Top" Background="{StaticResource PanelBg}"
+                BorderBrush="{StaticResource PanelBorder}" BorderThickness="0,0,0,1" Padding="10,6">
+            <DockPanel>
+                <TextBlock Text="SP-2026 Lite" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,20,0" />
+                <StackPanel Orientation="Horizontal">
+                    <ToggleButton x:Name="LiveTab" Content="Canlı İzleme" IsChecked="True" Click="LiveTab_Click" />
+                    <ToggleButton x:Name="PlaybackTab" Content="Kayıt Oynatma" Click="PlaybackTab_Click" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+
+        <!-- Device / camera tree -->
+        <Border x:Name="SidePanel" DockPanel.Dock="Left" Width="250" Background="{StaticResource PanelBg}"
+                BorderBrush="{StaticResource PanelBorder}" BorderThickness="0,0,1,0">
+            <DockPanel>
+                <TextBlock DockPanel.Dock="Top" Text="CİHAZLAR" FontSize="11" Foreground="{StaticResource MutedFg}" Margin="12,10,0,4" />
+                <StackPanel DockPanel.Dock="Bottom" Margin="8">
+                    <Button Content="+ Cihaz ekle" Style="{StaticResource AccentButton}" Click="AddDevice_Click" />
+                    <TextBlock Text="Kamerayı kareye sürükleyin ya da çift tıklayın. Cihaza çift tıklamak tüm kameralarını açar."
+                               TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedFg}" Margin="2,8,2,0" />
+                </StackPanel>
+                <TreeView x:Name="Tree" Background="Transparent" BorderThickness="0" Margin="4,0"
+                          MouseDoubleClick="Tree_MouseDoubleClick"
+                          PreviewMouseLeftButtonDown="Tree_PreviewMouseLeftButtonDown"
+                          PreviewMouseMove="Tree_PreviewMouseMove" />
+            </DockPanel>
+        </Border>
+
+        <Grid>
+            <v:LiveView x:Name="Live" />
+            <v:PlaybackView x:Name="Playback" Visibility="Collapsed" />
+        </Grid>
+    </DockPanel>
+</Window>

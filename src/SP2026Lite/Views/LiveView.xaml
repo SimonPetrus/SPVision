@@ -1,0 +1,34 @@
+<UserControl x:Class="SP2026Lite.Views.LiveView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <DockPanel Background="{StaticResource WindowBg}">
+        <Border DockPanel.Dock="Top" Background="{StaticResource PanelBg}" BorderBrush="{StaticResource PanelBorder}"
+                BorderThickness="0,0,0,1" Padding="6,4">
+            <DockPanel>
+                <StackPanel Orientation="Horizontal" DockPanel.Dock="Left">
+                    <ToggleButton x:Name="Layout1" Content="1" Width="34" Tag="1" Click="Layout_Click" ToolTip="Tek kare" />
+                    <ToggleButton x:Name="Layout4" Content="4" Width="34" Tag="2" Click="Layout_Click" ToolTip="2×2" />
+                    <ToggleButton x:Name="Layout9" Content="9" Width="34" Tag="3" Click="Layout_Click" ToolTip="3×3" />
+                    <ToggleButton x:Name="Layout16" Content="16" Width="34" Tag="4" Click="Layout_Click" ToolTip="4×4" />
+                    <Rectangle Width="1" Margin="8,4" Fill="{StaticResource PanelBorder}" />
+                    <TextBlock Text="Kalite:" VerticalAlignment="Center" Foreground="{StaticResource MutedFg}" Margin="2,0,4,0" />
+                    <ToggleButton x:Name="QualityAuto" Content="Oto" Click="QualityAuto_Click"
+                                  ToolTip="Küçük karelerde SD, büyük karelerde HD (önerilen, işlemciyi yormaz)" />
+                    <ToggleButton x:Name="QualityHd" Content="HD" Click="QualityHd_Click" ToolTip="Tüm kareler ana akış (yüksek çözünürlük)" />
+                    <ToggleButton x:Name="QualitySd" Content="SD" Click="QualitySd_Click" ToolTip="Tüm kareler alt akış (düşük çözünürlük)" />
+                </StackPanel>
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                    <Button Content="📷 Anlık görüntü" Click="Snapshot_Click" ToolTip="Seçili karenin anlık görüntüsünü al" />
+                    <Button x:Name="RecordButton" Content="⏺ Kayıt" Click="Record_Click" ToolTip="Seçili kamerayı MP4 olarak kaydet" />
+                    <Button Content="📂 Klasör" Click="OpenFolder_Click" ToolTip="Görüntü ve kayıt klasörlerini aç" />
+                    <Button Content="⏹ Tümünü durdur" Click="StopAll_Click" />
+                    <Button Content="⛶ Tam ekran" Click="FullScreen_Click" ToolTip="F11" />
+                </StackPanel>
+            </DockPanel>
+        </Border>
+        <Border x:Name="Toast" DockPanel.Dock="Bottom" Background="{StaticResource PanelBg}" Padding="8,3" Visibility="Collapsed">
+            <TextBlock x:Name="ToastText" Foreground="{StaticResource MutedFg}" />
+        </Border>
+        <UniformGrid x:Name="Grid" Background="Black" SizeChanged="Grid_SizeChanged" />
+    </DockPanel>
+</UserControl>

@@ -1,0 +1,21 @@
+# Build
+bin/
+obj/
+artifacts/
+publish/
+*.user
+.vs/
+TestResults/
+
+# FFmpeg shared DLLs (fetched by tools/get-ffmpeg.ps1)
+ffmpeg/
+
+# Hikvision Device Network SDK (vendor license, not redistributed)
+sdk/
+
+# Reverse engineering raw output (contains vendor code, never publish)
+reversing/raw/
+
+# Local secrets / test config
+*.local.json
+secrets/
