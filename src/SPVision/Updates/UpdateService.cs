@@ -50,11 +50,9 @@ sealed class VerifiedInstaller(UpdateManifest manifest, string path, FileStream 
 static class UpdateService
 {
     /// <summary>
-    /// TODO (sahibi): the Worker address printed by <c>npx wrangler deploy</c> (tools/update-proxy/README.md), e.g.
-    /// "https://spvision-update.ornek.workers.dev". While this placeholder is here the updater is switched off
-    /// ("Güncelleme sunucusu ayarlanmamış").
+    /// The Worker address printed by <c>npx wrangler deploy</c> (tools/update-proxy/README.md; deployed 21.10.2026).
     /// </summary>
-    public const string UpdateProxyBaseUrl = "https://spvision-update.<hesap>.workers.dev";
+    public const string UpdateProxyBaseUrl = "https://spvision-update.spvision-update.workers.dev";
 
     static readonly TimeSpan ConnectTimeout = TimeSpan.FromSeconds(15);
     static readonly TimeSpan SmallRequestTimeout = TimeSpan.FromSeconds(30);
