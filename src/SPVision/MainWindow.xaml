@@ -3,7 +3,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:v="clr-namespace:SPVision.Views"
         xmlns:c="clr-namespace:SPVision.Controls"
-        Title="SPVision" Width="1440" Height="900" MinWidth="1100" MinHeight="600"
+        Title="SPVision" Icon="Assets/SPVision.ico" Width="1440" Height="900" MinWidth="1100" MinHeight="600"
         WindowStartupLocation="CenterScreen" Background="{DynamicResource WindowBg}" Foreground="{DynamicResource TextFg}"
         FontFamily="{StaticResource UiFont}" FontSize="{StaticResource FontSizeBase}"
         KeyDown="Window_KeyDown" PreviewKeyDown="Window_PreviewKeyDown">
@@ -19,9 +19,10 @@
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0"
+                <!-- Logo 24×24 (Assets/Logo.xaml); layout rounding keeps it on whole pixels so it stays crisp. -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0" UseLayoutRounding="True"
                             AutomationProperties.Name="SPVision">
-                    <c:GlyphIcon Data="{StaticResource IconVideo}" Size="22" Foreground="{DynamicResource Accent}" />
+                    <Image Source="{StaticResource AppLogo}" Width="24" Height="24" VerticalAlignment="Center" Stretch="Fill" />
                     <TextBlock FontSize="{StaticResource FontSizeBrand}" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0,0,0"
                                Foreground="{DynamicResource TextStrong}"><Run Text="SP" Foreground="{DynamicResource Accent}" /><Run Text="Vision" /></TextBlock>
                 </StackPanel>

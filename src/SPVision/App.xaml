@@ -5,10 +5,12 @@
     <Application.Resources>
         <ResourceDictionary>
             <!-- First: the theme's colours and brushes (Themes/Light.xaml or Themes/Dark.xaml; ThemeManager swaps
-                 it at run time). Second: fonts, icons and control styles shared by both themes. -->
+                 it at run time). Second: fonts, icons and control styles shared by both themes. Third: the app
+                 logo (fixed colours, same in both themes). -->
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Themes/Dark.xaml" />
                 <ResourceDictionary Source="Themes/Controls.xaml" />
+                <ResourceDictionary Source="Assets/Logo.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

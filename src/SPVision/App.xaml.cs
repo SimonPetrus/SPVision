@@ -73,8 +73,9 @@ public partial class App : Application
     }
 
     /// <summary>
-    /// Gives every window without its own icon the app icon (title bar + taskbar). The .ico holds 16-256 px
-    /// frames, so Windows gets a hand-drawn small icon instead of a scaled-down large one.
+    /// Fallback: gives every window without its own icon (dialogs) the app icon on Loaded. MainWindow sets
+    /// <c>Icon</c> in XAML, so its title bar and taskbar button have it before the window is shown. The .ico holds
+    /// 16-256 px frames, so Windows gets a hand-drawn small icon instead of a scaled-down large one.
     /// </summary>
     static void RegisterWindowIcon()
     {
