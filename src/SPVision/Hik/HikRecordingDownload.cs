@@ -463,7 +463,9 @@ public sealed class HikRecordingDownload
             {
                 HikNative.PlayM4_SetSecretKey(port, HikNative.AesKeyType, _key, HikNative.AesKeyBits);
             }
-            HikNative.PlayM4_SetDecodeEngineEx(port, HikNative.SoftDecodeEngine); // the decode callback needs system memory
+            // Software decoding: the decode callback needs pictures in system memory. (Measured 21.10.2026: with the hardware
+            // engine the callback still fires but with size 0 — no picture — so downloads / recordings cannot use the GPU.)
+            HikNative.PlayM4_SetDecodeEngineEx(port, HikNative.SoftDecodeEngine);
             HikNative.PlayM4_SetStreamOpenMode(port, HikNative.StreamFile);
             if (!HikNative.PlayM4_OpenStream(port, header, size, PortBuffer))
             {

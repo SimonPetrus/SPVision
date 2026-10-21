@@ -3,7 +3,7 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 1196/1196 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 1211/1211 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
 > (21.10.2026'daki düzen seçici + eş zamanlı çoklu oynatma değişikliği ile cihaz düzenleyicideki HTTPS varsayılanı / HTTP'ye düşme sorusu henüz cihazda denenmedi; bkz. §4, §5.)
 > (Canlı izlemede sayfalar — §4 "Canlı izlemede sayfalar" — da henüz cihazda denenmedi.)
 > (Uygulama içi güncelleme — §11 — kod + testlerle hazır; anahtar, Worker ve ilk sürüm sahibinin bir kerelik adımlarını bekliyor, gerçek yayınla denenmedi.)
@@ -33,7 +33,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
 | `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SPVision.Core.Tests/` | 1196 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
+| `tests/SPVision.Core.Tests/` | 1211 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -47,7 +47,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ```powershell
 cd SPVision
 dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1196/1196 geçer
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1211/1211 geçer
 dotnet run --project src\SPVision
 ```
 
@@ -81,11 +81,15 @@ dotnet run --project src\SPVision
   1. `NET_DVR_Login_V40` (cihaz başına tek oturum: [`HikSession`](src/SPVision/Hik/HikSession.cs))
   2. `NET_DVR_RealPlay_V40` (canlı) / `NET_DVR_PlayBackByTime_V40` (oynatma) + veri callback'i
   3. İlk `NET_DVR_SYSHEAD` paketinde: `PlayM4_GetPort` → `PlayM4_SetSecretKey(port, 1, anahtar, 128)`
-     → `PlayM4_SetDecodeEngineEx(port, 1)` (GPU) → `PlayM4_SetStreamOpenMode` →
-     `PlayM4_OpenStream` (canlı 2 MB / oynatma 10 MB) → `SetDisplayBuf(15)` → `PlayM4_Play(port, hwnd)`
+     → `PlayM4_SetStreamOpenMode` → `PlayM4_OpenStream` (canlı 2 MB / oynatma 10 MB) → **`HikDecode.TryHardware`**
+     (`PlayM4_SetDecodeEngineEx(port, 1)` + `PlayM4_GetDecodeEngine`; **yalnız OpenStream'den sonra, Play'den önce** çalışır —
+     bkz. §12 "GPU çözme kuralı") → `SetDisplayBuf` (canlı 6 / oynatma 15) → `PlayM4_Play(port, hwnd)`
   4. `NET_DVR_STREAMDATA` → `PlayM4_InputData`
   - Oynatmada SDK'ya **pencere verilmez** (`VodPara.Wnd = 0`): pencereye yalnız bizim port çizer, veri geri çağrısı akışı
     portumuza göre ayarlar ve paket atmaz (aşağıda "Kayıt oynatma" › "Tek çizici kuralı").
+  - **Canlıda da (21.10.2026'dan beri) SDK'ya pencere verilmez** (`PreviewInfo.PlayWnd = 0`): eskiden RealPlay'e de pencere
+    veriliyordu ve SDK her karede akışı **kendi PlayCtrl portuyla ikinci kez** çözüp aynı pencereye çiziyordu (sonda:
+    22 karenin 22'sinde `NET_DVR_GetRealPlayerIndex` ≥ 0). Ayrıntı ve ölçüm §12.
 - **Kilit ve iş parçacığı kuralı (21.10.2026, canlıda "Seçili kamerayı kaydet" UI'yi kalıcı donduruyordu):**
   `HikLivePlayer.StartSave` oynatıcı kilidini tutarken `NET_DVR_SaveRealData_V30`'u çağırıyordu; SDK bu çağrıda veri
   callback iş parçacığını bekler, o da `OnRealData`'da her pakette aynı kilidi bekliyordu (kilit sırası kilitlenmesi).
@@ -183,7 +187,7 @@ dotnet run --project src\SPVision
 - Durum çubuğu üç sütunlu (`*` / `Auto` / `*`): ortada `‹ Sayfa 1 / 3 ›` (23×23 `StatusIconButton`, metin sabit 88 px),
   pencerenin tam ortasında; tek sayfada ve canlı dışında gizli. **Ayarlar'da** solda yalnız bağlantı ("Bağlı · cihaz", arkada
   çalışan canlı duvara göre), sağda CPU + saat (+ geçici mesaj) görünür; "n / L kamera ekranda", yeniden bağlanma ve video
-  yolu ("Şifreli akış · SDK · GPU çözme") gizlenir. Oklar ve PageUp/PageDown (yalnız canlıda, metin kutusu
+  yolu ("Şifreli akış · SDK · GPU çözme"; "GPU/CPU çözme" oynatıcının bildirdiği çözücüdür, §12) gizlenir. Oklar ve PageUp/PageDown (yalnız canlıda, metin kutusu
   odaktayken değil, `PreviewKeyDown`) başa/sona sarar. Büyütülmüş kare varsa önce küçültülür.
 - Düzen değişince sayfanın ilk kamerası görünür kalır (onu içeren sayfa açılır). Sayfa ve sıra `LastView`'a
   (`Tiles` = global sıra, `Page`) kaydedilir; açılışta sınırlanır. Eski kayıtlarda `Tiles` tek düzenin kareleriydi = sıranın başı.
@@ -287,8 +291,7 @@ dotnet run --project src\SPVision
   `PLAYGETTIME` yedeği kaldırıldı (pencere yokken hata 12). Kayıt sonu sinyali iki modda da aynı (sondada ne veri tipi 12 ne
   istisna geldi; kayıt sonu yine sapma döngüsünün park kuralıyla yakalanır). Bilinen durum (eskiden de vardı, iki modda da
   ölçüldü): 8×'ten normal hıza dönünce kayıt cihazının 8×'te yalnız anahtar kare gönderdiği tamponlu kısım birkaç saniye hızlı
-  akar. Canlı izlemede (`RealPlay`'e de pencere verilir) iki çizici durumu sürer ama orada hız değişimi olmadığı için ayrışma
-  ölçülmedi; gerekirse aynı düzeltme uygulanabilir.
+  akar. Canlı izlemede de aynı düzeltme 21.10.2026'da uygulandı (RealPlay'e pencere verilmez; §12).
 - Sapma: SDK karelerinde [`PlaybackSync.Decide`](src/SPVision.Core/PlaybackSync.cs) (dürtme aşırı yüklemesi) birkaç saniyelik
   farkı **yeniden açmadan** düzeltir: geride → bir hız adımı hızlı (`CatchUp`), önde → duraklat (`Hold`), 0,5 sn içine
   gelince eski hız (`Resume`); dürtülen kare her tik (250 ms), dürtülmeyen 5 sn'de bir denetlenir. Histerezis: dürtme 2 sn'den
@@ -424,9 +427,9 @@ dotnet run --project src\SPVision
   Mp4Inspector'ın moov sınırı 64 MB → 768 MB (örnek tabloları ~30 MB/gün; çok günlük indirmeler için).
 
 - **Hareket kutuları** (kayıt cihazının akışla gönderdiği yeşil hareket / akıllı analiz kutuları) PlayCtrl'ün
-  "private data" çizimidir. Aç/kapa: `PlayM4_RenderPrivateData(port, tip, BOOL)` (plaympeg4.h); canlıda ek olarak
-  `NET_DVR_RenderPrivateData(realHandle, tip, BOOL)` (HCNetSDK.h; RealPlay'e pencere de verildiği için SDK'nın kendi
-  çizicisi de kapsansın diye). Tipler: `PLAYM4_RENDER_ANA_INTEL_DATA` (0x1) ve `PLAYM4_RENDER_MD` (0x2). Yalnızca
+  "private data" çizimidir. Aç/kapa: `PlayM4_RenderPrivateData(port, tip, BOOL)` (plaympeg4.h), yalnız bizim portta
+  (canlı ve oynatma SDK'ya pencere vermez, SDK çizicisi yoktur; eskiden canlıda `NET_DVR_RenderPrivateData(realHandle…)` de
+  çağrılıyordu — `HikRender` parametresi duruyor, iki yol da −1 verir). Tipler: `PLAYM4_RENDER_ANA_INTEL_DATA` (0x1) ve `PLAYM4_RENDER_MD` (0x2). Yalnızca
   görüntüleme; cihaza hiçbir şey gönderilmez. Varsayılan çizim açık olduğundan port açılırken yalnızca ayar kapalıysa
   kapatılır ([`HikRender`](src/SPVision/Hik/HikRender.cs)); ayar değişince açık portlara anında uygulanır. Flyleaf
   (şifresiz) yolunda böyle bir katman yoktur. Ayar `AppSettings.ShowMotionBoxes` (varsayılan açık); üst çubuktaki
@@ -529,11 +532,12 @@ dotnet run --project src\SPVision
 | `Controls/LayoutPicker.xaml(.cs)`, `LayoutDiagram.cs`, `TransientPopup.cs` | Düzen seçici, mini diyagram, geçici Popup kuralları |
 | `Controls/TimelineBar.cs` | 50 px zaman çizelgesi (odaklı kamera): kutu, iz, oynatma başı; etiketler kutudan taşmaz (00:00 sola, 24:00 sağa yaslı); tık = ara, tekerlek/−/+ = yakınlaştır |
 | `Hik/HikNative.cs` | Tüm P/Invoke imzaları + struct'lar (`incEn` başlıklarıyla satır satır doğrulandı; `PlayM4_RenderPrivateData` ve `NET_DVR_RenderPrivateData` dahil) |
-| `Hik/HikRender.cs` | Hareket / akıllı analiz kutularını port (canlıda RealPlay tutamacı da) için aç/kapa |
-| `Hik/HikSdk.cs` | Init/Cleanup, exception callback, `Available` |
+| `Hik/HikRender.cs` | Hareket / akıllı analiz kutularını port için aç/kapa (SDK çizicisi yok: tutamaç −1) |
+| `Hik/HikSdk.cs` | Init/Cleanup, exception callback, `Available`; SDK log seviyesi (varsayılan 1 = yalnız hatalar, `AppSettings.SdkLogLevel`) |
+| `Hik/HikDecode.cs` | PlayCtrl GPU çözme: `TryHardware(port)` (OpenStream'den sonra, Play'den önce), `IsHardware`; `PreferHardware` = `AppSettings.HardwareDecoding` (§12) |
 | `Hik/HikSession.cs` | Cihaz başına tek login; `SdkChannel()` çevirisi |
 | `Hik/HikChannelConfig.cs` | Kamera adı SDK ile (§9 "Kamera adı"): `NET_DVR_GET_PICCFG_V40` okuma, uygulamanın **tek** SDK yazması `NET_DVR_SET_PICCFG_V40` (`NET_DVR_SetDVRConfig` yalnız burada, `private` bildirilir; önce `SdkWritePolicy`). Engelleyen çağrılar: UI dışında |
-| `Hik/HikLivePlayer.cs` | Canlı SDK oturumu (RealPlay + PlayCtrl) |
+| `Hik/HikLivePlayer.cs` | Canlı SDK oturumu (RealPlay — SDK'ya pencere yok, tek çizici bizim PlayCtrl portu, GPU çözme, 6 karelik görüntü tamponu; `HardwareDecoding`) |
 | `Hik/HikPlaybackPlayer.cs` | Oynatma SDK oturumu (PlayBackByTime — SDK'ya pencere yok, tek çizici bizim PlayCtrl portu, akış `QueueAhead` ile portumuza göre — + `GetTime` = `PlayM4_GetSystemTime` + `CatchUp` gizli 4× yakalama + MP4 klip + `SyncControls` hız/duraklat) |
 | `Hik/HikFrameRecorder.cs` | Kayıt/klip: ikinci PlayCtrl portu (yazılım çözücü, pencere yok) → çözülmüş YV12 → Core `VideoRecorder` (H.264 MP4) |
 | `Hik/HikRecordingDownload.cs` | Video indirme: kayıt dosyası başına pencerisiz oynatma oturumu → kare kare adımlanan PlayCtrl portu → bekleyen `VideoRecorder` (kare düşmez) |
@@ -550,7 +554,7 @@ kamera anahtarı yoksa cihaz anahtarını kullanır), [`SettingsStore`](src/SPVi
 [`Theme.cs`](src/SPVision.Core/Theme.cs) (`AppTheme`, `ThemeResolver`), [`PlaybackSync.cs`](src/SPVision.Core/PlaybackSync.cs)
 (`PlaybackSlots`, `RecordingJump`, `PlaybackSpeed`, `PlaybackSync`, `CalendarMonth`, `PlaybackText` — oynatmanın saf mantığı, birim testli), [`LivePages`](src/SPVision.Core/LivePages.cs) (canlı sayfalar: global yuva sırası, sayfa sayısı/dilim/sınırlama/sarma, kare eşleme), [`CameraList`](src/SPVision.Core/CameraList.cs)
 (yenilenen kamera listesinde anahtarı ve "listede göster" seçimini korur), [`DeviceKind`](src/SPVision.Core/DeviceKind.cs)
-("NVR · 32 kanal" metni), [`AutoStart`](src/SPVision.Core/AutoStart.cs) (Run değeri), [`AutoStreamQuality`](src/SPVision.Core/AutoStreamQuality.cs) (Oto kalite kuralı),
+("NVR · 32 kanal" metni), [`AutoStart`](src/SPVision.Core/AutoStart.cs) (Run değeri), [`AutoStreamQuality`](src/SPVision.Core/AutoStreamQuality.cs) (Oto kalite kuralı), [`VideoPathText`](src/SPVision.Core/VideoPathText.cs) (durum çubuğundaki video yolu + gerçek GPU/CPU çözme metni), `SdkLog` (Models.cs; SDK log seviyesi kuralı),
 [`PlaybackRestore`](src/SPVision.Core/PlaybackRestore.cs) (son oynatma düzeni + kameraları) ve [`HttpsPort`](src/SPVision.Core/HttpsPort.cs) (HTTPS kutusu ↔ 80/443 portu, HTTP'ye düşme sorusunun kuralı).
 Kayıt (§4 "Kayıt ve klip biçimi"): `Recording/` — `Mp4VideoWriter` (FFmpeg H.264 → MP4; Core bu yüzden `Flyleaf.FFmpeg.ABI`
 9.0.0'a ve `AllowUnsafeBlocks`'a bağlıdır), `VideoRecorder` (kuyruk + kodlayıcı iş parçacığı + doğrulama, `RecordingResult`,
@@ -1049,3 +1053,56 @@ sürüm, isteğe bağlı, zorunlu bayrak, `minSupportedVersion`, başarısız de
 bağlı sürüm, eski manifest, kurulunca biter), 6 sa kuralı, https/yer tutucu adres, SHA-256/boyut, sürüm notu ön bilgisi, metinler,
 ayarlarda saklama. Worker: `tools/update-proxy/test` (13, `npm test`). Uygulama elle denenmedi (güncelleyici yer tutucular yüzünden
 kapalı; Ayarlar kartı "Güncelleme imza anahtarı ayarlanmamış" gösterir).
+
+## 12. Performans: GPU çözme, tek çizici, bellek (21.10.2026 — salt okuma sondasıyla ölçüldü, uygulamada elle denenmedi)
+
+> Sahibin uygulamada ölçtüğü başlangıç (Debug, 60 sn): canlı 22 kamera Oto (alt akışlar) CPU %27,5 (32 iş parçacığının),
+> özel bellek 3.447 → 3.475 MB, 277 iş parçacığı, **hiçbir GPU'da VideoDecode yok** — durum çubuğu yine de "GPU çözme" diyordu.
+> 4 karelik oynatma (1080p H.265 ana akışlar): CPU %29, 3.935 → 4.003 MB.
+
+**Kök nedenler (sondada bulundu):**
+1. **GPU çözme hiç açılmıyordu.** `PlayM4_SetDecodeEngineEx(port, 1)` `PlayM4_OpenStream`'den **önce** çağrılıyordu; PlayCtrl
+   7.4.0.274 bunu `PLAYM4_ORDER_ERROR` (2) ile reddediyor, dönüş değerine bakılmadığı için port sessizce CPU'da çözüyordu
+   (`PlayM4_GetDecodeEngine` = 0, 22/22). OpenStream'den sonra / Play'den önce çağrılınca kabul ediliyor (= 1) ve yük GPU'nun
+   VideoDecode motorunda görünüyor.
+2. **Canlıda iki çözücü + iki çizici.** `NET_DVR_RealPlay_V40`'a `hPlayWnd` veriliyordu: SDK akışı kendi PlayCtrl portuyla da
+   çözüp aynı pencereye çiziyordu (`NET_DVR_GetRealPlayerIndex` 22/22 ≥ 0). Oynatmadaki "Tek çizici kuralı"nın aynısı.
+3. Bellek: port başına PlayCtrl tamponları (canlı görüntü tamponu 15 kare) + ikinci port. SDK logunun (seviye 3) bellekle ilgisi
+   yok (dosya ~20 KB); sondada kalıcı bir sızıntı görülmedi (22 kanal 6 kez aç/kapa: kapanınca özel bellek ~420–480 MB'ta sabit
+   kalıyor — PlayCtrl/D3D havuzu; her turda büyümüyor).
+
+**Kurallar:**
+- **GPU çözme kuralı:** ekran portunda `HikDecode.TryHardware(port)` **OpenStream'den sonra, Play'den önce**; sonuç oynatıcıda
+  (`HikLivePlayer/HikPlaybackPlayer.HardwareDecoding`) saklanır. PlayCtrl çözmeyi pencerenin bağdaştırıcısında yapar — bu
+  bilgisayarda **NVIDIA RTX 4070** (nvidia-smi: süreç C+G, decoder kullanımı; LUID ile eşlendi). Not: `measure.ps1`'in "gpu0"
+  anahtarı yalnız `phys_0`'a bakar, iki bağdaştırıcıyı karıştırır; LUID'e bakın (`scratchpad/perf-probe/gpu.ps1`).
+- **Geri çağrılı (penceresiz) portlar yazılımda kalır:** kayıt/klip (`HikFrameRecorder`) ve indirme (`HikRecordingDownload`)
+  YV12 resim ister; donanım motorunda `PlayM4_SetDecCallBackMend` geri çağrısı gelir ama **boyutu 0** (resim yok; sondada ölçüldü).
+  İndirme bu yüzden CPU'da kalır (sondada 1080p H.265: ~4,9× gerçek zaman, ~1,8 çekirdek).
+- **Tek çizici, canlı da:** RealPlay'e pencere verilmez (`PlayWnd = 0`); hareket kutuları, anlık görüntü (`PlayM4_GetJPEG`),
+  kayıt (aynı paketler `HikFrameRecorder`'a) zaten bizim porttaydı. `HikRender`'a tutamaç −1 verilir.
+- **Durum çubuğu dürüst:** "GPU çözme" yalnız oynatıcının bildirdiği motor GPU ise; hepsi CPU ise "CPU çözme", karışıksa
+  "GPU çözme (n/m)", henüz bilinmiyorsa hiç yazılmaz (Core `VideoPathText`, birim testli; Flyleaf: `VideoDecoder.VideoAccelerated`).
+- Canlı görüntü tamponu 6 kare (PlayCtrl donanım çözmede 6'nın altını kabul etmiyor); oynatma 15'te kaldı (4×/8× ve yakalama
+  ayarları buna göre ölçülmüştü).
+- **Ayarlar (arayüz yok, settings.json):** `SdkLogLevel` (varsayılan **1** = yalnız hatalar; teşhis için 3), `HardwareDecoding`
+  (varsayılan true; false = tüm SDK portları CPU'da — sürücü sorununa karşı geri dönüş).
+- Kayıt oynatma araç çubuğu: 100 ms'lik fare yoklaması imleç kıpırdamıyorsa ve çubuk kapalıysa hiçbir şey yapmaz;
+  `TileToolBar.Update` durum değişmedikçe düğmelere dokunmaz (eskiden fare karedeyken saniyede 10 kez yeniden çiziliyordu).
+- Ölçülen ama değiştirilmeyen: kullanılmayan 52 `FlyleafHost` yüzeyi ~26 MB, CPU 0 (XAML'i bozmaya değmez); canlı akışlar oynatma
+  açıkken de arkada sürer (artık GPU'da, ucuz).
+
+**Ölçüm (scratchpad `perf-probe`, uygulamanın kendi `HikLivePlayer`/`HikPlaybackPlayer` sınıfları, gizlenmiş (DWM cloak) ekran
+üstü pencereler, salt okuma; her biri 60 sn, 2 tekrar):**
+
+| Senaryo | Önce | Sonra |
+|---|---|---|
+| Canlı 22 alt akış | CPU 1,85–2,01 çekirdek, özel 1.115–1.144 MB, 233 iş parçacığı, VideoDecode yok | CPU 1,00–1,02 çekirdek, 836–839 MB, 188 iş parçacığı, NVIDIA VideoDecode %10,8 |
+| Oynatma 4 × 1080p | CPU 1,10–1,15 çekirdek, 649–656 MB, 172 iş parçacığı | CPU 0,28 çekirdek, 419–423 MB, 163–167 iş parçacığı |
+| Oynatma 16 × 1080p | CPU 6,8–7,9 çekirdek, 2.497 MB, 244 iş parçacığı, hız 1,00–1,03× | CPU 0,85–0,97 çekirdek, 1.234 MB, 212 iş parçacığı, hız 1,00× |
+
+İşlev denetimi (sonra): yakalama "Reached", 1,00×, geri giden zaman 0, duraklat/devam, 4× = 4,0×, dijital yakınlaştırma,
+anlık görüntü (canlı/oynatma), canlı kayıt ve oynatma klibi (h264_nvenc, geçerli MP4), canlıda ilk resim 22/22 ~1,2–1,3 sn
+(önce 1,3–1,6). **Bilinen bedel:** oynatmada NVDEC kod çözücüsünün açılması/4× yakalama 16 karede görünmeyi ~1,5 sn geciktiriyor
+(yakalama 2,1–3,1 → 3,4–4,6 sn); 4 karede ~0,3 sn. Sondanın pencereleri DWM'de gizli olduğu için ekrana çizme maliyeti
+uygulamadakinden düşük çıkabilir; uygulamadaki toplam sayılar (`measure.ps1`) sahibin elle ölçümüyle doğrulanmalı.

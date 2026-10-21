@@ -18,6 +18,8 @@ public partial class TileToolBar : UserControl
         InitializeComponent();
     }
 
+    (PlaybackTile?, bool, bool, bool, bool, bool, bool) _shown; // state the buttons show (Update skips a repeat)
+
     /// <summary>The tile the bar is shown for.</summary>
     public PlaybackTile? Tile { get; private set; }
 
@@ -29,6 +31,14 @@ public partial class TileToolBar : UserControl
     /// <summary>Buttons follow the tile's state: a picture for snapshot / clip, the clip's active state, zoom on the SDK path.</summary>
     public void Update(PlaybackTile tile, bool downloadOpen)
     {
+        // Called by the 100 ms hover poll: only touch the buttons when something changed (setting resource references
+        // and tool tips every tick re-rendered the bar ten times a second while the mouse was over a tile).
+        var state = (tile, tile.HasPicture, tile.IsClipping, tile.IsZoomMode, tile.CanZoom, tile.Camera is not null, downloadOpen);
+        if (state == _shown)
+        {
+            return;
+        }
+        _shown = state;
         Tile = tile;
         var picture = tile.HasPicture;
         SnapshotButton.IsEnabled = picture;

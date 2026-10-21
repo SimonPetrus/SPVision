@@ -54,7 +54,9 @@ sealed class HikFrameRecorder
             {
                 HikNative.PlayM4_SetSecretKey(port, HikNative.AesKeyType, key, HikNative.AesKeyBits);
             }
-            HikNative.PlayM4_SetDecodeEngineEx(port, HikNative.SoftDecodeEngine); // the decode callback needs system memory
+            // Software decoding: the decode callback needs pictures in system memory. (Measured 21.10.2026: with the hardware
+            // engine the callback still fires but with size 0 — no picture — so downloads / recordings cannot use the GPU.)
+            HikNative.PlayM4_SetDecodeEngineEx(port, HikNative.SoftDecodeEngine);
             HikNative.PlayM4_SetStreamOpenMode(port, fileMode ? HikNative.StreamFile : HikNative.StreamRealtime);
             var pinned = GCHandle.Alloc(header, GCHandleType.Pinned);
             try

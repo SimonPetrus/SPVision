@@ -1478,6 +1478,7 @@ public partial class PlaybackView : UserControl
 
     readonly DispatcherTimer _hoverTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
     PlaybackTile? _barTile;
+    NativePoint _lastCursor = new() { X = int.MinValue, Y = int.MinValue }; // cursor at the last full hover check
     DateTime _barHovered;
     (Point Origin, Size Size) _barPlace;
 
@@ -1492,6 +1493,16 @@ public partial class PlaybackView : UserControl
         {
             HideTileBar();
             return;
+        }
+        // Idle poll: no bar and the cursor where it was → nothing can have changed for the bar (no hit tests, no
+        // allocations). A bar that is shown keeps being checked (it lingers, follows layout changes and tile state).
+        if (GetCursorPos(out var cursor))
+        {
+            if (_barTile is null && cursor.X == _lastCursor.X && cursor.Y == _lastCursor.Y)
+            {
+                return;
+            }
+            _lastCursor = cursor;
         }
         var hovered = HoveredTile(window);
         var now = DateTime.UtcNow;
