@@ -237,8 +237,9 @@ static class UpdateService
     }
 
     /// <summary>
-    /// Starts the installer elevated ("runas": UAC prompt), silently; Inno Setup closes SPVision if needed, installs and
-    /// starts it again un-elevated (/RELAUNCH=1). The verified handle is released only after the process exists.
+    /// Starts the installer elevated ("runas": UAC prompt) with its normal wizard, as if the user had run it by hand (the
+    /// owner's choice: no silent install). /FROMAPP=1 makes Setup wait for SPVision to exit before copying; the wizard's
+    /// finish page starts SPVision again un-elevated. The verified handle is released only after the process exists.
     /// </summary>
     public static (LaunchResult Result, string? Error) Launch(VerifiedInstaller installer)
     {
@@ -247,7 +248,7 @@ static class UpdateService
             UseShellExecute = true,
             Verb = "runas",
             WorkingDirectory = System.IO.Path.GetDirectoryName(installer.Path)!,
-            Arguments = $"/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RELAUNCH=1 /LOG=\"{installer.LogPath}\"",
+            Arguments = $"/FROMAPP=1 /LOG=\"{installer.LogPath}\"",
         };
         try
         {

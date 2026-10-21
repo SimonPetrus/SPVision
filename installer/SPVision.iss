@@ -7,11 +7,11 @@
 ;   ISCC.exe /DAppVersion=1.2.3 /DPublishDir=<publish klasörü> /DOutputDir=<çıktı klasörü> installer\SPVision.iss
 ; Çıktı: SPVision-Kurulum-<sürüm>.exe (uygulama içi güncelleyici bu adı manifest.json'dan okur).
 ;
-; Uygulama içi güncelleme şu bağımsız değişkenlerle başlatır (UAC onayıyla, zaten yönetici olarak):
-;   /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RELAUNCH=1 /LOG="<geçici klasör>\kurulum.log"
-; /RELAUNCH=1 yalnız sessiz kurulumda SPVision'u bittikten sonra yeniden açar — kullanıcının normal (yönetici olmayan)
-; haklarıyla: Setup zaten yükseltilmiş başlatıldığı için `runasoriginaluser` işe yaramaz (Inno belgesi: "Setup already
-; elevated → no effect"); bu yüzden açma işi explorer.exe üzerinden kullanıcının mevcut kabuğuna devredilir.
+; Uygulama içi güncelleme Setup'ı UAC onayıyla (zaten yönetici olarak) ve NORMAL sihirbazla başlatır — sahibin kararı:
+; sessiz kurulum yok, kullanıcı elle kuruyormuş gibi. Bağımsız değişkenler: /FROMAPP=1 /LOG="<geçici klasör>\kurulum.log"
+; /FROMAPP=1: kopyalamadan önce SPVision.exe'nin kapanması beklenir. Bitiş sayfasındaki "SPVision'u başlat" kutusu
+; uygulamayı yönetici OLMADAN açar: Setup yükseltilmiş başlatılabildiği için `runasoriginaluser` işe yaramaz (Inno belgesi:
+; "Setup already elevated → no effect"); bu yüzden açma işi explorer.exe üzerinden kullanıcının mevcut kabuğuna devredilir.
 
 #ifndef AppVersion
   #error AppVersion tanımlı değil. tools\release\release.ps1 kullanın (ISCC /DAppVersion=1.2.3 /DPublishDir=... /DOutputDir=...).
@@ -72,16 +72,14 @@ Name: "{autoprograms}\SPVision"; Filename: "{app}\SPVision.exe"
 Name: "{autodesktop}\SPVision"; Filename: "{app}\SPVision.exe"; Tasks: desktopicon
 
 [Run]
-; Etkileşimli kurulum: bitiş sayfasında "SPVision'u başlat" kutusu (postinstall = Setup'ı başlatan kullanıcının haklarıyla).
-Filename: "{app}\SPVision.exe"; Description: "{cm:LaunchProgram,SPVision}"; Flags: nowait postinstall skipifsilent
-; Uygulama içi güncelleme (sessiz + /RELAUNCH=1): kullanıcının yönetici olmayan kabuğu üzerinden yeniden aç.
-Filename: "{win}\explorer.exe"; Parameters: """{app}\SPVision.exe"""; Flags: nowait skipifnotsilent; Check: RelaunchRequested
+; Bitiş sayfasında "SPVision'u başlat" kutusu (işaretli gelir): kullanıcının yönetici olmayan kabuğu üzerinden açılır.
+Filename: "{win}\explorer.exe"; Parameters: """{app}\SPVision.exe"""; Description: "{cm:LaunchProgram,SPVision}"; Flags: nowait postinstall skipifsilent
 
 [Code]
-{ Uygulama içi güncelleyiciden mi geldi: sessiz kurulum ve /RELAUNCH=1. }
-function RelaunchRequested: Boolean;
+{ Uygulama içi güncelleyiciden mi geldi: /FROMAPP=1. }
+function FromApp: Boolean;
 begin
-  Result := WizardSilent and (ExpandConstant('{param:RELAUNCH|0}') = '1');
+  Result := ExpandConstant('{param:FROMAPP|0}') = '1';
 end;
 
 { True while another process has the file open (a running SPVision.exe cannot be opened exclusively). }
@@ -100,14 +98,14 @@ end;
 
 { Güncelleyici Setup'ı başlattıktan sonra SPVision kendini düzgünce kapatır (akışlar bırakılır, MP4 kayıtları
   tamamlanır; en çok ~11 sn). Dosyalar kullanımdayken kopyalamaya başlamamak için en çok 20 sn beklenir; sonra Restart
-  Manager (/CLOSEAPPLICATIONS) devreye girer. }
+  Manager (CloseApplications) devreye girer. }
 function PrepareToInstall(var NeedsRestart: Boolean): String;
 var
   Exe: String;
   Waited: Integer;
 begin
   Result := '';
-  if not RelaunchRequested then
+  if not FromApp then
     Exit;
   Exe := ExpandConstant('{app}\SPVision.exe');
   Waited := 0;

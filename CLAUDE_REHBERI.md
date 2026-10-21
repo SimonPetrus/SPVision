@@ -840,15 +840,16 @@ sır yok, her kullanımda imza yeniden doğrulanır — settings.json'u düzenle
 - **İndirme ve kurulum:** `/download` → `%TEMP%\SPVision-Update\<rastgele 24 hex>\<asset>` (`CreateNew`, en çok manifest boyutu
   kadar) → yazma tutamacı kapatılır, dosya **salt okunur + `FileShare.Read`** ile yeniden açılır (kimse yazamaz/silemez/yeniden
   adlandıramaz), boyut + SHA-256 bu tutamaçla denetlenir ve tutamaç **kurulum süreci başlayana kadar** açık kalır (doğrulama ile
-  yükseltilmiş başlatma arasında dosya değiştirilemez). Başlatma: `UseShellExecute=true`, `Verb="runas"`, `/VERYSILENT
-  /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RELAUNCH=1 /LOG="…\kurulum.log"`. UAC'de "Hayır" (Win32 1223) → "Güncelleme
+  yükseltilmiş başlatma arasında dosya değiştirilemez). Başlatma: `UseShellExecute=true`, `Verb="runas"`, `/FROMAPP=1
+  /LOG="…\kurulum.log"` — **sessiz değil**: sahibin kararıyla (21.10.2026) kullanıcı normal kurulum sihirbazını görür, elle
+  kuruyormuş gibi ilerler. UAC'de "Hayır" (Win32 1223) → "Güncelleme
   iptal edildi", uygulama sürer, doğrulanmış dosya bir sonraki Güncelle için açık tutulur. Başlarsa → `MainWindow.Close()` →
   §8 "Kapanış" yolu (akışlar bırakılır, MP4'ler tamamlanır, SDK temizlenir, bekçi 8 + 3 sn).
-- **Inno tarafı:** sessiz + `/RELAUNCH=1` iken `PrepareToInstall` `SPVision.exe` serbest kalana kadar en çok 20 sn bekler (sonra
-  Restart Manager). Kurulum bitince uygulama **yönetici olmadan** yeniden açılır: Setup zaten yükseltilmiş başlatıldığı için
-  `runasoriginaluser` işe yaramaz (Inno belgesi), bu yüzden `{win}\explorer.exe "{app}\SPVision.exe"` (`skipifnotsilent`,
-  `Check: RelaunchRequested`) — açma işi kullanıcının mevcut (yönetici olmayan) kabuğuna devredilir. Etkileşimli kurulumda bitiş
-  sayfasındaki "SPVision'u başlat" kutusu (`postinstall skipifsilent`). Kurulum günlüğü indirme klasöründe 1 gün kalır.
+- **Inno tarafı:** `/FROMAPP=1` iken `PrepareToInstall` `SPVision.exe` serbest kalana kadar en çok 20 sn bekler (sonra
+  Restart Manager). Bitiş sayfasındaki "SPVision'u başlat" kutusu (`postinstall skipifsilent`, hem elle kurulumda hem
+  güncellemede) uygulamayı **yönetici olmadan** açar: Setup yükseltilmiş başlatılabildiği için `runasoriginaluser` işe yaramaz
+  (Inno belgesi), bu yüzden `{win}\explorer.exe "{app}\SPVision.exe"` — açma işi kullanıcının mevcut (yönetici olmayan)
+  kabuğuna devredilir. Kurulum günlüğü indirme klasöründe 1 gün kalır.
   **`.iss` henüz ISCC ile derlenmedi** (bu makinede Inno Setup yok, paketleme onaylanmadı): ilk `release.ps1 -DryRun`'da bir
   derleme hatası çıkarsa (özellikle `[Code]`) orada düzeltilir.
 
