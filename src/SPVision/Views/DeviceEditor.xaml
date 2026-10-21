@@ -93,7 +93,8 @@
                                Foreground="{DynamicResource TextSecondary}" />
                 </Grid>
                 <CheckBox x:Name="HttpsBox" Grid.Row="6" Grid.Column="2" Content="HTTPS kullan" VerticalAlignment="Center"
-                          AutomationProperties.Name="HTTPS kullan" />
+                          AutomationProperties.Name="HTTPS kullan" Click="Https_Click"
+                          ToolTip="Cihazla ayar ve bilgi alışverişini şifreler (görüntü akışını etkilemez). Varsayılan port 443." />
             </Grid>
 
             <!-- ===== Kameralar: KANAL | KAMERA ADI | DURUM | LİSTEDE GÖSTER ===== -->

@@ -6,9 +6,12 @@ using System.Xml.Linq;
 
 namespace SPVision.Core;
 
-public sealed class IsapiException(string message, HttpStatusCode? status = null) : Exception(message)
+public sealed class IsapiException(string message, HttpStatusCode? status = null, bool connectionFailed = false) : Exception(message)
 {
     public HttpStatusCode? Status { get; } = status;
+
+    /// <summary>No HTTP answer at all: TCP refused/reset, TLS handshake failed or timed out (not a 401 or other status).</summary>
+    public bool ConnectionFailed { get; } = connectionFailed;
 }
 
 /// <summary>
@@ -36,6 +39,9 @@ public sealed class IsapiClient : IDisposable
         }
         _http = new HttpClient(handler) { BaseAddress = baseUri, Timeout = timeout ?? TimeSpan.FromSeconds(10) };
     }
+
+    /// <summary>The device has answered at least one request (any status) through this client.</summary>
+    public bool Answered { get; private set; }
 
     public async Task<DeviceDetails> GetDeviceInfoAsync(CancellationToken ct = default) =>
         ParseDeviceInfo(await GetXmlAsync("ISAPI/System/deviceInfo", ct));
@@ -151,12 +157,15 @@ public sealed class IsapiClient : IDisposable
         }
         catch (HttpRequestException e)
         {
-            throw new IsapiException($"Cihaza bağlanılamadı: {e.Message}");
+            // A name that does not resolve is not a TCP/TLS problem; HTTP would fail the same way.
+            throw new IsapiException($"Cihaza bağlanılamadı: {e.Message}",
+                connectionFailed: e.StatusCode is null && e.HttpRequestError != HttpRequestError.NameResolutionError);
         }
         catch (TaskCanceledException) when (!ct.IsCancellationRequested)
         {
-            throw new IsapiException("Cihaz zaman aşımına uğradı.");
+            throw new IsapiException("Cihaz zaman aşımına uğradı.", connectionFailed: true);
         }
+        Answered = true;
         if (!response.IsSuccessStatusCode)
         {
             var status = response.StatusCode;

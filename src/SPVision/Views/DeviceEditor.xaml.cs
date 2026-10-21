@@ -32,11 +32,12 @@ public partial class DeviceEditor : UserControl
 
         NameBox.Text = _device.Name;
         HostBox.Text = _device.Host;
-        HttpPortBox.Text = _device.HttpPort.ToString(CultureInfo.InvariantCulture);
+        // A new device starts on HTTPS (443); a saved one shows exactly its stored values.
+        HttpPortBox.Text = (_isNew ? HttpsPort.Https : _device.HttpPort).ToString(CultureInfo.InvariantCulture);
         RtspPortBox.Text = _device.RtspPort.ToString(CultureInfo.InvariantCulture);
         SdkPortBox.Text = _device.SdkPort.ToString(CultureInfo.InvariantCulture);
         UserBox.Text = _device.UserName;
-        HttpsBox.IsChecked = _device.UseHttps;
+        HttpsBox.IsChecked = _isNew || _device.UseHttps;
         UpdatePlaceholders();
 
         // A new device has nothing to remove; keep the slot so the right-hand buttons do not move.
@@ -61,6 +62,9 @@ public partial class DeviceEditor : UserControl
     // ---- Form ----
 
     void Secret_Changed(object sender, RoutedEventArgs e) => UpdatePlaceholders();
+
+    /// <summary>"HTTPS kullan" clicked: a standard port follows it (80 ↔ 443); a custom port stays.</summary>
+    void Https_Click(object sender, RoutedEventArgs e) => HttpPortBox.Text = HttpsPort.Follow(HttpPortBox.Text, HttpsBox.IsChecked == true);
 
     void UpdatePlaceholders()
     {
@@ -115,24 +119,44 @@ public partial class DeviceEditor : UserControl
 
     // ---- Device reads (ISAPI GET only) ----
 
-    async void Test_Click(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// Runs one device read with the form values. When HTTPS was on and the device could not be reached at all
+    /// (TCP/TLS, not a 401 or other answer), asks before switching the form to HTTP and retries once; never silently.
+    /// </summary>
+    async Task ReadDeviceAsync(string progress, Func<IsapiClient, Task> read)
     {
         if (_busy || ReadForm() is not { } form)
         {
             return;
         }
         SetBusy(true);
-        ShowResult("Bağlanılıyor…");
+        ShowResult(progress);
+        IsapiClient? isapi = null;
         try
         {
-            using var isapi = new IsapiClient(form);
-            _details = await isapi.GetDeviceInfoAsync();
-            var cameras = await isapi.GetCamerasAsync();
-            TakeCameras(cameras);
-            ShowResult($"✓ {_details.Model ?? _details.Name} · {cameras.Count} kamera ({cameras.Count(c => c.Online)} çevrim içi)");
-            if (string.IsNullOrWhiteSpace(NameBox.Text))
+            try
             {
-                NameBox.Text = _details.Name;
+                isapi = new IsapiClient(form);
+                await read(isapi);
+            }
+            catch (IsapiException ex) when (HttpsPort.OfferHttpFallback(form.UseHttps, isapi?.Answered == true, ex))
+            {
+                ShowResult($"✗ {ex.Message}");
+                if (!ConfirmDialog.Show(Window.GetWindow(this), "Bu cihazda HTTPS kapalı olabilir. HTTP (port 80) ile denensin mi?",
+                        "HTTP ile dene", "İptal"))
+                {
+                    return;
+                }
+                HttpsBox.IsChecked = false;
+                HttpPortBox.Text = HttpsPort.Follow(HttpPortBox.Text, useHttps: false);
+                if (ReadForm() is not { } http)
+                {
+                    return;
+                }
+                ShowResult(progress);
+                isapi?.Dispose();
+                isapi = new IsapiClient(http);
+                await read(isapi);
             }
         }
         catch (Exception ex)
@@ -141,46 +165,35 @@ public partial class DeviceEditor : UserControl
         }
         finally
         {
+            isapi?.Dispose();
             SetBusy(false);
         }
     }
 
-    async void Refresh_Click(object sender, RoutedEventArgs e)
-    {
-        if (_busy || ReadForm() is not { } form)
+    async void Test_Click(object sender, RoutedEventArgs e) =>
+        await ReadDeviceAsync("Bağlanılıyor…", async isapi =>
         {
-            return;
-        }
-        SetBusy(true);
-        ShowResult("Kameralar okunuyor…");
-        try
+            _details = await isapi.GetDeviceInfoAsync();
+            var cameras = await isapi.GetCamerasAsync();
+            TakeCameras(cameras);
+            ShowResult($"✓ {_details.Model ?? _details.Name} · {cameras.Count} kamera ({cameras.Count(c => c.Online)} çevrim içi)");
+            if (string.IsNullOrWhiteSpace(NameBox.Text))
+            {
+                NameBox.Text = _details.Name;
+            }
+        });
+
+    async void Refresh_Click(object sender, RoutedEventArgs e) =>
+        await ReadDeviceAsync("Kameralar okunuyor…", async isapi =>
         {
-            using var isapi = new IsapiClient(form);
             var cameras = await isapi.GetCamerasAsync();
             TakeCameras(cameras);
             ShowResult($"✓ {cameras.Count} kamera ({cameras.Count(c => c.Online)} çevrim içi). Kaydet ile saklanır.");
-        }
-        catch (Exception ex)
-        {
-            ShowResult($"✗ {ex.Message}");
-        }
-        finally
-        {
-            SetBusy(false);
-        }
-    }
+        });
 
-    async void FetchKey_Click(object sender, RoutedEventArgs e)
-    {
-        if (_busy || ReadForm() is not { } form)
+    async void FetchKey_Click(object sender, RoutedEventArgs e) =>
+        await ReadDeviceAsync("Akış anahtarı okunuyor…", async isapi =>
         {
-            return;
-        }
-        SetBusy(true);
-        ShowResult("Akış anahtarı okunuyor…");
-        try
-        {
-            using var isapi = new IsapiClient(form);
             var enc = await isapi.GetStreamEncryptionAsync();
             if (enc.VerificationCode is { Length: > 0 } code)
             {
@@ -195,16 +208,7 @@ public partial class DeviceEditor : UserControl
                     ? "✗ Anahtar cihazdan okunamadı; Hik-Connect doğrulama kodunu elle girin."
                     : "Cihazda akış şifreleme kapalı; anahtar gerekmiyor.");
             }
-        }
-        catch (Exception ex)
-        {
-            ShowResult($"✗ {ex.Message}");
-        }
-        finally
-        {
-            SetBusy(false);
-        }
-    }
+        });
 
     /// <summary>Fetched list replaces the draft; per-camera keys and "listede göster" choices are kept.</summary>
     void TakeCameras(List<Camera> fetched)
