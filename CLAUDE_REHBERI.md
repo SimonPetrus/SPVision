@@ -3,7 +3,7 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 836/836 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 998/998 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
 > (21.10.2026'daki düzen seçici + eş zamanlı çoklu oynatma değişikliği ile cihaz düzenleyicideki HTTPS varsayılanı / HTTP'ye düşme sorusu henüz cihazda denenmedi; bkz. §4, §5.)
 > (Canlı izlemede sayfalar — §4 "Canlı izlemede sayfalar" — da henüz cihazda denenmedi.)
 > (Ayarlar › Cihaz ayarları'ndan kayıt cihazına yazma — §9, 2. ve 3. aşama, SDK ile kamera adı ve Ağ › Portlar dahil — henüz cihazda denenmedi; okuma uç noktaları cihazda GET / SDK Get ile doğrulandı. 3. aşama (Bakım: yazılım güncelleme, fabrika ayarları) gerçek cihazda **hiç** çalıştırılmadı. İlk gerçek yazmayı sahibi uygulamadan yapar; Claude cihaza **hiçbir şey yazmaz**, deneme için bile.)
@@ -30,7 +30,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
 | `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SPVision.Core.Tests/` | 836 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
+| `tests/SPVision.Core.Tests/` | 998 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -41,7 +41,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ```powershell
 cd SPVision
 dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 836/836 geçer
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 998/998 geçer
 dotnet run --project src\SPVision
 ```
 
@@ -655,8 +655,32 @@ NET_DVR_UPGRADE_IPC_PARAM { NET_DVR_STREAM_INFO[64], szFileName[260] })` (resmi 
 |---|---|---|
 | Kayıt cihazı bilgisi | `System/deviceInfo` (model, `firmwareVersion` + `firmwareReleasedDate` "build yyMMdd"; seri/MAC/ID tutulmaz) | — ; "Web arayüzünü aç" = `WebUi.Address(Device)` (cihaz ayarındaki şema + port; 443/80 yazılmaz, IPv6 köşeli). Başlıktaki düğme de aynısını kullanır |
 | Kayıt cihazı yazılımı | "Denetle": `onlineUpgrade/capabilities` (yoksa "Bu cihaz çevrimiçi denetimi desteklemiyor — Hikvision sitesinden dosya indirin" + "Hikvision sitesi" düğmesi) → `onlineUpgrade/server` (`connectStatus` false → sunucuya ulaşılamıyor) → `onlineUpgrade/version?check=true` (cihaz Hikvision sunucusuna sorar; GET). **Hiçbir şey indirilmez/kurulmaz**; yeni sürüm varsa yalnız yazılır | "Dosyadan yükle…" (.dav/.digicap, 1 MiB–512 MiB, SHA-256 akışla) → "Güncelle…" → onay (`GÜNCELLE`; model, yüklü sürüm, dosya adı/boyutu, SHA-256) → `TakeFirmwareJobAsync` (belirteci tüketir, dosyayı yeniden özetler) → `RecorderFirmwareRun` (1 sn'de bir yoklar; ilerleme çubuğu; 10 dk ilerleme yoksa ya da 60 dk'da "durum bilinmiyor", tutamaç kapatılır) → bitti ise `FirmwareReturn` (10 sn'de bir deviceInfo GET; yeni sürüm / sürüm değişmedi / 5 dk'da yeniden başlamadı → "Sistem › Yeniden başlat" / 20 dk'da dönmedi) |
-| Kamera yazılımları | `InputProxy/channels` + `/status` → tablo (☐ · KANAL · KAMERA · MODEL · YÜKLÜ SÜRÜM · DURUM); yalnız **çevrimiçi ve HIKVISION protokollü** kamera seçilebilir; "Yenile" yeniden okur | "Dosyadan yükle…" → "Güncelle (n)…" → onay (`GÜNCELLE`; her kamera satırı, **farklı modeller seçiliyse uyarı**, ilk hatada dur açık/kapalı) → `CameraFirmwareBatch`: kameralar **sırayla**, her biri yükle → kameranın geri gelmesini bekle (`InputProxy` GET; yeni sürüm = başarı); "İlk hatada dur" varsayılan **açık** → kalanlar "Başlatılmadı". Satır durumları yerinde güncellenir |
+| Kamera yazılımları | `InputProxy/channels` + `/status` → tablo (☐ · KANAL · KAMERA · MODEL · YÜKLÜ SÜRÜM · YAZILIM · DURUM); yalnız **çevrimiçi ve HIKVISION protokollü** kamera seçilebilir; "Denetle" (eski "Yenile"; aşağıdaki "Kamera Denetle") tabloyu yeniden okur ve YAZILIM sütununu doldurur | "Dosyadan yükle…" → "Güncelle (n)…" → onay (`GÜNCELLE`; her kamera satırı, **farklı modeller seçiliyse uyarı**, ilk hatada dur açık/kapalı) → `CameraFirmwareBatch`: kameralar **sırayla**, her biri yükle → kameranın geri gelmesini bekle (`InputProxy` GET; yeni sürüm = başarı); "İlk hatada dur" varsayılan **açık** → kalanlar "Başlatılmadı". Satır durumları yerinde güncellenir |
 | Fabrika ayarları (kırmızı kart) | — | "Temel sıfırla…" `PUT …factoryReset?mode=basic`, "Tam sıfırla…" `…?mode=full`; onay `SIFIRLA`, **kırmızı** bant: akış şifreleme ve Hik-Connect de varsayılana döner, yeniden etkinleştirme gerekebilir, SPVision bağlantıyı kaybeder; SPVision bunları sonradan **kendisi açmaz/değiştirmez** |
+
+**Kamera "Denetle" (21.10.2026; yalnız okur, hiçbir şey indirmez/kurmaz/yazmaz):** Kamera kartının ilk düğmesi, kayıt cihazı kartındaki
+"Denetle" ile aynı (120×30, `IconRefresh`, aynı sıra: Denetle · Dosyadan yükle… · Güncelle…; başlıkta aynı rozet yeri: Denetlenmedi / Denetleniyor… /
+Güncel / Güncelleme var / Denetlenemedi; başlık altında aynı uyarı bandı). AutomationId `CameraFirmwareCheck`, özet satırı `CameraFirmwareSummary`,
+hücreler `CameraFirmwareStatus{kanal}`, model bağlantıları `CameraFirmwareModelLink{n}`, site düğmesi `CameraFirmwareHikvisionPage`.
+Akış: `CameraFirmwareReader.ReadAsync` (GET `InputProxy/channels` + `/status`, ilk açılış da bunu kullanır) → `CameraFirmwareCheck.Evaluate` →
+YAZILIM sütunu (190 px, ortalı rozet): **"—"** (denetlenmedi; tablo başka yoldan yeniden okununca da — ör. güncellemeden sonra — "—"ya döner),
+**"Çevrimdışı"**, **"Güncelleme var · V5.7.20"** (`WarningSoftBg`), **"Güncel"** (`OnlineSoftBg`), **"Denetlenemedi"**. Başlık altındaki tek satır
+`CameraFirmwareCheck.Summary`: "Son denetim 20:14 · 12 kamerada güncelleme var · 10 kamerada sürüm denetlenemedi" / "Tüm kameralar güncel" (+ "· n kamera
+seçili"). Sürüm sırası `FirmwareVersionOrder`: baştaki `V` atılır, noktalı sayılar **sayısal** (eksik parça 0; V5.7.2 < V5.7.20, V5.7.12 > V5.7.9), eşitse
+build tarihi; sayı olmayan sürüm ne eski ne yeni. **Cihaz kameralar için çevrimiçi sürüm sorgusu sunmuyor** (yalnız GET sondası, `check=true` dahil):
+`onlineUpgrade/capabilities` `isSupportUpgradeChannels` true diyor ama `onlineUpgrade/version?check=…&channelID=1|33|999` / `&channel=1` kanal
+parametresini **yok sayıyor** (hep kayıt cihazının kendi yanıtı, `newVersionAvailable` false); `onlineUpgrade/channels[/…]`, `…/channels/{n}/version`,
+`InputProxy/channels/{n}/onlineUpgrade/{version,capabilities,server,status,deviceParameter}`, `onlineUpgrade/{task,upgradeChannels,IPCVersion,ipc/version,…}`
+(XML ve `?format=json`) hepsi **403 notSupport**; `InputProxy/channels/onlineUpgrade/*` 503 (`getIntegerID`). SDK başlığında da kanal parametreli
+çevrimiçi sürüm komutu yok (`NET_DVR_GET_ONLINEUPGRADE_VERSION` 9305 yalnız cihazın kendisi). `System/capabilities` `isSupportOnlineUpgradeTask` true
+ama görev uç noktası belgede yok ve GET'e kapalı (muhtemelen POST; denenmedi). Bu yüzden: **"Güncelleme var"** yalnız **aynı modeldeki başka bir
+kamerada daha yeni sürüm yüklüyse** (ipucu: "kanal N kamerasında … yüklü; Hikvision sitesinde daha yenisi de olabilir"); modelin en yeni sürümündeki
+kamera **"Denetlenemedi"** (ipucu "Hikvision sitesinden kontrol edin") — "Güncel" kaynak olmadan **asla** yazılmaz. `Evaluate` ileride bir çevrimiçi
+kaynak için model → en yeni sürüm sözlüğü alır (testli; bu cihazda boş). Denetlenemeyen modeller için kartta "Çevrimiçi denetim" satırı: model başına
+bağlantı (tıklayınca model adı panoya kopyalanır + Hikvision yazılım sayfası açılır) ve "Hikvision sitesi" düğmesi. Cihazdaki dağılım (21.10.2026):
+DS-2CD1043G0-IUF 1× V5.5.800; DS-2CD1323G0-IUF 9× V5.5.800, 3× V5.7.12, 3× V5.7.20; DS-2CD1343G0-IUF 1× V5.7.21; DS-2CD1343G2-LIUF 5× V5.8.4 → 12
+kamerada "Güncelleme var · V5.7.20", 10 kamerada "Denetlenemedi". Testler: `CameraFirmwareCheckTests` (sürüm sırası, gerçek filo, çevrimdışı/bilinmeyen,
+çevrimiçi kaynak, özet metinleri, okuyucu yalnız iki GET).
 
 **Politika (3. aşama):** `RiskyOperation`'a `FactoryReset`, `RecorderFirmware`, `CameraFirmware` eklendi. `IsapiWritePolicy.CheckRisky` bu üç işlem için
 `MaintenancePolicy.Check`'e gider: dört girişten biriyle **ordinal tam eşitlik** (desen yok → büyük/küçük harf, sondaki `/`, `%2F`, `..`, ek/yinelenen sorgu
@@ -675,7 +699,9 @@ kamera sırası + ilk hatada dur, web adresi).
 **Açık sorular (yalnız gerçek yazmayla doğrulanabilir):** (1) `NET_DVR_Upgrade_V50` sonrası DS-8632NI-I8 kendiliğinden yeniden başlıyor mu (ClientDemo
 "upgrade successfully, reboot please" diyor; SPVision 5 dk bekler, başlamazsa Sistem › Yeniden başlat'ı önerir). (2) `NET_DVR_UPGRADE_IPC` geri çağırmasında
 durum `dwType`'ta mı (demo) yoksa tamponda mı (genel sözleşme) — ikisi de kabul ediliyor. (3) `mode=basic` bu cihazda kullanıcıları/yönetici şifresini
-koruyor mu ve akış şifreleme/Hik-Connect'i gerçekten sıfırlıyor mu. (4) `onlineUpgrade/version?check=true` yalnız `check=false` ile denendi.
+koruyor mu ve akış şifreleme/Hik-Connect'i gerçekten sıfırlıyor mu. (4) ~~`onlineUpgrade/version?check=true` yalnız `check=false` ile denendi~~ — GET ile denendi: 200, `newVersionAvailable` false (V4.61.025 için yeni sürüm yok).
+(5) `isSupportOnlineUpgradeTask` / `isSupportUpgradeChannels`'ın kamera sürümlerini hangi uç noktayla verdiği (muhtemelen POST bir arama/görev) — yazma
+yasağı nedeniyle denenmedi; bulunursa `CameraFirmwareCheck.Evaluate(…, latestByModel)` ile bağlanır.
 
 ## 10. Erişilebilirlik: denetimler UI Automation ile de çalışmalı (21.10.2026)
 

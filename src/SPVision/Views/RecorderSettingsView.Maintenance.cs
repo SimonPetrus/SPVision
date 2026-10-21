@@ -2,6 +2,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Automation;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Xml.Linq;
 using SPVision.Controls;
@@ -11,7 +12,8 @@ using SPVision.Hik;
 namespace SPVision.Views;
 
 // Settings › Cihaz ayarları › Bakım (phase 3). Opening the tab only reads (ISAPI GET deviceInfo, InputProxy channels +
-// status); "Denetle" only reads (online upgrade capabilities / server / version). Three risky operations, each behind
+// status); the recorder's "Denetle" only reads (online upgrade capabilities / server / version); the cameras' "Denetle"
+// only reads (the camera table again) and compares versions (CameraFirmwareCheck). Three risky operations, each behind
 // RiskyConfirmDialog with a typed word: recorder firmware (GÜNCELLE, SDK NET_DVR_Upgrade_V50), camera firmware
 // (GÜNCELLE, SDK NET_DVR_UPGRADE_IPC, one camera after another) and factory reset (SIFIRLA, ISAPI PUT
 // factoryReset?mode=basic|full). Nothing is downloaded or installed without the user picking a file and confirming.
@@ -25,7 +27,7 @@ public partial class RecorderSettingsView
 
     static readonly GridLength[] FirmwareColumns =
     [
-        new(36), new(56), new(1, GridUnitType.Star), new(150), new(150), new(130),
+        new(36), new(56), new(1, GridUnitType.Star), new(150), new(150), new(190), new(130),
     ];
 
     /// <summary>
@@ -47,6 +49,8 @@ public partial class RecorderSettingsView
     OnlineCheckResult? _onlineCheck;
     DateTimeOffset? _onlineCheckedAt;
     bool _checking;
+    bool _checkingCameras;
+    CameraCheck? _cameraCheck;
     bool _pickingFile;
     bool _firmwareBusy;
     FirmwareFile? _recorderFile;
@@ -76,6 +80,7 @@ public partial class RecorderSettingsView
         _maintenance = null;
         _onlineCheck = null;
         _onlineCheckedAt = null;
+        _cameraCheck = null;
         _recorderFile = null;
         _cameraFile = null;
         _cameraSelection.Clear();
@@ -106,23 +111,11 @@ public partial class RecorderSettingsView
             Load(Tab.Maintenance, async (device, isapi, ct) =>
             {
                 var recorder = await RecorderReader.TryAsync(isapi, MaintenancePaths.DeviceInfo, RecorderFirmware.Parse, ct);
-                var cameras = await RecorderReader.TryCallAsync(async () =>
-                {
-                    var channels = await isapi.GetConfigAsync(MaintenancePaths.Channels, ct);
-                    XDocument? status = null;
-                    try
-                    {
-                        status = await isapi.GetConfigAsync(MaintenancePaths.ChannelStatus, ct);
-                    }
-                    catch (IsapiException)
-                    {
-                        // Online state unknown; the table says "—" and no camera can be selected.
-                    }
-                    return CameraFirmware.ParseList(channels, status);
-                });
+                var cameras = await CameraFirmwareReader.ReadAsync(isapi, ct);
                 if (device == _device)
                 {
                     _maintenance = new MaintenanceData { Recorder = recorder, Cameras = cameras };
+                    _cameraCheck = null; // versions may have changed (e.g. after an upgrade): the YAZILIM column waits for "Denetle"
                     if (cameras.Value is { } list)
                     {
                         _cameraSelection.IntersectWith(list.Where(c => c.Upgradable).Select(c => c.Channel));
@@ -138,7 +131,7 @@ public partial class RecorderSettingsView
         TabContent.Children.Add(FactoryResetCard());
     }
 
-    bool MaintenanceIdle => !_firmwareBusy && !_writing && !_checking && !_pickingFile;
+    bool MaintenanceIdle => !_firmwareBusy && !_writing && !_checking && !_checkingCameras && !_pickingFile;
 
     // ================================================================ cards
 
@@ -224,15 +217,12 @@ public partial class RecorderSettingsView
 
     Border CameraFirmwareCard(MaintenanceData data)
     {
-        var refresh = IconSettingsButton("Yenile", "IconRefresh", (_, _) =>
-        {
-            _maintenance = null;
-            _attempted.Remove(Tab.Maintenance);
-            Render();
-        });
-        refresh.ToolTip = "Kameraların modelini, yazılım sürümünü ve durumunu kayıt cihazından yeniden okur";
-        AutomationProperties.SetAutomationId(refresh, "MaintenanceCamerasRefresh");
-        refresh.IsEnabled = MaintenanceIdle;
+        // Same 120×30 icon button, text and position as the recorder card's "Denetle" (first of three buttons).
+        var check = IconSettingsButton("Denetle", "IconRefresh", (_, _) => CheckCameras());
+        check.ToolTip = "Kameraların modelini, yazılım sürümünü ve durumunu yeniden okur ve daha yeni yazılım olup olmadığına bakar; hiçbir şey indirmez";
+        AutomationProperties.SetName(check, "Kamera yazılımlarını denetle");
+        AutomationProperties.SetAutomationId(check, "CameraFirmwareCheck");
+        check.IsEnabled = MaintenanceIdle;
         var pick = SettingsButton("Dosyadan yükle…", (_, _) => PickFirmware(cameras: true));
         AutomationProperties.SetName(pick, "Kamera yazılım dosyası seç");
         AutomationProperties.SetAutomationId(pick, "MaintenanceCameraFile");
@@ -241,12 +231,28 @@ public partial class RecorderSettingsView
         AutomationProperties.SetAutomationId(_cameraUpdateButton, "MaintenanceCameraUpdate");
 
         var panel = new StackPanel();
-        var header = MaintenanceHeader("Kamera yazılımları", null, "", [refresh, pick, _cameraUpdateButton], out var summary);
+        var (badgeText, badgeKind) = _checkingCameras
+            ? ("Denetleniyor…", StatusKind.Neutral)
+            : CameraFirmwareCheck.Overall(_cameraCheck) switch
+            {
+                CameraCheckOverall.UpToDate => (CameraFirmwareCheck.OverallBadge(CameraCheckOverall.UpToDate), StatusKind.Ok),
+                CameraCheckOverall.Updates => (CameraFirmwareCheck.OverallBadge(CameraCheckOverall.Updates), StatusKind.Warning),
+                var overall => (CameraFirmwareCheck.OverallBadge(overall), StatusKind.Neutral),
+            };
+        var header = MaintenanceHeader("Kamera yazılımları", StatusBadge(badgeText, badgeKind), "", [check, pick, _cameraUpdateButton], out var summary);
         _cameraSummary = summary;
+        AutomationProperties.SetAutomationId(summary, "CameraFirmwareSummary");
         panel.Children.Add(header);
+        panel.Children.Add(CardWarning("“Denetle” kamera listesini kayıt cihazından yeniden okur ve sürümleri karşılaştırır; hiçbir şey indirmez ve kurmaz. " +
+                                       "Bu kayıt cihazı kameralar için çevrimiçi sürüm denetimi sunmuyor: “Güncelleme var”, aynı modeldeki başka bir kamerada daha yeni sürüm yüklü demektir."));
         if (_cameraResult is { } result)
         {
             panel.Children.Add(ResultLine(result.Ok, result.Text));
+        }
+        if (_cameraCheck?.Results is { } checkResults && data.Cameras.Value is { } checkedCameras &&
+            CameraFirmwareCheck.ModelsToLookUp(checkedCameras, checkResults) is { Count: > 0 } models)
+        {
+            panel.Children.Add(Row("Çevrimiçi denetim", ModelLinks(models), HikvisionPageButton("CameraFirmwareHikvisionPage")));
         }
         _cameraMismatch = CardWarning("");
         panel.Children.Add(_cameraMismatch);
@@ -260,9 +266,11 @@ public partial class RecorderSettingsView
         var stop = Switch(_stopOnFirstFailure, "İlk hatada dur", v => _stopOnFirstFailure = v);
         AutomationProperties.SetAutomationId(stop, "MaintenanceStopOnFailure");
         stop.IsEnabled = MaintenanceIdle;
-        panel.Children.Add(Row("İlk hatada dur", "Açıkken bir kamera güncellenemezse kalan kameralar başlatılmaz (önerilir).", stop, last: true));
+        panel.Children.Add(Row("İlk hatada dur",
+            "Seçilen kameralar sırayla güncellenir, her biri birkaç dakika görüntüsüz kalır. Açıkken bir kamera güncellenemezse kalanlar başlatılmaz (önerilir).",
+            stop, last: true));
 
-        // Table: ☐ · KANAL · KAMERA · MODEL · YÜKLÜ SÜRÜM · DURUM
+        // Table: ☐ · KANAL · KAMERA · MODEL · YÜKLÜ SÜRÜM · YAZILIM · DURUM
         var headerGrid = TableGrid(FirmwareColumns);
         _cameraAllBox = new CheckBox { HorizontalAlignment = HorizontalAlignment.Left, Margin = CheckBoxInset, VerticalAlignment = VerticalAlignment.Center };
         AutomationProperties.SetName(_cameraAllBox, "Tümünü seç");
@@ -270,7 +278,7 @@ public partial class RecorderSettingsView
         _cameraAllBox.Checked += (_, _) => SelectAllCameras(true);
         _cameraAllBox.Unchecked += (_, _) => SelectAllCameras(false);
         Put(headerGrid, _cameraAllBox, 0);
-        var captions = new[] { ("KANAL", false), ("KAMERA", false), ("MODEL", false), ("YÜKLÜ SÜRÜM", false), ("DURUM", true) };
+        var captions = new[] { ("KANAL", false), ("KAMERA", false), ("MODEL", false), ("YÜKLÜ SÜRÜM", false), ("YAZILIM", true), ("DURUM", true) };
         for (var i = 0; i < captions.Length; i++)
         {
             var caption = Text(captions[i].Item1, "CaptionText");
@@ -296,7 +304,7 @@ public partial class RecorderSettingsView
         else
         {
             var grid = TableGrid(FirmwareColumns);
-            Put(grid, MutedText(data.Cameras.Ok ? "Kayıt cihazında IP kamera yok" : "Kamera listesi okunamadı", HorizontalAlignment.Left), 1, span: 5);
+            Put(grid, MutedText(data.Cameras.Ok ? "Kayıt cihazında IP kamera yok" : "Kamera listesi okunamadı", HorizontalAlignment.Left), 1, span: 6);
             rows.Children.Add(TableRow(grid, last: true, height: 36));
             _cameraAllBox.IsEnabled = false;
         }
@@ -336,10 +344,11 @@ public partial class RecorderSettingsView
         var version = Text(camera.Firmware?.Text ?? RecorderText.Unreadable, "CellText");
         version.ToolTip = camera.Firmware?.Text;
         Put(grid, version, 4);
+        Put(grid, CameraCheckBadge(camera.Channel), 5);
         var status = new Border { HorizontalAlignment = HorizontalAlignment.Center };
         _cameraStatusCells[camera.Channel] = status;
         status.Child = CameraStatusBadge(camera);
-        Put(grid, status, 5);
+        Put(grid, status, 6);
         return TableRow(grid, last, height: 36);
     }
 
@@ -444,6 +453,66 @@ public partial class RecorderSettingsView
         };
     }
 
+    /// <summary>YAZILIM cell: the last "Denetle" result of this camera ("—" before the first check).</summary>
+    Border CameraCheckBadge(int channel)
+    {
+        var result = _cameraCheck?.For(channel) ?? new CameraCheckResult(channel, CameraCheckState.NotChecked);
+        var kind = result.State switch
+        {
+            CameraCheckState.UpToDate => StatusKind.Ok,
+            CameraCheckState.NewVersion => StatusKind.Warning,
+            _ => StatusKind.Neutral,
+        };
+        var badge = StatusBadge(result.Badge, kind);
+        badge.ToolTip = result.Detail;
+        badge.MaxWidth = FirmwareColumns[5].Value;
+        if (badge.Child is TextBlock label)
+        {
+            label.TextTrimming = TextTrimming.CharacterEllipsis;
+            AutomationProperties.SetAutomationId(label, string.Create(CultureInfo.InvariantCulture, $"CameraFirmwareStatus{channel}"));
+            AutomationProperties.SetHelpText(label, result.Detail);
+        }
+        return badge;
+    }
+
+    /// <summary>
+    /// Help text of the "Çevrimiçi denetim" row with one link per model: copies the model name to the clipboard and opens
+    /// Hikvision's firmware page (it has its own search box; SPVision never downloads anything).
+    /// </summary>
+    TextBlock ModelLinks(IReadOnlyList<string> models)
+    {
+        var text = Text("Kameralar için çevrimiçi denetim yok; daha yeni yazılımı Hikvision sitesinden kontrol edin. Modele tıklayınca adı panoya kopyalanır ve indirme sayfası açılır: ", "RowHelp");
+        for (var i = 0; i < models.Count; i++)
+        {
+            if (i > 0)
+            {
+                text.Inlines.Add(new Run(" · "));
+            }
+            var model = models[i];
+            var link = new Hyperlink(new Run(model)) { ToolTip = $"{model}: adı panoya kopyalar ve Hikvision yazılım sayfasını açar" };
+            link.SetResourceReference(TextElement.ForegroundProperty, "Accent");
+            AutomationProperties.SetName(link, $"{model} yazılımını Hikvision sitesinde ara");
+            AutomationProperties.SetAutomationId(link, string.Create(CultureInfo.InvariantCulture, $"CameraFirmwareModelLink{i + 1}"));
+            link.Click += (_, _) => LookUpModel(model);
+            text.Inlines.Add(link);
+        }
+        return text;
+    }
+
+    void LookUpModel(string model)
+    {
+        try
+        {
+            Clipboard.SetText(model);
+            Message?.Invoke($"“{model}” panoya kopyalandı; Hikvision sayfasındaki arama kutusuna yapıştırın.");
+        }
+        catch (System.Runtime.InteropServices.ExternalException)
+        {
+            // Clipboard busy: the page still opens.
+        }
+        OpenBrowser(MaintenancePaths.HikvisionFirmwarePage);
+    }
+
     /// <summary>Header like <see cref="CardHeader"/> with an optional badge after the title and a red title for the danger card.</summary>
     static Border MaintenanceHeader(string title, Border? badge, string description, IReadOnlyList<Button> buttons, bool danger = false) =>
         MaintenanceHeader(title, badge, description, buttons, out _, danger);
@@ -497,12 +566,12 @@ public partial class RecorderSettingsView
         return button;
     }
 
-    Button HikvisionPageButton()
+    Button HikvisionPageButton(string automationId = "MaintenanceHikvisionPage")
     {
         var button = SettingsButton("Hikvision sitesi", (_, _) => OpenBrowser(MaintenancePaths.HikvisionFirmwarePage));
         button.ToolTip = "Hikvision'ın yazılım indirme sayfasını tarayıcıda açar";
         AutomationProperties.SetName(button, "Hikvision yazılım indirme sayfasını aç");
-        AutomationProperties.SetAutomationId(button, "MaintenanceHikvisionPage");
+        AutomationProperties.SetAutomationId(button, automationId);
         return button;
     }
 
@@ -627,11 +696,10 @@ public partial class RecorderSettingsView
         }
         if (_cameraSummary is { } summary)
         {
-            summary.Text = (selected.Count == 0
-                    ? "Güncellenecek kameraları seçin. "
-                    : string.Create(CultureInfo.InvariantCulture, $"{selected.Count} kamera seçili · ")) +
-                "Seçilenler sırayla güncellenir; her biri birkaç dakika görüntüsüz kalır.";
+            summary.Text = (_checkingCameras ? "Denetleniyor…" : CameraFirmwareCheck.Summary(_cameraCheck, DateTimeOffset.Now)) +
+                           (selected.Count == 0 ? "" : string.Create(CultureInfo.InvariantCulture, $" · {selected.Count} kamera seçili"));
             summary.ToolTip = summary.Text;
+            AutomationProperties.SetName(summary, summary.Text);
         }
         if (_cameraUpdateButton is { } update)
         {
@@ -709,6 +777,58 @@ public partial class RecorderSettingsView
         _onlineCheck = result;
         _onlineCheckedAt = DateTimeOffset.Now;
         Message?.Invoke($"Yazılım denetimi: {result.Badge}");
+        if (_tab == Tab.Maintenance)
+        {
+            Render();
+        }
+    }
+
+    /// <summary>
+    /// Cameras' "Denetle": reads the camera table again (GET InputProxy/channels + /status) and compares versions
+    /// (<see cref="CameraFirmwareCheck"/>). Reads only; nothing is downloaded, installed or written.
+    /// </summary>
+    async void CheckCameras()
+    {
+        if (_device is not { } device || !MaintenanceIdle)
+        {
+            return;
+        }
+        _checkingCameras = true;
+        Render();
+        Read<List<CameraFirmware>> cameras;
+        try
+        {
+            using var isapi = new IsapiClient(device, CheckTimeout);
+            cameras = await CameraFirmwareReader.ReadAsync(isapi);
+        }
+        catch (Exception ex) when (ex is IsapiException or System.Net.Http.HttpRequestException or System.Xml.XmlException)
+        {
+            cameras = new Read<List<CameraFirmware>>(ReadState.Failed, null, ex.Message);
+        }
+        finally
+        {
+            _checkingCameras = false;
+        }
+        if (device != _device)
+        {
+            return;
+        }
+        var at = DateTimeOffset.Now;
+        if (_maintenance is { } data)
+        {
+            _maintenance = new MaintenanceData { Recorder = data.Recorder, Cameras = cameras };
+        }
+        if (cameras.Value is { } list)
+        {
+            _cameraSelection.IntersectWith(list.Where(c => c.Upgradable).Select(c => c.Channel));
+            _cameraCheck = new CameraCheck(at, CameraFirmwareCheck.Evaluate(list));
+        }
+        else
+        {
+            _cameraSelection.Clear();
+            _cameraCheck = new CameraCheck(at, null, cameras.Error);
+        }
+        Message?.Invoke($"Kamera yazılımı denetimi: {CameraFirmwareCheck.Summary(_cameraCheck, at)}");
         if (_tab == Tab.Maintenance)
         {
             Render();
@@ -956,7 +1076,7 @@ public partial class RecorderSettingsView
         }
         catch (Exception ex) when (ex is not OutOfMemoryException)
         {
-            _cameraResult = (null, $"Beklenmeyen hata: {ex.Message} Kameraların durumunu “Yenile” ile yeniden okuyun.");
+            _cameraResult = (null, $"Beklenmeyen hata: {ex.Message} Kameraların durumunu “Denetle” ile yeniden okuyun.");
         }
         finally
         {

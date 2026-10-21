@@ -507,16 +507,20 @@ public partial class RecorderSettingsView : UserControl
     }
 
     /// <summary>Settings row: label + help | control (240 px, right aligned).</summary>
-    static Border Row(string label, string help, UIElement control, bool last = false)
+    static Border Row(string label, string help, UIElement control, bool last = false) =>
+        Row(label, help.Length > 0 ? Text(help, "RowHelp") : null, control, last);
+
+    /// <summary>Same row with a ready help block (e.g. one with links); it should use the "RowHelp" style.</summary>
+    static Border Row(string label, TextBlock? help, UIElement control, bool last = false)
     {
         var grid = new Grid();
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(ControlWidth) });
         var left = new StackPanel { VerticalAlignment = VerticalAlignment.Center, Margin = new Thickness(0, 0, 24, 0) };
         left.Children.Add(Text(label, "RowLabel"));
-        if (help.Length > 0)
+        if (help is not null)
         {
-            left.Children.Add(Text(help, "RowHelp"));
+            left.Children.Add(help);
         }
         grid.Children.Add(left);
         if (control is FrameworkElement fe)
