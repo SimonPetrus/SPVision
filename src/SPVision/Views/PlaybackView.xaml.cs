@@ -69,6 +69,8 @@ public partial class PlaybackView : UserControl
     bool _startFromMidnight;           // a day was double-clicked: start it at 00:00, not at the first recording
     bool _paused;
     bool _active;                      // the view is shown and playing
+    bool _awaitUser;                   // restored cameras: no start until the user picks a day, plays, seeks or adds a camera
+    IReadOnlyList<CameraRef>? _restoreCameras; // cameras of the last session, put on the tiles when the view is first shown
     int _speed = PlaybackSpeed.Normal;
     int _tickCount;
     TimeSpan _sinceDriftCheck;
@@ -109,6 +111,13 @@ public partial class PlaybackView : UserControl
         GoToPopup.Opened += (_, _) => OpenGoTo();
         _tick.Tick += (_, _) => Tick();
         _messageTimer.Tick += (_, _) => ShowMessage(null);
+
+        // Layout of the last session now (the top bar picker shows it); its cameras when the view is first shown,
+        // so nothing is searched on the recorder before the user opens Kayıt Oynatma.
+        var restore = PlaybackRestore.From(App.Settings);
+        _layout = restore.Layout;
+        _slots = new PlaybackSlots(_layout.TileCount);
+        _restoreCameras = restore.Cameras.Count > 0 ? restore.Cameras : null;
 
         ArrangeTiles();
         BuildCalendar();
@@ -151,6 +160,7 @@ public partial class PlaybackView : UserControl
     {
         _active = true;
         _tick.Start();
+        RestoreCameras();
         if (_hasTime && ActiveTiles.Any())
         {
             SetMaster(_anchor);
@@ -210,6 +220,36 @@ public partial class PlaybackView : UserControl
         ArrangeTiles();
         SyncTilesToSlots();
         UpdateFocus();
+        SaveState();
+    }
+
+    /// <summary>
+    /// First time the view is shown: the checked cameras of the last session come back on their tiles (in order, gone or
+    /// hidden ones left out) and search the day, but nothing plays and the time stays unset until the user picks a day,
+    /// presses play, seeks or adds a camera (<see cref="_awaitUser"/>).
+    /// </summary>
+    void RestoreCameras()
+    {
+        if (_restoreCameras is not { } cameras)
+        {
+            return;
+        }
+        _restoreCameras = null;
+        foreach (var camera in cameras.Where(c => FindCamera(c) is { Camera.Hidden: false }).Take(_slots.TileCount))
+        {
+            _slots.Pick(camera);
+        }
+        _slots.SetFocus(0);
+        _awaitUser = _slots.Count > 0;
+        SyncTilesToSlots();
+        UpdateFocus();
+    }
+
+    /// <summary>Layout and checked cameras are kept for the next start (<see cref="AppSettings.LastPlaybackView"/>).</summary>
+    void SaveState()
+    {
+        App.Settings.LastPlaybackView = PlaybackRestore.Save(_layout, _slots.Slots);
+        App.SaveSettings();
     }
 
     public void ApplyMotionBoxes(bool show)
@@ -380,6 +420,14 @@ public partial class PlaybackView : UserControl
     /// </summary>
     void TryStart()
     {
+        if (_awaitUser && _active && !_hasTime)
+        {
+            foreach (var tile in ActiveTiles.Where(t => t.SearchDone && !t.IsParked))
+            {
+                tile.ShowReady(); // restored: waits for a day or play
+            }
+            return;
+        }
         if (_hasTime || !_active || FocusedTile is not { SearchDone: true } focused)
         {
             return;
@@ -469,6 +517,7 @@ public partial class PlaybackView : UserControl
             ShowMessage(PlaybackText.SelectCameraFirst);
             return false;
         }
+        _awaitUser = false;
         var target = ClampDay(requested);
         if (focused.Segments is { } segments)
         {
@@ -907,8 +956,14 @@ public partial class PlaybackView : UserControl
         if (date == _day)
         {
             UpdateDayButtons();
+            if (_awaitUser)
+            {
+                _awaitUser = false; // restored cameras: picking the shown day starts it
+                TryStart();
+            }
             return;
         }
+        _awaitUser = false;
         _day = date.Date;
         _hasTime = false;
         _startFromMidnight = false;
@@ -1054,9 +1109,14 @@ public partial class PlaybackView : UserControl
     /// <summary>In the grid → removed; otherwise into the first empty tile; grid full → replaces the focused tile's camera.</summary>
     void PickCamera(CameraRef source)
     {
+        if (_slots.IndexOf(source) < 0)
+        {
+            _awaitUser = false; // adding a camera starts playback as before (only a restore waits)
+        }
         _slots.Pick(source);
         SyncTilesToSlots();
         UpdateFocus();
+        SaveState();
     }
 
     /// <summary>Check box, tile number and focus highlight of every camera row.</summary>
@@ -1105,6 +1165,7 @@ public partial class PlaybackView : UserControl
     {
         if (!_hasTime)
         {
+            _awaitUser = false;
             TryStart();
             if (!_hasTime)
             {

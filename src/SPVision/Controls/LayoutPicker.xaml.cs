@@ -10,12 +10,19 @@ namespace SPVision.Controls;
 /// <summary>
 /// Top bar layout picker: one button showing the current layout (mini diagram + tile count) that opens
 /// a transient popup with two sections, STANDART and BÜYÜK KARELİ. Picking a layout applies it and closes
-/// the popup. Live view offers every layout; playback only those up to 16 tiles.
+/// the popup. Live view offers every layout (6 + 6); playback 1, 4, 9, 16 and 6, 8, 10, 13 (4 + 4).
 /// </summary>
 public partial class LayoutPicker : UserControl
 {
     /// <summary>Unselected cells are dimmed; the selected item shows them at full strength.</summary>
     const double IdleDiagramOpacity = 0.55;
+
+    /// <summary>One column of the popup: a 56 px item plus its 4 px margin on both sides.</summary>
+    const double ColumnWidth = 64;
+
+    /// <summary>Horizontal margin of the item grids (+ 4 px item margin = 14 px from the panel edge) and the panel border.</summary>
+    const double GridMargin = 10;
+    const double PanelBorderWidth = 1;
 
     readonly List<(ToggleButton Item, LayoutDiagram Diagram, GridLayout Layout)> _items = [];
     GridLayout _current = GridLayout.Default;
@@ -56,6 +63,11 @@ public partial class LayoutPicker : UserControl
     public void SetLayouts(IReadOnlyList<GridLayout> standard, IReadOnlyList<GridLayout> bigTile)
     {
         _items.Clear();
+        // Live 6 + 6, playback 4 + 4: equal item widths and gaps in both, the panel as wide as its columns.
+        var columns = Math.Max(1, Math.Max(standard.Count, bigTile.Count));
+        StandardItems.Columns = columns;
+        BigItems.Columns = columns;
+        PanelBorder.Width = columns * ColumnWidth + 2 * GridMargin + 2 * PanelBorderWidth;
         Fill(StandardItems, standard, "kareli eşit ızgara");
         Fill(BigItems, bigTile, "kareli, büyük kareli ızgara");
         BigSection.Visibility = bigTile.Count > 0 ? Visibility.Visible : Visibility.Collapsed;

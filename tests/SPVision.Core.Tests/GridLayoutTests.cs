@@ -18,8 +18,43 @@ public class GridLayoutTests
     public void PlaybackOffersLayoutsUpToSixteenTiles()
     {
         Assert.Equal(new[] { 1, 4, 9, 16 }, GridLayout.PlaybackStandard.Select(l => l.TileCount));
-        Assert.Equal(new[] { 6, 7, 8, 10, 13 }, GridLayout.PlaybackBigTile.Select(l => l.TileCount));
+        Assert.Equal(new[] { 6, 8, 10, 13 }, GridLayout.PlaybackBigTile.Select(l => l.TileCount));
+        Assert.Equal(new[] { 1, 4, 6, 8, 9, 10, 13, 16 }, GridLayout.PlaybackAll.Select(l => l.TileCount));
         Assert.Same(GridLayout.Four, GridLayout.PlaybackDefault);
+    }
+
+    [Fact]
+    public void PlaybackPickerRowsAreBalanced()
+    {
+        // 4 + 4: the popup is sized to four columns, no empty slot in either row.
+        Assert.Equal(GridLayout.PlaybackStandard.Count, GridLayout.PlaybackBigTile.Count);
+        Assert.Equal(GridLayout.Standard.Count, GridLayout.BigTile.Count); // live: 6 + 6
+    }
+
+    [Theory]
+    [InlineData(7, 8)]   // 7 left the playback picker
+    [InlineData(1, 1)]
+    [InlineData(4, 4)]
+    [InlineData(6, 6)]
+    [InlineData(8, 8)]
+    [InlineData(9, 9)]
+    [InlineData(10, 10)]
+    [InlineData(13, 13)]
+    [InlineData(16, 16)]
+    [InlineData(5, 6)]   // unknown: smallest that holds it
+    [InlineData(22, 16)] // live-only layouts: the largest playback one
+    [InlineData(36, 16)]
+    public void SavedPlaybackLayoutMigrates(int saved, int expected)
+    {
+        Assert.Equal(expected, GridLayout.ForPlaybackView(new SavedView { Layout = saved }).TileCount);
+    }
+
+    [Fact]
+    public void NoSavedPlaybackLayoutIsTheDefault()
+    {
+        Assert.Same(GridLayout.PlaybackDefault, GridLayout.ForPlaybackView(null));
+        Assert.Same(GridLayout.PlaybackDefault, GridLayout.ForPlaybackView(new SavedView()));
+        Assert.Same(GridLayout.PlaybackDefault, GridLayout.ForPlaybackView(new SavedView { Layout = 0 }));
     }
 
     [Fact]

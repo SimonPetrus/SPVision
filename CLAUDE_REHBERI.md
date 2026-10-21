@@ -107,17 +107,28 @@ dotnet run --project src\SPVision
   böylece SDK videosu üzerindeki tık/sürükle/bırak ana pencereye, oradan kareye gelir; Flyleaf'in
   yüzey penceresi (`Host.Surface`) ise VideoTile'da ayrıca dinlenir. Otomatik kalite eşiği yalnız
   video alanının yüksekliğine bakar (`VideoTile.VideoHeight`).
+- **Oto kalite kuralı (21.10.2026, cihazda denenmedi):** saf Core [`AutoStreamQuality.Decide`](src/SPVision.Core/AutoStreamQuality.cs)
+  (birim testli). HD: büyütülmüş kare, büyük kareli düzenlerin **büyük (span > 1) kareleri** ve 1 / 4 kareli eşit ızgaraların
+  tüm kareleri — boyuttan bağımsız (eskiden yalnız piksel eşiği vardı; 22 düzeninin büyük karesi 1440×900'de ~280 px video
+  ile SD kalıyordu). Diğer kareler: video alanı ≥ `MainStreamMinTileHeight` (540 cihaz pikseli) ise HD; HD olan kare ancak
+  %10 altına inince SD'ye düşer (histerezis, boyutlandırmada gidip gelme yok). Kayıt alan kare hiç değiştirilmez
+  (`VideoTile.SetAutoQuality`; canlıdan kayıt durdurulunca yeniden değerlendirilir). `LiveView.Sync` yeni kamerayı yeni
+  yerinin kalitesiyle açar (`VideoTile.Show(…, autoQuality)`; hücre yüksekliği ızgaradan tahmin edilir), böylece sayfa/düzen
+  değişiminde önce SD açılıp 600 ms sonra HD'ye yeniden açılma olmaz.
 
 ### Izgara düzenleri ve düzen seçici
 
 - Tanım: Core [`GridLayout`](src/SPVision.Core/GridLayout.cs). Hepsi **kare** ızgara (kareler oranını korur).
   STANDART 1, 4, 9, 16, 25, 36 (N×N); BÜYÜK KARELİ 6 (3×3, 2×2 büyük (1,1)), 7 (4×4, 2×2 büyükler (1,1) (3,1) (1,3)),
   8 (4×4, 3×3 büyük (1,1)), 10 (4×4, 2×2 büyükler (1,1) (3,1)), 13 (4×4, 2×2 büyük (2,2)), 22 (5×5, 2×2 büyük (1,1)).
-  Kare sırası: önce büyükler (tanım sırasıyla), sonra kalan hücreler okuma sırasıyla. Oynatma ≤16 (`PlaybackStandard/BigTile`).
+  Kare sırası: önce büyükler (tanım sırasıyla), sonra kalan hücreler okuma sırasıyla. Oynatma ≤16 (`PlaybackStandard/BigTile`):
+  **1, 4, 9, 16 / 6, 8, 10, 13** (4 + 4; 7 oynatmada yok, kayıtlı oynatma düzeni 7 → 8: `GridLayout.ForPlaybackView`).
 - Geçiş (`ForSavedView`): kayıtlı **32 → 36** (eski 8×4 kareleri eziyordu); eski sütun ayarları aynen (1,2 → 6; 3,4 → 25);
   bilinmeyen sayı en küçük sığan düzene. Kamera atamaları sırasıyla korunur.
 - Üst çubukta tek düğme: [`LayoutPicker`](src/SPVision/Controls/LayoutPicker.xaml) (36 px, en az 96; mini diyagram
-  [`LayoutDiagram`](src/SPVision/Controls/LayoutDiagram.cs) + sayı + ok). Açılır panel 404 px, 6 sütun, 62 px öğeler;
+  [`LayoutDiagram`](src/SPVision/Controls/LayoutDiagram.cs) + sayı + ok). Açılır panel: öğeler 56×62, aralık 8, kenarlardan
+  14 px; sütun sayısı = uzun bölümün öğe sayısı (`SetLayouts` genişliği hesaplar): canlı 6 + 6 → 406 px, oynatma 4 + 4 →
+  278 px, boş yuva yok. Panelin sağ kenarı düğmenin sağ kenarının altında (iki listede de), 4 px aşağıda;
   canlı ve oynatma aynı kontrolü kullanır (`SetLayouts`). Küçülen düzende dışarıda kalan kareler `Clear()` ile
   hem SDK hem Flyleaf oynatıcısını bırakır.
 
@@ -135,7 +146,9 @@ dotnet run --project src\SPVision
   düzen değişince korunur. Kenar çubuğunda çift tık: kamera bir sayfadaysa o sayfaya gidilir ve karesi seçilir.
   Cihaz satırına çift tık: o cihazın çevrim içi kameraları başa, 1. sayfa (düzen artık büyütülmez).
 - Durum çubuğu üç sütunlu (`*` / `Auto` / `*`): ortada `‹ Sayfa 1 / 3 ›` (23×23 `StatusIconButton`, metin sabit 88 px),
-  pencerenin tam ortasında; tek sayfada ve canlı dışında gizli. Oklar ve PageUp/PageDown (yalnız canlıda, metin kutusu
+  pencerenin tam ortasında; tek sayfada ve canlı dışında gizli. **Ayarlar'da** solda yalnız bağlantı ("Bağlı · cihaz", arkada
+  çalışan canlı duvara göre), sağda CPU + saat (+ geçici mesaj) görünür; "n / L kamera ekranda", yeniden bağlanma ve video
+  yolu ("Şifreli akış · SDK · GPU çözme") gizlenir. Oklar ve PageUp/PageDown (yalnız canlıda, metin kutusu
   odaktayken değil, `PreviewKeyDown`) başa/sona sarar. Büyütülmüş kare varsa önce küçültülür.
 - Düzen değişince sayfanın ilk kamerası görünür kalır (onu içeren sayfa açılır). Sayfa ve sıra `LastView`'a
   (`Tiles` = global sıra, `Page`) kaydedilir; açılışta sınırlanır. Eski kayıtlarda `Tiles` tek düzenin kareleriydi = sıranın başı.
@@ -148,6 +161,14 @@ dotnet run --project src\SPVision
 - [`PlaybackView`](src/SPVision/Views/PlaybackView.xaml.cs) kendi 260 px kenar çubuğunu taşır (takvim + "KAMERALAR n / L"
   onay listesi); canlıdaki kenar çubuğu oynatmada gizlenir. Takvimde nokta = odaklı kameranın o gün kaydı var
   (`IsapiClient.HasRecordingsAsync`: mevcut ISAPI arama isteği, gün başına 1 sonuç; ayrı uç nokta yok).
+- **Son oynatma durumu (21.10.2026, cihazda denenmedi):** düzen + işaretli kameralar (kare sırasıyla, boşluksuz)
+  `AppSettings.LastPlaybackView`'a yazılır (düzen seçimi ve kamera tıklamasında). Açılışta "Açılışta son görünümü geri yükle"
+  açıksa Core [`PlaybackRestore.From`](src/SPVision.Core/PlaybackRestore.cs) (birim testli): kayıtlı 7 → 8, silinen/gizlenen
+  kameralar ve kopyalar atılır, düzenin kare sayısına kırpılır. Düzen hemen gelir; kameralar Kayıt Oynatma **ilk açıldığında**
+  karelere konur (açılışta cihaza arama gitmez), günün kayıtları aranır ama **oynatma başlamaz** (`_awaitUser`): kare "Oynatmaya
+  hazır" der, saat `--:--:--` kalır. Kullanıcı gün seçince (gösterilen güne tıklamak dahil), Oynat'a basınca, aradığında
+  (zaman çizelgesi, ±30 sn, "Saate git") ya da **yeni kamera eklediğinde** eski davranış (ilk kayıttan oynat) geri gelir;
+  düzen değiştirmek, kare odaklamak, kamera çıkarmak başlatmaz. Gün ve saat saklanmaz.
 - Kamera tıklama kuralı Core [`PlaybackSlots`](src/SPVision.Core/PlaybackSync.cs): ızgarada → çıkar (kare boş kalır,
   diğerleri kesilmez); değilse ilk boş kare; ızgara doluysa odaklı karenin kamerası değişir. Düzen küçülünce taşan
   kameralar boş karelere kayar (önce odaklı kamera).
@@ -288,13 +309,14 @@ kamera anahtarı yoksa cihaz anahtarını kullanır), [`SettingsStore`](src/SPVi
 [`Theme.cs`](src/SPVision.Core/Theme.cs) (`AppTheme`, `ThemeResolver`), [`PlaybackSync.cs`](src/SPVision.Core/PlaybackSync.cs)
 (`PlaybackSlots`, `RecordingJump`, `PlaybackSpeed`, `PlaybackSync`, `CalendarMonth`, `PlaybackText` — oynatmanın saf mantığı, birim testli), [`LivePages`](src/SPVision.Core/LivePages.cs) (canlı sayfalar: global yuva sırası, sayfa sayısı/dilim/sınırlama/sarma, kare eşleme), [`CameraList`](src/SPVision.Core/CameraList.cs)
 (yenilenen kamera listesinde anahtarı ve "listede göster" seçimini korur), [`DeviceKind`](src/SPVision.Core/DeviceKind.cs)
-("NVR · 32 kanal" metni), [`AutoStart`](src/SPVision.Core/AutoStart.cs) (Run değeri) ve [`HttpsPort`](src/SPVision.Core/HttpsPort.cs) (HTTPS kutusu ↔ 80/443 portu, HTTP'ye düşme sorusunun kuralı).
+("NVR · 32 kanal" metni), [`AutoStart`](src/SPVision.Core/AutoStart.cs) (Run değeri), [`AutoStreamQuality`](src/SPVision.Core/AutoStreamQuality.cs) (Oto kalite kuralı),
+[`PlaybackRestore`](src/SPVision.Core/PlaybackRestore.cs) (son oynatma düzeni + kameraları) ve [`HttpsPort`](src/SPVision.Core/HttpsPort.cs) (HTTPS kutusu ↔ 80/443 portu, HTTP'ye düşme sorusunun kuralı).
 Cihaz ayarları (§9): [`IsapiWritePolicy`](src/SPVision.Core/IsapiWritePolicy.cs) (yazma izin listesi + yasak kelimeler),
 [`IsapiConfig.cs`](src/SPVision.Core/IsapiConfig.cs) (`IsapiPaths`, `IsapiResponseStatus`, `IsapiXml`, `ConfigEdit`/`SetValueEdit`,
 `ConfigWrite`, `ConfigChangeText`, `IConfigTransport`, `ConfigWriter`), [`IsapiClient.Config.cs`](src/SPVision.Core/IsapiClient.Config.cs)
 (`GetConfigAsync`, tek yazma yolu `PutConfigAsync`), [`RecorderSettings.cs`](src/SPVision.Core/RecorderSettings.cs) (ayrıştırıcılar,
 `MotionSensitivity`, `RecordSchedule` hazır modları, `TimeSyncEdit`, `HikTimeZone`, `RecorderPlan` önce→sonra yazma planı). Yeni ayarlar:
-`AppSettings.Theme` (metin olarak saklanır), `ShowMotionBoxes`, `RestoreLastView`, `StartFullScreen`; `Camera.Hidden`; `SavedView.Page`;
+`AppSettings.Theme` (metin olarak saklanır), `ShowMotionBoxes`, `RestoreLastView`, `StartFullScreen`, `LastPlaybackView`; `Camera.Hidden`; `SavedView.Page`;
 `Device.DeviceType`, `Device.ChannelCount`.
 
 ## 6. Doğrulanmış gerçek durum (21.10.2026)

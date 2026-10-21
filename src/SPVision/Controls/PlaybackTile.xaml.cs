@@ -335,6 +335,15 @@ public partial class PlaybackTile : UserControl
         }
     }
 
+    /// <summary>Restored camera whose recordings are known: nothing plays until the user picks a day or presses play.</summary>
+    public void ShowReady()
+    {
+        if (Camera is not null)
+        {
+            SetState(TileState.Stopped, "Oynatmaya hazır\nGün seçin ya da Oynat'a basın");
+        }
+    }
+
     // ---- SDK path ----
 
     /// <summary>Login + PlayBackByTime are blocking network calls, so they run off the UI thread.</summary>

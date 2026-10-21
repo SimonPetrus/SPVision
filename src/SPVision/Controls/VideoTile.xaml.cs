@@ -148,7 +148,9 @@ public partial class VideoTile : UserControl
         }
     }
 
-    public void Show(Device device, Camera camera)
+    /// <param name="autoQuality">Oto stream for the tile's new place, when the live view knows it already (the camera
+    /// then opens with it at once instead of reopening when the size check runs).</param>
+    public void Show(Device device, Camera camera, StreamQuality? autoQuality = null)
     {
         if (Device?.Id != device.Id || Camera?.Channel != camera.Channel)
         {
@@ -156,6 +158,7 @@ public partial class VideoTile : UserControl
         }
         Device = device;
         Camera = camera;
+        _autoQuality = autoQuality ?? _autoQuality;
         var forced = App.Settings.LiveQuality;
         AutoQuality = forced is null;
         Open(forced ?? _autoQuality);

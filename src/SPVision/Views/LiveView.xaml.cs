@@ -319,7 +319,8 @@ public partial class LiveView : UserControl
                 }
                 if (camera is not null && Resolve(camera) is { } found)
                 {
-                    tile.Show(found.Device, found.Camera);
+                    // Opens with the stream of its new place (e.g. the big tile: HD), not the one of the tile's old place.
+                    tile.Show(found.Device, found.Camera, AutoQualityFor(tile, i, i == maximizedAt, EstimatedVideoHeight(tile, i)));
                 }
                 else if (tile.Camera is not null)
                 {
@@ -461,25 +462,44 @@ public partial class LiveView : UserControl
     }
 
     /// <summary>
-    /// Small tiles use the sub stream, large ones the main stream — decided per tile from the height of
-    /// its video area (the header strip is not video), so the big tiles of the "büyük kareli" layouts can get HD
-    /// while its neighbours stay SD. The old client always pulled main streams, which is what kept a CPU
-    /// core busy. While a tile is maximized only that one is re-evaluated: the hidden ones keep the stream they
-    /// had, so restoring the grid shows them at once (a quality switch reopens the stream).
+    /// Oto: small tiles use the sub stream, large ones the main stream (Core <see cref="AutoStreamQuality"/>): the big
+    /// tiles of the "büyük kareli" layouts, the 1 and 4 grids and a maximized tile are HD; the others by the height of
+    /// their video area (the header strip is not video), with a small hysteresis. The old client always pulled main
+    /// streams, which is what kept a CPU core busy. While a tile is maximized only that one is re-evaluated: the hidden
+    /// ones keep the stream they had, so restoring the grid shows them at once (a quality switch reopens the stream).
+    /// A recording tile is never switched (<see cref="VideoTile.SetAutoQuality"/>).
     /// </summary>
     void UpdateAutoQuality()
     {
-        var dpi = VisualTreeHelper.GetDpi(this).DpiScaleY;
-        foreach (var tile in _tiles.Take(_layout.TileCount))
+        for (var i = 0; i < _layout.TileCount; i++)
         {
+            var tile = _tiles[i];
             if (_maximized is not null && _maximized != tile)
             {
                 continue;
             }
-            var pixels = tile.VideoHeight * dpi;
-            var quality = pixels >= App.Settings.MainStreamMinTileHeight ? StreamQuality.Main : StreamQuality.Sub;
-            tile.SetAutoQuality(quality);
+            tile.SetAutoQuality(AutoQualityFor(tile, i, _maximized == tile, tile.VideoHeight));
         }
+    }
+
+    /// <summary>Oto stream of the tile at <paramref name="index"/> for a video area <paramref name="videoHeight"/> DIPs high.</summary>
+    StreamQuality AutoQualityFor(VideoTile tile, int index, bool maximized, double videoHeight) =>
+        AutoStreamQuality.Decide(_layout, index, maximized, videoHeight * VisualTreeHelper.GetDpi(this).DpiScaleY,
+            App.Settings.MainStreamMinTileHeight, tile.Quality);
+
+    /// <summary>
+    /// Video height a tile will have in cell <paramref name="index"/> of the layout (before it is arranged there): the
+    /// cell's share of the grid minus the tile's own header and borders. The size check after arranging corrects it.
+    /// </summary>
+    double EstimatedVideoHeight(VideoTile tile, int index)
+    {
+        if (index >= _layout.TileCount)
+        {
+            return 0;
+        }
+        var cellHeight = TileGrid.ActualHeight * _layout.Cells[index].RowSpan / _layout.Rows;
+        var chrome = tile.ActualHeight > 0 ? tile.ActualHeight - tile.VideoHeight : 0;
+        return Math.Max(0, cellHeight - chrome);
     }
 
     void Grid_SizeChanged(object sender, SizeChangedEventArgs e)
@@ -583,6 +603,10 @@ public partial class LiveView : UserControl
         }
         var file = _selected.ToggleRecording();
         ShowToast(file is null ? "Kayıt durduruldu." : $"Kayıt: {file}");
+        if (file is null)
+        {
+            _qualityTimer.Start(); // a recording tile keeps its stream: Oto may switch it now
+        }
         RaiseStateChanged();
     }
 

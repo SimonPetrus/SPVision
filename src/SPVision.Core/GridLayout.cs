@@ -41,7 +41,14 @@ public sealed class GridLayout
 
     public static IReadOnlyList<GridLayout> PlaybackStandard { get; } = [.. Standard.Where(l => l.TileCount <= PlaybackMaxTiles)];
 
-    public static IReadOnlyList<GridLayout> PlaybackBigTile { get; } = [.. BigTile.Where(l => l.TileCount <= PlaybackMaxTiles)];
+    /// <summary>
+    /// Playback "büyük kareli": 6, 8, 10, 13 — four, like the standard row (1, 4, 9, 16), so the picker is a balanced
+    /// 4 + 4 without an empty slot. 7 is not offered; a saved 7 opens as 8 (<see cref="ForPlaybackView"/>).
+    /// </summary>
+    public static IReadOnlyList<GridLayout> PlaybackBigTile { get; } = [Six, Eight, Ten, Thirteen];
+
+    /// <summary>Every playback layout, smallest first.</summary>
+    public static IReadOnlyList<GridLayout> PlaybackAll { get; } = [.. PlaybackStandard.Concat(PlaybackBigTile).OrderBy(l => l.TileCount)];
 
     /// <summary>Fresh installs: all 22 cameras of the recorder fit.</summary>
     public static GridLayout Default => TwentyFive;
@@ -56,6 +63,9 @@ public sealed class GridLayout
 
     /// <summary>Tile counts that no longer exist: the old 8×4 grid made tall, squeezed tiles.</summary>
     static readonly Dictionary<int, int> RetiredLayouts = new() { [32] = 36 };
+
+    /// <summary>Playback layouts that are no longer offered: 7 left the picker (4 + 4 sections).</summary>
+    static readonly Dictionary<int, int> RetiredPlaybackLayouts = new() { [7] = 8 };
 
     readonly GridCell[] _cells;
 
@@ -118,6 +128,18 @@ public sealed class GridLayout
         { Layout: int tileCount and > 0 } => WithTileCount(tileCount) ?? Fitting(tileCount),
         { Columns: int columns } when LegacyColumns.TryGetValue(columns, out var tiles) => WithTileCount(tiles)!,
         _ => Default,
+    };
+
+    /// <summary>
+    /// Layout of the saved playback view: a playback layout as saved, a retired 7 as 8, any other count the smallest
+    /// playback layout that holds as many tiles (at most 16); nothing saved = <see cref="PlaybackDefault"/>.
+    /// </summary>
+    public static GridLayout ForPlaybackView(SavedView? view) => view switch
+    {
+        { Layout: int tileCount and > 0 } when RetiredPlaybackLayouts.TryGetValue(tileCount, out var replacement) =>
+            PlaybackAll.First(l => l.TileCount == replacement),
+        { Layout: int tileCount and > 0 } => PlaybackAll.FirstOrDefault(l => l.TileCount >= tileCount) ?? PlaybackAll[^1],
+        _ => PlaybackDefault,
     };
 
     public override string ToString() => TileCount.ToString(System.Globalization.CultureInfo.InvariantCulture);

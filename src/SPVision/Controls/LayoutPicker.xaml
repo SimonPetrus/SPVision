@@ -16,10 +16,11 @@
             </StackPanel>
         </ToggleButton>
 
-        <!-- 404 px wide, right edge under the button's right edge, 4 px below it. Items: 6 columns,
-             62 px high, 8 px gaps (4 px margin each) and 14 px from every edge of the panel. -->
+        <!-- Right edge under the button's right edge, 4 px below it. Items 56×62 with 8 px gaps (4 px margin each) and
+             14 px from every edge of the panel; as many columns as the longer section has items (live 6 + 6 → 406 px,
+             playback 4 + 4 → 278 px), so neither row has an empty slot. Width is set in code (SetLayouts). -->
         <Popup x:Name="Panel">
-            <Border Style="{StaticResource PopupPanel}" Width="404" AutomationProperties.Name="Izgara düzenleri">
+            <Border x:Name="PanelBorder" Style="{StaticResource PopupPanel}" AutomationProperties.Name="Izgara düzenleri">
                 <StackPanel>
                     <TextBlock Text="STANDART" Style="{StaticResource CaptionText}" Margin="14,14,14,0" />
                     <UniformGrid x:Name="StandardItems" Columns="6" Margin="10,6,10,10" />

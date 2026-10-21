@@ -432,10 +432,16 @@ public partial class MainWindow : Window
     /// <summary>What the status bar needs of one tile, live or playback.</summary>
     readonly record struct TileInfo(Device Device, CameraRef Source, TileState State, bool UsesSdk, bool IsReconnecting);
 
-    /// <summary>Connection, cameras on screen and video path of the shown view (Settings: the live wall, which keeps running).</summary>
+    /// <summary>
+    /// Connection, cameras on screen and video path of the shown view. Settings shows only the connection (of the live
+    /// wall, which keeps running) on the left; CPU, clock and messages on the right are the same in every view.
+    /// </summary>
     void UpdateStatusBar()
     {
         var playback = _section == MainSection.Playback;
+        var viewItems = _section == MainSection.Settings ? Visibility.Collapsed : Visibility.Visible;
+        OnScreenText.Visibility = viewItems;
+        VideoPathText.Visibility = viewItems;
         var tiles = playback
             ? Playback.VisibleTiles.Where(t => t.Device is not null)
                 .Select(t => new TileInfo(t.Device!, t.Source!, t.State, t.UsesSdk, false)).ToList()
@@ -469,7 +475,7 @@ public partial class MainWindow : Window
             : $"{onScreen} / {total} kamera ekranda";
 
         var reconnecting = tiles.Count(t => t.IsReconnecting);
-        ReconnectPanel.Visibility = reconnecting > 0 ? Visibility.Visible : Visibility.Collapsed;
+        ReconnectPanel.Visibility = reconnecting > 0 && viewItems == Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
         ReconnectText.Text = $"{reconnecting} kamera yeniden bağlanıyor";
 
         // Video path actually in use. Both paths decode on the GPU (PlayCtrl decode engine / D3D11VA).

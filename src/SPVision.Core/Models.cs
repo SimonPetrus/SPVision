@@ -95,6 +95,12 @@ public sealed class AppSettings
     /// <summary>Layout restored on startup.</summary>
     public SavedView? LastView { get; set; }
 
+    /// <summary>
+    /// Kayıt Oynatma: layout and the checked cameras in tile order (<see cref="SavedView.Tiles"/>, no gaps), restored on
+    /// startup like <see cref="LastView"/> (<see cref="PlaybackRestore"/>). The day and time are not kept.
+    /// </summary>
+    public SavedView? LastPlaybackView { get; set; }
+
     public string SnapshotFolder { get; set; } = AppPaths.DefaultSnapshotFolder;
 
     public string RecordingFolder { get; set; } = AppPaths.DefaultRecordingFolder;
@@ -102,7 +108,10 @@ public sealed class AppSettings
     /// <summary>Live view quality for all tiles: null = automatic by tile size.</summary>
     public StreamQuality? LiveQuality { get; set; }
 
-    /// <summary>Use the sub stream when a tile is smaller than this many pixels high.</summary>
+    /// <summary>
+    /// Oto: a tile whose video area is smaller than this many pixels high uses the sub stream (<see cref="AutoStreamQuality"/>;
+    /// big tiles of the "büyük kareli" layouts and the 1 and 4 grids are HD whatever their size).
+    /// </summary>
     public int MainStreamMinTileHeight { get; set; } = 540;
 
     /// <summary>Light, dark or follow Windows (default). Stored as text in settings.json.</summary>
@@ -112,7 +121,7 @@ public sealed class AppSettings
     /// <summary>Draw the recorder's motion / intelligent-analysis boxes on SDK video (PlayCtrl private data).</summary>
     public bool ShowMotionBoxes { get; set; } = true;
 
-    /// <summary>Restore the grid layout, camera order and page on startup.</summary>
+    /// <summary>Restore the grid layout, camera order and page on startup (and the playback layout and cameras).</summary>
     public bool RestoreLastView { get; set; } = true;
 
     /// <summary>Open the main window in full screen (F11).</summary>
