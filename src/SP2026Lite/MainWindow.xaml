@@ -2,36 +2,131 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:v="clr-namespace:SP2026Lite.Views"
-        Title="SP-2026 Lite" Width="1400" Height="860" MinWidth="900" MinHeight="560"
+        xmlns:c="clr-namespace:SP2026Lite.Controls"
+        Title="SP-2026 Lite" Width="1440" Height="900" MinWidth="1100" MinHeight="600"
         WindowStartupLocation="CenterScreen" Background="{StaticResource WindowBg}"
+        FontFamily="{StaticResource UiFont}" FontSize="{StaticResource FontSizeBase}"
         KeyDown="Window_KeyDown">
     <DockPanel>
-        <!-- Header with view switcher -->
-        <Border x:Name="Header" DockPanel.Dock="Top" Background="{StaticResource PanelBg}"
-                BorderBrush="{StaticResource PanelBorder}" BorderThickness="0,0,0,1" Padding="10,6">
-            <DockPanel>
-                <TextBlock Text="SP-2026 Lite" FontSize="16" FontWeight="SemiBold" VerticalAlignment="Center" Margin="0,0,20,0" />
-                <StackPanel Orientation="Horizontal">
-                    <ToggleButton x:Name="LiveTab" Content="Canlı İzleme" IsChecked="True" Click="LiveTab_Click" />
-                    <ToggleButton x:Name="PlaybackTab" Content="Kayıt Oynatma" Click="PlaybackTab_Click" />
+        <!-- ===== Top bar, 52 px: wordmark · tabs · (live) layout, quality, actions, settings ===== -->
+        <Border x:Name="Header" DockPanel.Dock="Top" Height="52" Background="{StaticResource BarBg}"
+                BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1" Padding="12,0">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0"
+                            AutomationProperties.Name="SPVision">
+                    <c:GlyphIcon Data="{StaticResource IconVideo}" Size="22" Foreground="{StaticResource Accent}" />
+                    <TextBlock FontSize="{StaticResource FontSizeBrand}" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0,0,0"
+                               Foreground="{StaticResource TextStrong}"><Run Text="SP" Foreground="{StaticResource Accent}" /><Run Text="Vision" /></TextBlock>
                 </StackPanel>
-            </DockPanel>
+
+                <StackPanel Grid.Column="1" Orientation="Horizontal">
+                    <ToggleButton x:Name="LiveTab" Content="Canlı İzleme" Style="{StaticResource TabButton}" IsChecked="True" Click="LiveTab_Click" />
+                    <ToggleButton x:Name="PlaybackTab" Content="Kayıt Oynatma" Style="{StaticResource TabButton}" Click="PlaybackTab_Click" />
+                </StackPanel>
+
+                <!-- Every control here is 36 px tall: segmented groups (1 + 2 + 30 + 2 + 1) and icon buttons. -->
+                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                    <StackPanel x:Name="LiveTools" Orientation="Horizontal">
+                        <Border Style="{StaticResource SegmentGroup}" AutomationProperties.Name="Izgara düzeni">
+                            <StackPanel Orientation="Horizontal">
+                                <ToggleButton x:Name="Layout6" Content="6" Tag="6" Style="{StaticResource SegmentButton}" Click="Layout_Click"
+                                              ToolTip="1 büyük + 5 küçük kare" AutomationProperties.Name="6'lı ızgara" />
+                                <ToggleButton x:Name="Layout8" Content="8" Tag="8" Style="{StaticResource SegmentButton}" Click="Layout_Click" Margin="2,0,0,0"
+                                              ToolTip="1 büyük + 7 küçük kare" AutomationProperties.Name="8'li ızgara" />
+                                <ToggleButton x:Name="Layout25" Content="25" Tag="25" Style="{StaticResource SegmentButton}" Click="Layout_Click" Margin="2,0,0,0"
+                                              ToolTip="5×5" AutomationProperties.Name="25'li ızgara" />
+                                <ToggleButton x:Name="Layout32" Content="32" Tag="32" Style="{StaticResource SegmentButton}" Click="Layout_Click" Margin="2,0,0,0"
+                                              ToolTip="8×4" AutomationProperties.Name="32'li ızgara" />
+                            </StackPanel>
+                        </Border>
+                        <Border Style="{StaticResource SegmentGroup}" Margin="12,0,0,0" AutomationProperties.Name="Görüntü kalitesi">
+                            <StackPanel Orientation="Horizontal">
+                                <ToggleButton x:Name="QualityAuto" Content="Oto" Style="{StaticResource SegmentButton}" Click="QualityAuto_Click"
+                                              ToolTip="Küçük karelerde SD, büyük karelerde HD (önerilen, işlemciyi yormaz)" AutomationProperties.Name="Otomatik kalite" />
+                                <ToggleButton x:Name="QualityHd" Content="HD" Style="{StaticResource SegmentButton}" Click="QualityHd_Click" Margin="2,0,0,0"
+                                              ToolTip="Tüm kareler ana akış (yüksek çözünürlük)" AutomationProperties.Name="HD kalite" />
+                                <ToggleButton x:Name="QualitySd" Content="SD" Style="{StaticResource SegmentButton}" Click="QualitySd_Click" Margin="2,0,0,0"
+                                              ToolTip="Tüm kareler alt akış (düşük çözünürlük)" AutomationProperties.Name="SD kalite" />
+                            </StackPanel>
+                        </Border>
+                        <Button Style="{StaticResource IconButton}" Margin="12,0,0,0" Click="Snapshot_Click"
+                                ToolTip="Anlık görüntü (seçili kare)" AutomationProperties.Name="Seçili kameradan anlık görüntü al">
+                            <c:GlyphIcon Data="{StaticResource IconCamera}" />
+                        </Button>
+                        <Button x:Name="RecordButton" Style="{StaticResource IconButton}" Margin="4,0,0,0" Click="Record_Click"
+                                ToolTip="Kayıt (seçili kare, MP4)" AutomationProperties.Name="Seçili kamerayı kaydet">
+                            <c:GlyphIcon x:Name="RecordIcon" Data="{StaticResource IconRecord}" FillData="{StaticResource IconRecordDot}"
+                                         Foreground="{StaticResource DangerIcon}" />
+                        </Button>
+                        <Button Style="{StaticResource IconButton}" Margin="4,0,0,0" Click="FullScreen_Click"
+                                ToolTip="Tam ekran (F11)" AutomationProperties.Name="Tam ekran (F11)">
+                            <c:GlyphIcon Data="{StaticResource IconFullScreen}" />
+                        </Button>
+                        <Rectangle Width="1" Height="24" Margin="12,0" Fill="{StaticResource Border}" VerticalAlignment="Center" />
+                    </StackPanel>
+                    <Button Style="{StaticResource IconButton}" Click="Settings_Click"
+                            ToolTip="Ayarlar" AutomationProperties.Name="Ayarlar">
+                        <c:GlyphIcon Data="{StaticResource IconSettings}" />
+                    </Button>
+                </StackPanel>
+            </Grid>
         </Border>
 
-        <!-- Device / camera tree -->
-        <Border x:Name="SidePanel" DockPanel.Dock="Left" Width="250" Background="{StaticResource PanelBg}"
-                BorderBrush="{StaticResource PanelBorder}" BorderThickness="0,0,1,0">
+        <!-- ===== Status bar, 28 px ===== -->
+        <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Height="28" Background="{StaticResource BarBg}"
+                BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="12,0"
+                TextElement.FontSize="{StaticResource FontSizeStatus}" TextElement.Foreground="{StaticResource TextSecondary}">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <DockPanel VerticalAlignment="Center" ClipToBounds="True">
+                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                        <Ellipse x:Name="ConnectionDot" Style="{StaticResource StatusDot}" Fill="{StaticResource Offline}" Margin="0,0,6,0" />
+                        <TextBlock x:Name="ConnectionText" Foreground="{StaticResource TextSecondary}" />
+                    </StackPanel>
+                    <TextBlock x:Name="OnScreenText" DockPanel.Dock="Left" Margin="18,0,0,0" Foreground="{StaticResource TextSecondary}" />
+                    <StackPanel x:Name="ReconnectPanel" DockPanel.Dock="Left" Orientation="Horizontal" Margin="18,0,0,0" Visibility="Collapsed">
+                        <Ellipse Style="{StaticResource StatusDot}" Fill="{StaticResource Warning}" Margin="0,0,6,0" />
+                        <TextBlock x:Name="ReconnectText" Foreground="{StaticResource WarningText}" />
+                    </StackPanel>
+                    <TextBlock x:Name="VideoPathText" Margin="18,0,0,0" Foreground="{StaticResource TextSecondary}" TextTrimming="CharacterEllipsis" />
+                </DockPanel>
+                <TextBlock x:Name="MessageText" Grid.Column="1" MaxWidth="460" Margin="18,0,0,0" VerticalAlignment="Center"
+                           Foreground="{StaticResource TextFg}" TextTrimming="CharacterEllipsis" Visibility="Collapsed" />
+                <TextBlock x:Name="CpuText" Grid.Column="2" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource TextSecondary}"
+                           ToolTip="Bu uygulamanın işlemci kullanımı (tüm çekirdeklerin yüzdesi)" />
+                <TextBlock x:Name="ClockText" Grid.Column="3" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource TextSecondary}" />
+            </Grid>
+        </Border>
+
+        <!-- ===== Sidebar, 260 px, 10 px padding on every side ===== -->
+        <Border x:Name="SidePanel" DockPanel.Dock="Left" Width="260" Background="{StaticResource BarBg}"
+                BorderBrush="{StaticResource Border}" BorderThickness="0,0,1,0">
             <DockPanel>
-                <TextBlock DockPanel.Dock="Top" Text="CİHAZLAR" FontSize="11" Foreground="{StaticResource MutedFg}" Margin="12,10,0,4" />
-                <StackPanel DockPanel.Dock="Bottom" Margin="8">
-                    <Button Content="+ Cihaz ekle" Style="{StaticResource AccentButton}" Click="AddDevice_Click" />
-                    <TextBlock Text="Kamerayı kareye sürükleyin ya da çift tıklayın. Cihaza çift tıklamak tüm kameralarını açar."
-                               TextWrapping="Wrap" FontSize="11" Foreground="{StaticResource MutedFg}" Margin="2,8,2,0" />
+                <StackPanel DockPanel.Dock="Top" Margin="10">
+                    <TextBlock Text="KAMERALAR" Style="{StaticResource CaptionText}" Margin="0,0,0,6" />
+                    <TextBox x:Name="SearchBox" Style="{StaticResource SearchBox}" Tag="Kamera ara" Height="32"
+                             AutomationProperties.Name="Kamera ara" ToolTip="Kamera adına göre süz"
+                             TextChanged="SearchBox_TextChanged" />
                 </StackPanel>
-                <TreeView x:Name="Tree" Background="Transparent" BorderThickness="0" Margin="4,0"
-                          MouseDoubleClick="Tree_MouseDoubleClick"
-                          PreviewMouseLeftButtonDown="Tree_PreviewMouseLeftButtonDown"
-                          PreviewMouseMove="Tree_PreviewMouseMove" />
+                <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False"
+                              ToolTip="Kamerayı bir kareye sürükleyin ya da çift tıklayın. Cihaz satırına çift tıklamak tüm kameralarını açar."
+                              ToolTipService.InitialShowDelay="1200"
+                              PreviewMouseLeftButtonDown="List_PreviewMouseLeftButtonDown"
+                              PreviewMouseMove="List_PreviewMouseMove">
+                    <StackPanel x:Name="DeviceList" />
+                </ScrollViewer>
             </DockPanel>
         </Border>
 

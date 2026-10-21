@@ -11,12 +11,13 @@ namespace SP2026Lite.Controls;
 /// </summary>
 public sealed class TimelineBar : FrameworkElement
 {
-    static readonly Brush Background = Frozen(Color.FromRgb(0x1E, 0x21, 0x28));
-    static readonly Brush SegmentBrush = Frozen(Color.FromRgb(0x46, 0xA7, 0x58));
-    static readonly Brush HeadBrush = Frozen(Color.FromRgb(0xE5, 0x48, 0x4D));
-    static readonly Brush HoverBrush = Frozen(Color.FromArgb(0x90, 0xE6, 0xE8, 0xEC));
-    static readonly Brush TextBrush = Frozen(Color.FromRgb(0x8B, 0x92, 0xA0));
-    static readonly Pen TickPen = new(Frozen(Color.FromRgb(0x3A, 0x3F, 0x4A)), 1);
+    // Colours come from the theme (Themes/Dark.xaml); the timeline is created after App resources load.
+    static readonly Brush Background = Theme("WindowBg");
+    static readonly Brush SegmentBrush = Theme("Recorded");
+    static readonly Brush HeadBrush = Theme("Accent");
+    static readonly Brush HoverBrush = Theme("IconFg");
+    static readonly Brush TextBrush = Theme("TextSecondary");
+    static readonly Pen TickPen = new(Theme("InputBorder"), 1);
     static readonly Pen HeadPen = new(HeadBrush, 2);
     static readonly Pen HoverPen = new(HoverBrush, 1);
     static readonly TimeSpan MinSpan = TimeSpan.FromMinutes(10);
@@ -184,10 +185,5 @@ public sealed class TimelineBar : FrameworkElement
         return start < _day ? _day : start > max ? max : start;
     }
 
-    static SolidColorBrush Frozen(Color color)
-    {
-        var brush = new SolidColorBrush(color);
-        brush.Freeze();
-        return brush;
-    }
+    static Brush Theme(string key) => (Brush)Application.Current.FindResource(key);
 }

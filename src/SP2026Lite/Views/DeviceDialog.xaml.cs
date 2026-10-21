@@ -13,6 +13,7 @@ public partial class DeviceDialog : Window
     public DeviceDialog(Device? device)
     {
         InitializeComponent();
+        DarkTitleBar.Attach(this);
         _device = device ?? new Device();
         Title = device is null ? "Cihaz ekle" : "Cihazı düzenle";
         NameBox.Text = _device.Name;

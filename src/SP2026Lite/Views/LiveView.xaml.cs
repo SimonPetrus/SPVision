@@ -2,7 +2,6 @@ using System.Diagnostics;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
-using System.Windows.Controls.Primitives;
 using System.Windows.Media;
 using System.Windows.Threading;
 using SP2026Lite.Controls;
@@ -18,6 +17,7 @@ public partial class LiveView : UserControl
     VideoTile? _selected;
     VideoTile? _maximized;
     bool _batchUpdate; // many tiles change at once: save the layout once at the end
+    bool _stateChangePending;
 
     public LiveView()
     {
@@ -35,7 +35,12 @@ public partial class LiveView : UserControl
                 {
                     SaveLayout();
                 }
+                RaiseStateChanged();
             };
+            tile.StateChanged += _ => RaiseStateChanged();
+            tile.Notice += (_, text) => ShowToast(text);
+            tile.StopAllRequested += StopAll;
+            tile.OpenFoldersRequested += OpenFolders;
             _tiles.Add(tile);
         }
         _qualityTimer.Tick += (_, _) =>
@@ -46,7 +51,43 @@ public partial class LiveView : UserControl
         Loaded += (_, _) => RestoreLayout();
     }
 
-    public event Action? FullScreenRequested;
+    /// <summary>Short feedback for the user ("Kaydedildi: …"); the main window shows it in the status bar.</summary>
+    public event Action<string>? Message;
+
+    /// <summary>
+    /// Layout, quality, selection or any tile state changed. Coalesced: raised once per dispatcher
+    /// pass, so the top bar, camera list and status bar refresh cheaply.
+    /// </summary>
+    public event Action? StateChanged;
+
+    /// <summary>Tile count of the current layout (6, 8, 25 or 32).</summary>
+    public int LayoutTileCount => _layout.TileCount;
+
+    /// <summary>null = automatic per tile size, otherwise forced for every tile.</summary>
+    public StreamQuality? GlobalQuality => App.Settings.LiveQuality;
+
+    public bool SelectedIsRecording => _selected?.IsRecording == true;
+
+    public Device? SelectedDevice => _selected?.Device;
+
+    /// <summary>Tiles of the current layout (empty ones included).</summary>
+    public IReadOnlyList<VideoTile> VisibleTiles => _tiles.Take(_layout.TileCount).ToList();
+
+    /// <summary>1-based tile number showing the camera, or null when it is not on screen.</summary>
+    public int? TileNumberOf(CameraRef source)
+    {
+        for (var i = 0; i < _layout.TileCount; i++)
+        {
+            if (_tiles[i].Source == source)
+            {
+                return i + 1;
+            }
+        }
+        return null;
+    }
+
+    /// <summary>Tile showing the camera in the current layout, if any.</summary>
+    public VideoTile? TileOf(CameraRef source) => _tiles.Take(_layout.TileCount).FirstOrDefault(t => t.Source == source);
 
     /// <summary>Puts a camera into the selected tile, or the first empty one.</summary>
     public void ShowCamera(CameraRef source)
@@ -116,6 +157,12 @@ public partial class LiveView : UserControl
         }
     }
 
+    /// <summary>Top bar: 6/8/25/32 segmented group.</summary>
+    public void SelectLayout(int tileCount) => SetLayout(GridLayout.Fitting(tileCount));
+
+    /// <summary>Top bar: Oto/HD/SD segmented group.</summary>
+    public void SelectQuality(StreamQuality? quality) => SetGlobalQuality(quality);
+
     void ShowCamera(VideoTile tile, CameraRef source)
     {
         var device = App.Settings.Devices.FirstOrDefault(d => d.Id == source.DeviceId);
@@ -174,7 +221,7 @@ public partial class LiveView : UserControl
         }
         _selected = tile;
         tile.IsSelected = true;
-        UpdateRecordButton();
+        RaiseStateChanged();
     }
 
     void ToggleMaximize(VideoTile tile)
@@ -183,6 +230,7 @@ public partial class LiveView : UserControl
         {
             _maximized = tile;
             ResetGrid(1, 1);
+            tile.IsCompact = false;
             Place(tile, new GridCell(0, 0));
         }
         else
@@ -211,23 +259,23 @@ public partial class LiveView : UserControl
             _batchUpdate = false;
         }
         ArrangeTiles();
-        foreach (var button in new[] { Layout6, Layout8, Layout25, Layout32 })
-        {
-            button.IsChecked = (string)button.Tag == layout.TileCount.ToString();
-        }
         if (_selected is null || _tiles.IndexOf(_selected) >= layout.TileCount)
         {
             Select(_tiles[0]);
         }
         _qualityTimer.Start();
         SaveLayout();
+        RaiseStateChanged();
     }
 
     void ArrangeTiles()
     {
         ResetGrid(_layout.Columns, _layout.Rows);
+        // 25/32 tiles are small: slimmer 22 px header strip; 6/8 use 26 px.
+        var compact = _layout.TileCount >= 25;
         for (var i = 0; i < _layout.TileCount; i++)
         {
+            _tiles[i].IsCompact = compact;
             Place(_tiles[i], _layout.Cells[i]);
         }
     }
@@ -257,9 +305,10 @@ public partial class LiveView : UserControl
     }
 
     /// <summary>
-    /// Small tiles use the sub stream, large ones the main stream — decided per tile from its own height,
-    /// so the large tile of the 6/8 layouts can get HD while its neighbours stay SD. The old client always
-    /// pulled main streams, which is what kept a CPU core busy.
+    /// Small tiles use the sub stream, large ones the main stream — decided per tile from the height of
+    /// its video area (the header strip is not video), so the large tile of the 6/8 layouts can get HD
+    /// while its neighbours stay SD. The old client always pulled main streams, which is what kept a CPU
+    /// core busy.
     /// </summary>
     void UpdateAutoQuality()
     {
@@ -267,7 +316,7 @@ public partial class LiveView : UserControl
         foreach (var tile in _tiles.Take(_layout.TileCount))
         {
             var visible = _maximized is null || _maximized == tile;
-            var pixels = tile.ActualHeight * dpi;
+            var pixels = tile.VideoHeight * dpi;
             var quality = visible && pixels >= App.Settings.MainStreamMinTileHeight ? StreamQuality.Main : StreamQuality.Sub;
             tile.SetAutoQuality(quality);
         }
@@ -316,36 +365,27 @@ public partial class LiveView : UserControl
         App.SaveSettings();
     }
 
-    void ShowToast(string text)
+    void RaiseStateChanged()
     {
-        ToastText.Text = text;
-        Toast.Visibility = Visibility.Visible;
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromSeconds(4) };
-        timer.Tick += (_, _) =>
+        if (_stateChangePending)
         {
-            timer.Stop();
-            if (ToastText.Text == text)
-            {
-                Toast.Visibility = Visibility.Collapsed;
-            }
-        };
-        timer.Start();
+            return;
+        }
+        _stateChangePending = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            _stateChangePending = false;
+            StateChanged?.Invoke();
+        });
     }
 
-    void UpdateRecordButton() =>
-        RecordButton.Content = _selected?.IsRecording == true ? "⏹ Kaydı durdur" : "⏺ Kayıt";
-
-    void Layout_Click(object sender, RoutedEventArgs e) =>
-        SetLayout(GridLayout.Fitting(int.Parse((string)((ToggleButton)sender).Tag)));
+    void ShowToast(string text) => Message?.Invoke(text);
 
     /// <summary>null = automatic per tile size, otherwise forced for every tile.</summary>
     void SetGlobalQuality(StreamQuality? quality)
     {
         App.Settings.LiveQuality = quality;
         App.SaveSettings();
-        QualityAuto.IsChecked = quality is null;
-        QualityHd.IsChecked = quality == StreamQuality.Main;
-        QualitySd.IsChecked = quality == StreamQuality.Sub;
         foreach (var tile in _tiles)
         {
             if (quality is { } forced)
@@ -358,15 +398,11 @@ public partial class LiveView : UserControl
             }
         }
         UpdateAutoQuality();
+        RaiseStateChanged();
     }
 
-    void QualityAuto_Click(object sender, RoutedEventArgs e) => SetGlobalQuality(null);
-
-    void QualityHd_Click(object sender, RoutedEventArgs e) => SetGlobalQuality(StreamQuality.Main);
-
-    void QualitySd_Click(object sender, RoutedEventArgs e) => SetGlobalQuality(StreamQuality.Sub);
-
-    async void Snapshot_Click(object sender, RoutedEventArgs e)
+    /// <summary>Top bar: snapshot of the selected tile.</summary>
+    public async void Snapshot()
     {
         if (_selected?.Camera is null)
         {
@@ -383,7 +419,8 @@ public partial class LiveView : UserControl
         ShowToast($"Kaydedildi: {path}");
     }
 
-    void Record_Click(object sender, RoutedEventArgs e)
+    /// <summary>Top bar: start/stop the MP4 recording of the selected tile.</summary>
+    public void ToggleRecording()
     {
         if (_selected?.Camera is null)
         {
@@ -392,10 +429,10 @@ public partial class LiveView : UserControl
         }
         var file = _selected.ToggleRecording();
         ShowToast(file is null ? "Kayıt durduruldu." : $"Kayıt: {file}");
-        UpdateRecordButton();
+        RaiseStateChanged();
     }
 
-    void OpenFolder_Click(object sender, RoutedEventArgs e)
+    void OpenFolders()
     {
         var folder = App.Settings.SnapshotFolder;
         Directory.CreateDirectory(folder);
@@ -406,8 +443,4 @@ public partial class LiveView : UserControl
             Process.Start(new ProcessStartInfo("explorer.exe", $"\"{App.Settings.RecordingFolder}\"") { UseShellExecute = true });
         }
     }
-
-    void StopAll_Click(object sender, RoutedEventArgs e) => StopAll();
-
-    void FullScreen_Click(object sender, RoutedEventArgs e) => FullScreenRequested?.Invoke();
 }

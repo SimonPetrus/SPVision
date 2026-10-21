@@ -37,12 +37,12 @@
                         ToggleFullScreenOnDoubleClick="None" PanMoveOnCtrl="None" PanZoomOnCtrlWheel="Surface"
                         PanRotateOnShiftWheel="None" AttachedDragMove="None" DetachedDragMove="None"
                         AttachedResize="None" DetachedResize="None" OpenOnDrop="None" SwapOnDrop="None"
-                        SwapDragEnterOnShift="None" VideoBackground="Black">
-            <Grid Background="#01000000">
+                        SwapDragEnterOnShift="None" VideoBackground="{StaticResource VideoBg}">
+            <Grid Background="{StaticResource HitTestBg}">
                 <TextBlock x:Name="OverlayText" HorizontalAlignment="Center" VerticalAlignment="Center"
-                           TextAlignment="Center" Foreground="#8B92A0" TextWrapping="Wrap" Margin="16"
+                           TextAlignment="Center" Foreground="{StaticResource MutedFg}" TextWrapping="Wrap" Margin="16"
                            Text="Kamera ve tarih seçip &quot;Kayıtları ara&quot;ya basın" />
-                <Border HorizontalAlignment="Left" VerticalAlignment="Top" Background="#99000000" Padding="8,3" CornerRadius="0,0,4,0">
+                <Border HorizontalAlignment="Left" VerticalAlignment="Top" Background="{StaticResource ScrimBg}" Padding="8,3" CornerRadius="0,0,4,0">
                     <TextBlock x:Name="ClockText" FontSize="14" FontFamily="Consolas" />
                 </Border>
             </Grid>

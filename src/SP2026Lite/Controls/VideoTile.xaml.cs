@@ -2,6 +2,7 @@ using System.ComponentModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
 using FlyleafLib.MediaPlayer;
@@ -10,12 +11,22 @@ using SP2026Lite.Hik;
 
 namespace SP2026Lite.Controls;
 
+/// <summary>What a tile is doing right now (drives the header dot and the status bar counts).</summary>
+public enum TileState
+{
+    Empty,
+    Connecting,
+    Playing,
+    Failed,
+    Stopped,
+}
+
 /// <summary>
 /// One cell of the live wall. Two rendering paths share the tile:
 /// Flyleaf (FFmpeg, unencrypted RTSP) and the Hikvision SDK (PlayCtrl drawing into
 /// <see cref="HikHost"/> — the only way to decode stream-encrypted cameras).
-/// The overlay lives in <see cref="OverlayPopup"/> because WPF content cannot
-/// cover the SDK's video HWND (airspace).
+/// Both render into HWNDs, which WPF content cannot cover (airspace). So the tile is two rows:
+/// a WPF header strip (name, state, badges) and below it the video host with nothing drawn over it.
 /// </summary>
 public partial class VideoTile : UserControl
 {
@@ -24,14 +35,13 @@ public partial class VideoTile : UserControl
     /// <summary>Added next to <see cref="DragFormat"/> when the drag starts from a tile (swap, not copy).</summary>
     const string TileDragFormat = "SP2026Lite.VideoTile";
 
-    static readonly Brush IdleBorder = new SolidColorBrush(Color.FromRgb(0x2C, 0x30, 0x39));
-    static readonly Brush SelectedBorder = new SolidColorBrush(Color.FromRgb(0xE5, 0x48, 0x4D));
+    const double HeaderHeight = 26;
+    const double CompactHeaderHeight = 22;
+
+    /// <summary>Tile margin (2 px per side) plus the 1 px frame border, top and bottom.</summary>
+    const double VerticalChrome = 2 * 2 + 2 * 1;
 
     static readonly TimeSpan[] RetryDelays = [TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30)];
-
-    // Changing the offset forces an open Popup to re-evaluate its position against
-    // PlacementTarget — a plain public-API way to make it follow the tile.
-    const double OverlayNudge = 0.001;
 
     readonly System.Windows.Threading.DispatcherTimer _retryTimer = new();
 
@@ -46,10 +56,13 @@ public partial class VideoTile : UserControl
     StreamQuality _quality = StreamQuality.Sub;
     StreamQuality _autoQuality = StreamQuality.Sub;
     string? _pendingRecordFile;
+    TileState _state = TileState.Empty;
+    bool _selected;
+    bool _compact;
 
-    Window? _rootWindow;
-    bool _rootActive = true;
+    Window? _surface;            // Flyleaf's video surface window (a child HWND of the main window)
     Point? _dragOrigin;
+    IInputElement? _dragOriginElement;
 
     public VideoTile()
     {
@@ -65,7 +78,8 @@ public partial class VideoTile : UserControl
         };
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
-        Frame.SizeChanged += (_, _) => NudgeOverlay();
+        Host.SurfaceCreated += (_, _) => HookSurface(Host.Surface);
+        HookSurface(Host.Surface);
     }
 
     public event Action<VideoTile>? Activated;
@@ -76,19 +90,58 @@ public partial class VideoTile : UserControl
     public event Action<VideoTile, VideoTile>? TileDropped;
     public event Action<VideoTile>? Changed;
 
+    /// <summary>State, quality, recording or path changed (header, list dots and status bar follow it).</summary>
+    public event Action<VideoTile>? StateChanged;
+
+    /// <summary>A short message for the user (shown as a toast by the live view).</summary>
+    public event Action<VideoTile, string>? Notice;
+
+    /// <summary>Context menu actions that concern the whole wall.</summary>
+    public event Action? StopAllRequested;
+    public event Action? OpenFoldersRequested;
+
     public Device? Device { get; private set; }
     public Camera? Camera { get; private set; }
     public CameraRef? Source => Device is null || Camera is null ? null : new CameraRef(Device.Id, Camera.Channel);
     public bool AutoQuality { get; private set; } = true;
     public StreamQuality Quality => _quality;
     public bool IsRecording => _player?.IsRecording == true || _hikPlayer?.IsSaving == true;
+    public TileState State => _state;
+
+    /// <summary>True when the camera is waiting for a retry or retrying after a lost/failed stream.</summary>
+    public bool IsReconnecting =>
+        Camera is not null && _wantPlaying && (_state == TileState.Failed || (_state == TileState.Connecting && _retryCount > 0));
+
+    /// <summary>The stream runs through the Hikvision SDK (encrypted); otherwise through Flyleaf/FFmpeg.</summary>
+    public bool UsesSdk => Camera is not null && HikModeActive;
+
+    /// <summary>Height of the video area alone (tile minus header strip and borders), in DIPs.</summary>
+    public double VideoHeight => Math.Max(0, ActualHeight - VerticalChrome - HeaderRow.Height.Value);
 
     /// <summary>True while the SDK surface is the active renderer.</summary>
     bool HikModeActive => HikHost.Visibility == Visibility.Visible;
 
     public bool IsSelected
     {
-        set => Frame.BorderBrush = value ? SelectedBorder : IdleBorder;
+        get => _selected;
+        set
+        {
+            _selected = value;
+            Frame.BorderBrush = ThemeBrush(value ? "Accent" : "TileBorder");
+            EmptyOutline.Stroke = ThemeBrush(value ? "Accent" : "InputBorder");
+        }
+    }
+
+    /// <summary>Small tiles (25/32 layouts) use the 22 px header, large ones 26 px.</summary>
+    public bool IsCompact
+    {
+        get => _compact;
+        set
+        {
+            _compact = value;
+            HeaderRow.Height = new GridLength(value ? CompactHeaderHeight : HeaderHeight);
+            CameraName.FontSize = (double)FindResource(value ? "FontSizeSmall" : "FontSizeTile");
+        }
     }
 
     public void Show(Device device, Camera camera)
@@ -128,7 +181,6 @@ public partial class VideoTile : UserControl
         Device = null;
         Camera = null;
         ShowEmpty();
-        UpdateOverlay();
         Changed?.Invoke(this);
     }
 
@@ -141,7 +193,7 @@ public partial class VideoTile : UserControl
         _hikPlayer?.Stop();
         if (Camera is not null)
         {
-            StatusText.Text = "Durduruldu";
+            SetState(TileState.Stopped, "Durduruldu");
         }
     }
 
@@ -157,10 +209,11 @@ public partial class VideoTile : UserControl
         _wantPlaying = true;
         _retryTimer.Stop();
         _triedHikFallback = false;
+        EmptyFrame.Visibility = Visibility.Collapsed;
+        Frame.Visibility = Visibility.Visible;
         CameraName.Text = Camera.Name;
         QualityBadge.Text = quality == StreamQuality.Main ? "HD" : "SD";
-        StatusText.Text = "Bağlanıyor…";
-        UpdateOverlay();
+        SetState(TileState.Connecting);
 
         // Stream encryption cannot be decoded by FFmpeg; a configured key means "use the SDK".
         bool useHik = _preferHik || !string.IsNullOrEmpty(Device.StreamKeyFor(Camera));
@@ -186,6 +239,7 @@ public partial class VideoTile : UserControl
             Host.Player = _player;
         }
         _player.OpenAsync(StreamUrls.Live(Device!, Camera!.Channel, _quality));
+        StateChanged?.Invoke(this);
     }
 
     /// <summary>Login + RealPlay are blocking network calls, so they run off the UI thread.</summary>
@@ -195,6 +249,7 @@ public partial class VideoTile : UserControl
         Host.Visibility = Visibility.Collapsed;
         HikHost.Visibility = Visibility.Visible;
         HikHost.UpdateLayout(); // build the child HWND now
+        StateChanged?.Invoke(this);
 
         var device = Device!;
         var camera = Camera!;
@@ -252,7 +307,7 @@ public partial class VideoTile : UserControl
                     {
                         return;
                     }
-                    StatusText.Text = $"Görüntü açılamadı\n{Shorten(ex.Message)}";
+                    SetState(TileState.Failed, $"Görüntü açılamadı\n{Shorten(ex.Message)}");
                     ScheduleRetry();
                 });
             }
@@ -277,11 +332,11 @@ public partial class VideoTile : UserControl
             switch (_player.Status)
             {
                 case Status.Opening:
-                    StatusText.Text = _retryCount > 0 ? $"Yeniden bağlanıyor… ({_retryCount})" : "Bağlanıyor…";
+                    SetState(TileState.Connecting, _retryCount > 0 ? $"Yeniden bağlanıyor… ({_retryCount})" : null);
                     break;
                 case Status.Playing:
-                    StatusText.Text = "";
                     _retryCount = 0;
+                    SetState(TileState.Playing);
                     if (_pendingRecordFile is not null)
                     {
                         var file = _pendingRecordFile;
@@ -293,16 +348,19 @@ public partial class VideoTile : UserControl
                     // FFmpeg could not decode — typical for stream encryption. Try the SDK once.
                     _triedHikFallback = true;
                     _preferHik = true;
-                    StatusText.Text = "Şifreli akış için SDK deneniyor…";
+                    SetState(TileState.Connecting, "Şifreli akış için SDK deneniyor…");
                     Dispatcher.BeginInvoke(OpenHik); // deferred: not inside the player's own event
                     break;
                 case Status.Failed:
-                    StatusText.Text = $"Görüntü açılamadı\n{Shorten(_player.LastError)}\n\n{EncryptionHint}";
+                    SetState(TileState.Failed, $"Görüntü açılamadı\n{Shorten(_player.LastError)}\n\n{EncryptionHint}");
                     ScheduleRetry();
                     break;
                 case Status.Ended:
-                    StatusText.Text = "Bağlantı koptu";
+                    SetState(TileState.Failed, "Bağlantı koptu");
                     ScheduleRetry();
+                    break;
+                default:
+                    StateChanged?.Invoke(this); // recording flag
                     break;
             }
         });
@@ -316,9 +374,9 @@ public partial class VideoTile : UserControl
             {
                 return;
             }
-            StatusText.Text = "";
             _retryCount = 0;
             _preferHik = true;
+            SetState(TileState.Playing);
             if (_pendingRecordFile is not null)
             {
                 var file = _pendingRecordFile;
@@ -336,7 +394,7 @@ public partial class VideoTile : UserControl
             {
                 return;
             }
-            StatusText.Text = $"Görüntü hatası\n{Shorten(message)}";
+            SetState(TileState.Failed, $"Görüntü hatası\n{Shorten(message)}");
             ScheduleRetry();
         });
     }
@@ -349,6 +407,7 @@ public partial class VideoTile : UserControl
             _retryTimer.Interval = RetryDelays[Math.Min(_retryCount, RetryDelays.Length - 1)];
             _retryCount++;
             _retryTimer.Start();
+            StateChanged?.Invoke(this);
         }
     }
 
@@ -360,13 +419,43 @@ public partial class VideoTile : UserControl
     static string Shorten(string? error) =>
         string.IsNullOrEmpty(error) ? "" : error.Length > 120 ? error[..120] + "…" : error;
 
+    /// <summary>
+    /// Updates the header strip. Failed/stopped tiles hide their (black) video host so the reason
+    /// can be shown in the video area; the next Open shows the host again.
+    /// </summary>
+    void SetState(TileState state, string? detail = null)
+    {
+        _state = state;
+        StatusDot.Fill = ThemeBrush(state switch
+        {
+            TileState.Playing => "Online",
+            TileState.Connecting => "Warning",
+            TileState.Failed => "Danger",
+            _ => "Offline",
+        });
+        StateText.Visibility = state == TileState.Connecting ? Visibility.Visible : Visibility.Collapsed;
+        var showMessage = state is TileState.Failed or TileState.Stopped;
+        MessageText.Text = showMessage ? detail ?? "" : "";
+        VideoLayer.Visibility = showMessage ? Visibility.Hidden : Visibility.Visible;
+        Header.ToolTip = Camera is null
+            ? null
+            : $"{Camera.Name} · Kanal {Camera.Channel} · {(_quality == StreamQuality.Main ? "HD (ana akış)" : "SD (alt akış)")}" +
+              (string.IsNullOrEmpty(detail) ? "" : $"\n{detail}");
+        StateChanged?.Invoke(this);
+    }
+
     void ShowEmpty()
     {
         CameraName.Text = "";
         QualityBadge.Text = "";
         RecBadge.Visibility = Visibility.Collapsed;
-        StatusText.Text = "Kamera sürükleyin veya listeden çift tıklayın";
+        Frame.Visibility = Visibility.Collapsed;
+        EmptyFrame.Visibility = Visibility.Visible;
+        EmptyFrame.ToolTip = "Listeden bir kamerayı buraya sürükleyin ya da listede çift tıklayın";
+        SetState(TileState.Empty);
     }
+
+    Brush ThemeBrush(string key) => (Brush)FindResource(key);
 
     void DisposePlayers()
     {
@@ -409,14 +498,14 @@ public partial class VideoTile : UserControl
             return null;
         }
         var folder = App.Settings.SnapshotFolder;
-        Directory.CreateDirectory(folder);
-        var path = Path.Combine(folder, $"{Safe(Camera.Name)}_{DateTime.Now:yyyyMMdd_HHmmss}.jpg");
+        System.IO.Directory.CreateDirectory(folder);
+        var path = System.IO.Path.Combine(folder, $"{Safe(Camera.Name)}_{DateTime.Now:yyyyMMdd_HHmmss}.jpg");
 
         // The recorder serves a full-resolution JPEG even when the tile shows the sub stream.
         try
         {
             using var isapi = new IsapiClient(Device, TimeSpan.FromSeconds(5));
-            await File.WriteAllBytesAsync(path, await isapi.GetSnapshotAsync(Camera.Channel));
+            await System.IO.File.WriteAllBytesAsync(path, await isapi.GetSnapshotAsync(Camera.Channel));
             return path;
         }
         catch (IsapiException)
@@ -451,8 +540,8 @@ public partial class VideoTile : UserControl
             return null;
         }
         var folder = App.Settings.RecordingFolder;
-        Directory.CreateDirectory(folder);
-        var file = Path.Combine(folder, $"{Safe(Camera.Name)}_{DateTime.Now:yyyyMMdd_HHmmss}.mp4");
+        System.IO.Directory.CreateDirectory(folder);
+        var file = System.IO.Path.Combine(folder, $"{Safe(Camera.Name)}_{DateTime.Now:yyyyMMdd_HHmmss}.mp4");
         if (_quality != StreamQuality.Main)
         {
             AutoQuality = false;
@@ -476,10 +565,11 @@ public partial class VideoTile : UserControl
         {
             _hikPlayer!.StartSave(file);
             RecBadge.Visibility = Visibility.Visible;
+            StateChanged?.Invoke(this);
         }
         catch (HikException ex)
         {
-            StatusText.Text = Shorten(ex.Message);
+            Notice?.Invoke(this, $"Kayıt başlatılamadı: {Shorten(ex.Message)}");
         }
     }
 
@@ -494,125 +584,104 @@ public partial class VideoTile : UserControl
         {
             _hikPlayer.StopSave();
             RecBadge.Visibility = Visibility.Collapsed;
+            StateChanged?.Invoke(this);
         }
     }
 
     static string Safe(string name) =>
-        string.Concat(name.Select(c => Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)).Trim();
+        string.Concat(name.Select(c => System.IO.Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)).Trim();
 
-    // ---- Overlay popup: follows the tile, hides while the window is inactive ----
+    // ---- Lifetime ----
 
     void OnLoaded(object sender, RoutedEventArgs e)
     {
-        HookRootWindow();
-        UpdateOverlay();
+        HookSurface(Host.Surface);
         if (_wantPlaying && Camera is not null)
         {
             Reconnect(); // tile came back into the layout (e.g. after maximize)
         }
     }
 
-    void OnUnloaded(object sender, RoutedEventArgs e)
-    {
-        DisposePlayers();
-        OverlayPopup.IsOpen = false;
-    }
-
-    void HookRootWindow()
-    {
-        var window = Window.GetWindow(this);
-        if (ReferenceEquals(window, _rootWindow))
-        {
-            return;
-        }
-        if (_rootWindow is not null)
-        {
-            _rootWindow.Activated -= RootWindow_Activated;
-            _rootWindow.Deactivated -= RootWindow_Deactivated;
-            _rootWindow.LocationChanged -= RootWindow_Moved;
-            _rootWindow.StateChanged -= RootWindow_Moved;
-        }
-        _rootWindow = window;
-        if (window is not null)
-        {
-            window.Activated += RootWindow_Activated;
-            window.Deactivated += RootWindow_Deactivated;
-            window.LocationChanged += RootWindow_Moved;
-            window.StateChanged += RootWindow_Moved;
-        }
-    }
-
-    void RootWindow_Activated(object? sender, EventArgs e)
-    {
-        _rootActive = true;
-        UpdateOverlay();
-    }
-
-    void RootWindow_Deactivated(object? sender, EventArgs e)
-    {
-        _rootActive = false;
-        UpdateOverlay();
-    }
-
-    void RootWindow_Moved(object? sender, EventArgs e) => NudgeOverlay();
-
-    void UpdateOverlay()
-    {
-        var open = IsLoaded && IsVisible
-            && _rootWindow is not null
-            && _rootWindow.WindowState != WindowState.Minimized
-            && _rootActive;
-        if (OverlayPopup.IsOpen != open)
-        {
-            OverlayPopup.IsOpen = open;
-        }
-        if (open)
-        {
-            NudgeOverlay();
-        }
-    }
-
-    void NudgeOverlay()
-    {
-        if (!OverlayPopup.IsOpen)
-        {
-            return;
-        }
-        // Two offset changes force the Popup to reposition against its PlacementTarget,
-        // following tile moves and layout changes while netting out to zero.
-        OverlayPopup.HorizontalOffset += OverlayNudge;
-        OverlayPopup.HorizontalOffset -= OverlayNudge;
-    }
+    void OnUnloaded(object sender, RoutedEventArgs e) => DisposePlayers();
 
     // ---- Mouse / drag & drop / menu ----
+    //
+    // Input arrives from three places: the WPF parts of the tile (header, empty tile, message area),
+    // the SDK video HWND (HikVideoHost reports HTTRANSPARENT, so its clicks and drops reach the tile
+    // through the main window), and Flyleaf's surface — a separate child window, hooked below.
 
-    void Overlay_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    void HookSurface(Window? surface)
+    {
+        if (surface is null || ReferenceEquals(surface, _surface))
+        {
+            return;
+        }
+        if (_surface is not null)
+        {
+            _surface.MouseLeftButtonDown -= Surface_MouseLeftButtonDown;
+            _surface.MouseMove -= Surface_MouseMove;
+            _surface.MouseRightButtonUp -= Surface_MouseRightButtonUp;
+            _surface.DragEnter -= Tile_DragOver;
+            _surface.DragOver -= Tile_DragOver;
+            _surface.Drop -= Tile_Drop;
+        }
+        _surface = surface;
+        surface.AllowDrop = true;
+        surface.MouseLeftButtonDown += Surface_MouseLeftButtonDown;
+        surface.MouseMove += Surface_MouseMove;
+        surface.MouseRightButtonUp += Surface_MouseRightButtonUp;
+        surface.DragEnter += Tile_DragOver;
+        surface.DragOver += Tile_DragOver;
+        surface.Drop += Tile_Drop;
+    }
+
+    void Tile_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => PointerDown(e, this);
+
+    void Tile_MouseMove(object sender, MouseEventArgs e) => PointerMove(e, this);
+
+    void Surface_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => PointerDown(e, (IInputElement)sender);
+
+    void Surface_MouseMove(object sender, MouseEventArgs e) => PointerMove(e, (IInputElement)sender);
+
+    void Surface_MouseRightButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        Menu.PlacementTarget = LayoutRoot;
+        Menu.Placement = PlacementMode.MousePoint;
+        Menu.IsOpen = true;
+        e.Handled = true;
+    }
+
+    void PointerDown(MouseButtonEventArgs e, IInputElement relativeTo)
     {
         Activated?.Invoke(this);
+        // Deferred: a click on Flyleaf's surface window must not leave keyboard focus there (F11 etc.),
+        // and a double click re-arranges the grid, which should not happen inside the surface's own event.
         if (e.ClickCount == 2)
         {
             _dragOrigin = null;
-            DoubleClicked?.Invoke(this);
+            Dispatcher.BeginInvoke(() => DoubleClicked?.Invoke(this));
         }
         else
         {
-            _dragOrigin = e.GetPosition(Overlay);
+            _dragOrigin = e.GetPosition(relativeTo);
+            _dragOriginElement = relativeTo;
         }
+        Dispatcher.BeginInvoke(() => Focus());
     }
 
     /// <summary>Dragging a tile with a camera onto another tile swaps the two (handled by the live view).</summary>
-    void Overlay_MouseMove(object sender, MouseEventArgs e)
+    void PointerMove(MouseEventArgs e, IInputElement relativeTo)
     {
         if (e.LeftButton != MouseButtonState.Pressed)
         {
             _dragOrigin = null;
             return;
         }
-        if (_dragOrigin is not { } origin || Source is not { } source)
+        if (_dragOrigin is not { } origin || !ReferenceEquals(relativeTo, _dragOriginElement) || Source is not { } source)
         {
             return;
         }
-        var delta = e.GetPosition(Overlay) - origin;
+        var delta = e.GetPosition(relativeTo) - origin;
         if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
             Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance)
         {
@@ -621,10 +690,10 @@ public partial class VideoTile : UserControl
         _dragOrigin = null;
         var data = new DataObject(DragFormat, source);
         data.SetData(TileDragFormat, this);
-        DragDrop.DoDragDrop(Overlay, data, DragDropEffects.Move);
+        DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
     }
 
-    void Overlay_DragOver(object sender, DragEventArgs e)
+    void Tile_DragOver(object sender, DragEventArgs e)
     {
         e.Effects = e.Data.GetDataPresent(TileDragFormat)
             ? (ReferenceEquals(e.Data.GetData(TileDragFormat), this) ? DragDropEffects.None : DragDropEffects.Move)
@@ -632,8 +701,9 @@ public partial class VideoTile : UserControl
         e.Handled = true;
     }
 
-    void Overlay_Drop(object sender, DragEventArgs e)
+    void Tile_Drop(object sender, DragEventArgs e)
     {
+        e.Handled = true;
         if (e.Data.GetData(TileDragFormat) is VideoTile from)
         {
             if (from != this)
@@ -690,26 +760,45 @@ public partial class VideoTile : UserControl
     async void MenuSnapshot_Click(object sender, RoutedEventArgs e)
     {
         var path = await TakeSnapshotAsync();
-        StatusText.Text = path is null ? "Anlık görüntü alınamadı" : "";
-        if (path is not null)
+        if (path is null)
         {
-            Flash();
+            Notice?.Invoke(this, "Anlık görüntü alınamadı.");
+            return;
         }
+        Flash();
+        Notice?.Invoke(this, $"Kaydedildi: {path}");
     }
 
-    void MenuRecord_Click(object sender, RoutedEventArgs e) => ToggleRecording();
+    void MenuRecord_Click(object sender, RoutedEventArgs e)
+    {
+        var wasRecording = IsRecording;
+        var file = ToggleRecording();
+        if (file is not null)
+        {
+            Notice?.Invoke(this, $"Kayıt: {file}");
+        }
+        else if (wasRecording)
+        {
+            Notice?.Invoke(this, "Kayıt durduruldu.");
+        }
+        StateChanged?.Invoke(this);
+    }
 
     void MenuReconnect_Click(object sender, RoutedEventArgs e) => Reconnect();
 
     void MenuClose_Click(object sender, RoutedEventArgs e) => Clear();
 
-    /// <summary>Short white flash as snapshot feedback.</summary>
+    void MenuStopAll_Click(object sender, RoutedEventArgs e) => StopAllRequested?.Invoke();
+
+    void MenuFolders_Click(object sender, RoutedEventArgs e) => OpenFoldersRequested?.Invoke();
+
+    /// <summary>Short flash of the header strip as snapshot feedback (the video itself cannot be drawn over).</summary>
     public void Flash()
     {
         var animation = new System.Windows.Media.Animation.ColorAnimation(
-            Color.FromArgb(0x80, 255, 255, 255), Color.FromArgb(0x01, 0, 0, 0), TimeSpan.FromMilliseconds(350));
-        var brush = new SolidColorBrush(Color.FromArgb(0x01, 0, 0, 0));
-        Overlay.Background = brush;
+            (Color)FindResource("FlashColor"), (Color)FindResource("TileHeaderColor"), TimeSpan.FromMilliseconds(450));
+        var brush = new SolidColorBrush((Color)FindResource("FlashColor"));
+        Header.Background = brush;
         brush.BeginAnimation(SolidColorBrush.ColorProperty, animation);
     }
 }

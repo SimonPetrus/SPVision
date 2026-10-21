@@ -70,17 +70,27 @@ dotnet run --project src\SP2026Lite
   numara `NET_DVR_CHANNEL_ERROR` (dwError 4) verir ve cihaz linki reddeder. (Bu hata 21.10.2026'da
   bulundu ve düzeltildi; logda `LinkToDvr ... dwErrCode[0x00100100]` görürsen kanal sorunu var.)
 - SDK görüntüyü bir **HWND**'ye çizer (WPF'te airspace): [`HikVideoHost`](src/SP2026Lite/Controls/HikVideoHost.cs)
-  (HwndHost) video yüzeyidir. Kare üstü yazılar (kamera adı, KAYIT rozeti) HWND'ye çizilemez →
-  VideoTile bir **Popup** kullanır; PlaybackView Flyleaf overlay'ini gizleyip StatusText kullanır.
+  (HwndHost) video yüzeyidir. Video üstüne WPF içeriği çizilemez → VideoTile **iki satırlı**dır:
+  üstte WPF **başlık şeridi** (durum noktası, kamera adı, "Bağlanıyor…", KAYIT ve HD/SD rozeti;
+  25/32'de 22 px, 6/8'de 26 px), altta üzerine hiçbir şey çizilmeyen video alanı. (Eski Popup
+  overlay kaldırıldı: üst düzey pencere olduğu için pencere taşınınca/küçültülünce masaüstünde
+  asılı kalıyordu — Popup'ı geri getirme.) `HikVideoHost` `WM_NCHITTEST`'e `HTTRANSPARENT` döner,
+  böylece SDK videosu üzerindeki tık/sürükle/bırak ana pencereye, oradan kareye gelir; Flyleaf'in
+  yüzey penceresi (`Host.Surface`) ise VideoTile'da ayrıca dinlenir. Otomatik kalite eşiği yalnız
+  video alanının yüksekliğine bakar (`VideoTile.VideoHeight`). PlaybackView Flyleaf overlay'ini
+  gizleyip StatusText kullanır.
 
 ## 5. Klasör → dosya haritası (WPF tarafı, yollar `src/SP2026Lite/` altına göredir)
 
 | Dosya | Sorumluluk |
 |---|---|
-| `App.xaml.cs` | `HikSdk.Init/Shutdown`, Flyleaf `Engine.Start`, ayar yükleme |
-| `MainWindow.xaml(.cs)` | Pencere, görünüm değiştirme (Canlı İzleme/Kayıt Oynatma), cihaz ağacı (ekle/düzenle/sil, sürükle-bırak), tam ekran (F11) |
-| `Views/LiveView.xaml(.cs)` | 6/8/25/32 ızgara (düzen tanımı: Core `GridLayout`; eski 1/4/9/16 ayarı en küçük sığan düzene çevrilir), sürükle-bırak/kare takası, düzeni kaydet/geri yükle |
-| `Controls/VideoTile.xaml(.cs)` | Tek kamera karesi — **çift yol** (Flyleaf/SDK), Popup overlay, yeniden bağlanma (3/10/30 sn), kayıt + anlık görüntü |
+| `App.xaml(.cs)` | `HikSdk.Init/Shutdown`, Flyleaf `Engine.Start`, ayar yükleme; temayı birleştirir, koyu başlık çubuğunu kaydeder |
+| `Themes/Dark.xaml` | **Tema**: tüm renkler, fırçalar, yazı boyutları, ikon geometrileri ve kontrol stilleri (Button, segment/sekme ToggleButton, TextBox/arama, ListBox, ScrollBar, ToolTip, ContextMenu…). Görünümlerde ham hex kullanma, buradaki anahtarları kullan. Eski anahtarlar (`PanelBg`, `MutedFg`…) takma ad olarak duruyor |
+| `DarkTitleBar.cs` | DWM koyu yerel başlık çubuğu (`DWMWA_USE_IMMERSIVE_DARK_MODE`), tüm pencerelere |
+| `Controls/GlyphIcon.cs` | 24×24 çizgi ikonları (`Icon*` geometrileri) ön plan rengiyle çizer; emoji kullanılmaz |
+| `MainWindow.xaml(.cs)` | Üst çubuk (SPVision yazısı, sekmeler, düzen 6/8/25/32, kalite Oto/HD/SD, anlık görüntü/kayıt/tam ekran (F11), Ayarlar), kenar çubuğu (arama, cihaz satırı, kamera listesi + kare no, sürükle-bırak), durum çubuğu (bağlantı, ekrandaki kamera, yeniden bağlanan, video yolu, CPU, saat). Ayarlar düğmesi şimdilik cihaz diyaloğunu açar (ileride Ayarlar ekranı) |
+| `Views/LiveView.xaml(.cs)` | 6/8/25/32 ızgara (düzen tanımı: Core `GridLayout`; eski 1/4/9/16 ayarı en küçük sığan düzene çevrilir), sürükle-bırak/kare takası, düzeni kaydet/geri yükle; durumu `StateChanged`/`Message` ile ana pencereye bildirir |
+| `Controls/VideoTile.xaml(.cs)` | Tek kamera karesi — **çift yol** (Flyleaf/SDK), başlık şeridi + video alanı (Popup yok), yeniden bağlanma (3/10/30 sn), kayıt + anlık görüntü |
 | `Views/PlaybackView.xaml(.cs)` | Kayıt oynatma — ISAPI arama + zaman çizelgesi + çift yol oynatma (oynat/duraklat/sar/klip) |
 | `Views/DeviceDialog.xaml(.cs)` | Cihaz ekle/düzenle: IP, port, kullanıcı, şifre, **akış anahtarı (doğrulama kodu)** + "Cihazdan oku" butonu (ISAPI'den çeker) |
 | `Controls/TimelineBar.cs` | 24 saatlik kayıt zaman çizelgesi |
