@@ -22,7 +22,7 @@ public partial class PlaybackTile : UserControl
     const double HeaderHeight = 26;
     const double CompactHeaderHeight = 22;
 
-    readonly SemaphoreSlim _sdkGate = new(1, 1); // serializes SDK commands of this tile (open, stop, controls)
+    readonly SemaphoreSlim _sdkGate = new(1, 1); // serializes SDK commands of this tile (open, stop, controls, clip)
     readonly Stopwatch _openWatch = new();
 
     Player? _player;                 // FFmpeg path
@@ -35,6 +35,8 @@ public partial class PlaybackTile : UserControl
     DateTime _openedAt;              // Flyleaf: recorder time at CurTime 0
     DateTime _seekTarget;
     string? _clipFile;
+    bool _hikClipping;               // SDK clip asked for (the save itself runs in the SDK queue)
+    int _clipGeneration;             // supersedes the failure report of an earlier clip start
     int _speedIndex = PlaybackSpeed.Normal;
     bool _paused;
     bool _focused;
@@ -86,7 +88,7 @@ public partial class PlaybackTile : UserControl
 
     public bool UsesSdk => Camera is not null && HikHost.Visibility == Visibility.Visible;
 
-    public bool IsClipping => _player?.IsRecording == true || _hikPlayer?.IsSaving == true;
+    public bool IsClipping => _player?.IsRecording == true || _hikClipping;
 
     public bool IsFocusedTile
     {
@@ -312,22 +314,11 @@ public partial class PlaybackTile : UserControl
             return;
         }
         player.ShowMotionBoxes = show;
-        Task.Run(async () =>
+        QueueSdk(() =>
         {
-            await _sdkGate.WaitAsync();
-            try
+            if (!player.IsDisposed)
             {
-                if (!player.IsDisposed)
-                {
-                    player.SetMotionBoxes(show);
-                }
-            }
-            catch (ObjectDisposedException)
-            {
-            }
-            finally
-            {
-                _sdkGate.Release();
+                player.SetMotionBoxes(show);
             }
         });
     }
@@ -375,9 +366,10 @@ public partial class PlaybackTile : UserControl
         player.RequestedSpeedSteps = PlaybackSpeed.Steps(_speedIndex);
         player.RequestedPaused = _paused;
 
+        var turn = _sdkGate.WaitAsync(); // taken here, on the UI thread: SDK commands run in the order issued
         Task.Run(async () =>
         {
-            await _sdkGate.WaitAsync();
+            await turn;
             try
             {
                 if (IsStale(player, generation))
@@ -434,12 +426,37 @@ public partial class PlaybackTile : UserControl
     bool IsStale(HikPlaybackPlayer player, int generation) =>
         player.IsDisposed || Volatile.Read(ref _openGeneration) != generation;
 
+    /// <summary>
+    /// Runs a blocking SDK call in the tile's SDK queue, off the UI thread. The turn is taken by the caller (the
+    /// UI thread), so commands run in the order they were issued (e.g. a clip stop before the next seek's open).
+    /// </summary>
+    void QueueSdk(Action work)
+    {
+        var turn = _sdkGate.WaitAsync();
+        Task.Run(async () =>
+        {
+            await turn;
+            try
+            {
+                work();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            finally
+            {
+                _sdkGate.Release();
+            }
+        });
+    }
+
     /// <summary>Speed / pause commands block on the network: queued behind the tile's open, off the UI thread.</summary>
     void SyncSdkControls(HikPlaybackPlayer player)
     {
+        var turn = _sdkGate.WaitAsync();
         Task.Run(async () =>
         {
-            await _sdkGate.WaitAsync();
+            await turn;
             try
             {
                 if (!player.IsDisposed)
@@ -646,14 +663,26 @@ public partial class PlaybackTile : UserControl
         var file = System.IO.Path.Combine(App.Settings.RecordingFolder, $"{Safe(Camera.Name)}_{CurrentTime ?? DateTime.Now:yyyyMMdd_HHmmss}_klip.mp4");
         if (_hikPlayer is { IsStarted: true } hik && UsesSdk)
         {
-            try
+            // NET_DVR_PlayBackSaveData waits for the SDK's data thread (and the player for a command in progress):
+            // never on the UI thread. The badge shows at once; a refusal is reported and takes it back.
+            _hikClipping = true;
+            var generation = ++_clipGeneration;
+            QueueSdk(() =>
             {
-                hik.StartSave(file);
-            }
-            catch (HikException ex)
-            {
-                return $"Klip başlatılamadı: {Shorten(ex.Message)}";
-            }
+                string? error;
+                try
+                {
+                    error = hik.StartSave(file) ? null : "oynatma durdu";
+                }
+                catch (HikException ex)
+                {
+                    error = ex.Message;
+                }
+                if (error is not null)
+                {
+                    _ = Dispatcher.BeginInvoke(() => ClipStartFailed(generation, error));
+                }
+            });
         }
         else if (_player?.Status == Status.Playing)
         {
@@ -669,6 +698,19 @@ public partial class PlaybackTile : UserControl
         return $"Klip kaydediliyor: {file}";
     }
 
+    void ClipStartFailed(int generation, string error)
+    {
+        if (generation != _clipGeneration || !_hikClipping)
+        {
+            return; // stopped (or restarted) meanwhile
+        }
+        _hikClipping = false;
+        _clipFile = null;
+        ClipBadge.Visibility = Visibility.Collapsed;
+        Notice?.Invoke(this, $"Klip başlatılamadı: {Shorten(error)}");
+        StateChanged?.Invoke(this);
+    }
+
     /// <summary>Ends a running clip (also before every seek: a clip is one continuous piece). Returns the message, if any.</summary>
     string? StopClip()
     {
@@ -680,7 +722,15 @@ public partial class PlaybackTile : UserControl
         {
             _player.StopRecording();
         }
-        _hikPlayer?.StopSave();
+        if (_hikClipping)
+        {
+            _hikClipping = false;
+            _clipGeneration++;
+            if (_hikPlayer is { } hik)
+            {
+                QueueSdk(hik.StopSave); // blocking: in the SDK queue, ahead of the next seek's open
+            }
+        }
         ClipBadge.Visibility = Visibility.Collapsed;
         var message = $"Klip kaydedildi: {_clipFile}";
         _clipFile = null;
@@ -738,19 +788,11 @@ public partial class PlaybackTile : UserControl
         _player?.Stop();
         if (_hikPlayer is { } player)
         {
-            Task.Run(async () =>
+            QueueSdk(() =>
             {
-                await _sdkGate.WaitAsync();
-                try
+                if (Volatile.Read(ref _openGeneration) == generation)
                 {
-                    if (Volatile.Read(ref _openGeneration) == generation)
-                    {
-                        player.Stop(); // blocking (NET_DVR_StopPlayBack)
-                    }
-                }
-                finally
-                {
-                    _sdkGate.Release();
+                    player.Stop(); // blocking (NET_DVR_StopPlayBack)
                 }
             });
         }

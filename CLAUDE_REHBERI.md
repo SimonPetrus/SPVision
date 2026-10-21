@@ -78,6 +78,19 @@ dotnet run --project src\SPVision
      → `PlayM4_SetDecodeEngineEx(port, 1)` (GPU) → `PlayM4_SetStreamOpenMode` →
      `PlayM4_OpenStream` (canlı 2 MB / oynatma 10 MB) → `SetDisplayBuf(15)` → `PlayM4_Play(port, hwnd)`
   4. `NET_DVR_STREAMDATA` → `PlayM4_InputData`
+- **Kilit ve iş parçacığı kuralı (21.10.2026, canlıda "Seçili kamerayı kaydet" UI'yi kalıcı donduruyordu):**
+  `HikLivePlayer.StartSave` oynatıcı kilidini tutarken `NET_DVR_SaveRealData_V30`'u çağırıyordu; SDK bu çağrıda veri
+  callback iş parçacığını bekler, o da `OnRealData`'da her pakette aynı kilidi bekliyordu (kilit sırası kilitlenmesi).
+  (1) SDK callback'leri (`OnRealData`, `OnPlayData`, `OnSdkException`) **hiçbir kilit almaz** (port `Volatile` ile
+  okunur/yazılır, SYSHEAD kurulumu kilitsiz; port `Stop`'ta `StopRealPlay`/`StopPlayBack` döndükten sonra bırakılır).
+  Callback'in alabileceği bir kilidi, callback iş parçacığını bekleyebilecek bir SDK/PlayCtrl çağrısı boyunca **tutma**.
+  Oynatıcı kilidi yalnız kontrol çağrılarını (aç, durdur, kaydet, anlık görüntü, hareket kutuları, hız) birbirine sıralar.
+  (2) Bekleyebilen SDK çağrıları (kayıt/klip başlat-durdur, `StopRealPlay`/`StopPlayBack`, Dispose, hareket kutuları, hız)
+  **UI iş parçacığında çağrılmaz**: karenin `_sdkGate` kuyruğunda (`QueueSdk`; sıra UI'de alınır, komutlar verildiği
+  sırayla çalışır) yürür, sonuç `Dispatcher.BeginInvoke` ile döner. Kayıt düğmesi ve KAYIT/klip rozeti karenin kendi
+  bayrağına (`_hikRecording` / `_hikClipping`) bakar, hemen değişir; SDK reddederse geri alınır ve bildirilir. `IsSaving`,
+  `IsRunning` kilitsiz okunur. Tek istisna kapanış: `LiveView.Shutdown` / `PlaybackView.Shutdown` SDK oynatıcısını UI'de
+  eş zamanlı bırakır (hemen ardından `NET_DVR_Cleanup` gelir; callback'ler UI'yi beklemediği için güvenli).
 - **ÇOK ÖNEMLİ — kanal numarası:** NVR'larda SDK kanal no ≠ ISAPI kanal no. Dijital kanallar
   `DeviceInfoV40.DeviceV30.StartDChan`'dan başlar (bu cihazda **33**). **Mutlaka**
   [`HikSession.SdkChannel(isapiChannel)`](src/SPVision/Hik/HikSession.cs) ile çevir; yanlış

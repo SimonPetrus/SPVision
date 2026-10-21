@@ -153,6 +153,15 @@ public partial class LiveView : UserControl
         }
     }
 
+    /// <summary>Window closing: recordings end and every SDK stream is released before the SDK is cleaned up.</summary>
+    public void Shutdown()
+    {
+        foreach (var tile in _tiles)
+        {
+            tile.Release();
+        }
+    }
+
     /// <summary>Previous/next page (status bar arrows, PageUp/PageDown), wrapping around. A maximized tile is restored first.</summary>
     public void StepPage(int delta)
     {

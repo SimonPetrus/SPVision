@@ -79,7 +79,7 @@ public partial class MainWindow : Window
         Closing += (_, _) =>
         {
             _statusTimer.Stop();
-            Live.StopAll();
+            Live.Shutdown();
             Playback.Shutdown();
         };
         Loaded += (_, _) =>

@@ -44,6 +44,7 @@ public partial class VideoTile : UserControl
     static readonly TimeSpan[] RetryDelays = [TimeSpan.FromSeconds(3), TimeSpan.FromSeconds(10), TimeSpan.FromSeconds(30)];
 
     readonly System.Windows.Threading.DispatcherTimer _retryTimer = new();
+    readonly SemaphoreSlim _sdkGate = new(1, 1); // serializes SDK commands of this tile (open, stop, recording, boxes)
 
     Player? _player;             // FFmpeg path
     HikLivePlayer? _hikPlayer;   // SDK path (stream encryption)
@@ -56,6 +57,8 @@ public partial class VideoTile : UserControl
     StreamQuality _quality = StreamQuality.Sub;
     StreamQuality _autoQuality = StreamQuality.Sub;
     string? _pendingRecordFile;
+    bool _hikRecording;          // SDK recording asked for (the save itself runs in the SDK queue)
+    int _recordGeneration;       // supersedes the failure report of an earlier recording start
     TileState _state = TileState.Empty;
     bool _selected;
     bool _compact;
@@ -105,7 +108,7 @@ public partial class VideoTile : UserControl
     public CameraRef? Source => Device is null || Camera is null ? null : new CameraRef(Device.Id, Camera.Channel);
     public bool AutoQuality { get; private set; } = true;
     public StreamQuality Quality => _quality;
-    public bool IsRecording => _player?.IsRecording == true || _hikPlayer?.IsSaving == true;
+    public bool IsRecording => _player?.IsRecording == true || _hikRecording;
     public TileState State => _state;
 
     /// <summary>True when the camera is waiting for a retry or retrying after a lost/failed stream.</summary>
@@ -189,8 +192,19 @@ public partial class VideoTile : UserControl
         Changed?.Invoke(this);
     }
 
-    /// <summary>Settings or the top bar toggled the motion boxes: re-applies them to the running SDK stream.</summary>
-    public void ApplyMotionBoxes(bool show) => _hikPlayer?.SetMotionBoxes(show);
+    /// <summary>
+    /// Settings or the top bar toggled the motion boxes: re-applies them to the running SDK stream. An open in
+    /// progress picks the value up when its port opens; the running stream is switched in the SDK queue.
+    /// </summary>
+    public void ApplyMotionBoxes(bool show)
+    {
+        if (_hikPlayer is not { } player)
+        {
+            return;
+        }
+        player.ShowMotionBoxes = show;
+        QueueSdk(() => player.SetMotionBoxes(show));
+    }
 
     /// <summary>The camera list was refreshed (names may have changed): update the header strip.</summary>
     public void RefreshCameraInfo()
@@ -207,11 +221,27 @@ public partial class VideoTile : UserControl
         _retryTimer.Stop();
         StopRecording();
         _player?.Stop();
-        _hikPlayer?.Stop();
+        if (_hikPlayer is { } player)
+        {
+            QueueSdk(player.Stop); // blocking (NET_DVR_StopRealPlay)
+        }
         if (Camera is not null)
         {
             SetState(TileState.Stopped, "Durduruldu");
         }
+    }
+
+    /// <summary>
+    /// Window closing: ends the recording and releases the SDK stream before returning (the SDK is cleaned up
+    /// right after). Blocks the closing window briefly; the data callbacks never wait for the UI thread.
+    /// </summary>
+    public void Release()
+    {
+        _wantPlaying = false;
+        _retryTimer.Stop();
+        StopRecording();
+        _player?.Stop();
+        DisposeHikPlayer(wait: true);
     }
 
     // ---- Opening: mode selection ----
@@ -226,6 +256,13 @@ public partial class VideoTile : UserControl
         _wantPlaying = true;
         _retryTimer.Stop();
         _triedHikFallback = false;
+        if (_hikRecording)
+        {
+            // Reopening (reconnect) replaces the RealPlay handle, which ends its recording.
+            _hikRecording = false;
+            _recordGeneration++;
+            RecBadge.Visibility = Visibility.Collapsed;
+        }
         EmptyFrame.Visibility = Visibility.Collapsed;
         Frame.Visibility = Visibility.Visible;
         CameraName.Text = Camera.Name;
@@ -259,7 +296,7 @@ public partial class VideoTile : UserControl
         StateChanged?.Invoke(this);
     }
 
-    /// <summary>Login + RealPlay are blocking network calls, so they run off the UI thread.</summary>
+    /// <summary>Login + RealPlay are blocking network calls, so they run off the UI thread (in the SDK queue).</summary>
     void OpenHik()
     {
         DisposeFlyleafPlayer();
@@ -286,13 +323,19 @@ public partial class VideoTile : UserControl
         _hikPlayer.ShowMotionBoxes = App.Settings.ShowMotionBoxes;
         var player = _hikPlayer;
 
-        Task.Run(() =>
+        var turn = _sdkGate.WaitAsync(); // taken here, on the UI thread: SDK commands run in the order issued
+        Task.Run(async () =>
         {
+            await turn;
             try
             {
+                if (IsStale(player, generation))
+                {
+                    return;
+                }
                 // The HwndHost builds its window during layout; give it a moment.
                 var hwnd = IntPtr.Zero;
-                for (var i = 0; i < 150 && hwnd == IntPtr.Zero && !player.IsDisposed; i++)
+                for (var i = 0; i < 150 && hwnd == IntPtr.Zero && !IsStale(player, generation); i++)
                 {
                     hwnd = HikHost.VideoHandle;
                     if (hwnd == IntPtr.Zero)
@@ -308,7 +351,7 @@ public partial class VideoTile : UserControl
                 // Login is the only remaining blocking network step; it retries via EnsureLoggedIn.
                 var session = HikSession.GetOrCreate(device);
                 var userId = session.UserId;
-                if (player.IsDisposed || System.Threading.Volatile.Read(ref _openGeneration) != generation)
+                if (IsStale(player, generation))
                 {
                     return; // a newer Open or a Dispose superseded us
                 }
@@ -319,15 +362,49 @@ public partial class VideoTile : UserControl
             }
             catch (HikException ex)
             {
-                Dispatcher.BeginInvoke(() =>
+                _ = Dispatcher.BeginInvoke(() =>
                 {
-                    if (player.IsDisposed || System.Threading.Volatile.Read(ref _openGeneration) != generation || Camera is null)
+                    if (IsStale(player, generation) || Camera is null)
                     {
                         return;
                     }
                     SetState(TileState.Failed, $"Görüntü açılamadı\n{Shorten(ex.Message)}");
                     ScheduleRetry();
                 });
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            finally
+            {
+                _sdkGate.Release();
+            }
+        });
+    }
+
+    bool IsStale(HikLivePlayer player, int generation) =>
+        player.IsDisposed || System.Threading.Volatile.Read(ref _openGeneration) != generation;
+
+    /// <summary>
+    /// Runs a blocking SDK call (save, stop, motion boxes, dispose) in the tile's SDK queue, off the UI thread.
+    /// The turn is taken by the caller (the UI thread), so commands run in the order they were issued.
+    /// </summary>
+    void QueueSdk(Action work)
+    {
+        var turn = _sdkGate.WaitAsync();
+        Task.Run(async () =>
+        {
+            await turn;
+            try
+            {
+                work();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            finally
+            {
+                _sdkGate.Release();
             }
         });
     }
@@ -396,7 +473,7 @@ public partial class VideoTile : UserControl
             _preferHik = true;
             if (!App.Settings.ShowMotionBoxes)
             {
-                _hikPlayer?.SetMotionBoxes(false); // again now that the RealPlay handle is known
+                ApplyMotionBoxes(false); // again now that the RealPlay handle is known
             }
             SetState(TileState.Playing);
             if (_pendingRecordFile is not null)
@@ -496,17 +573,29 @@ public partial class VideoTile : UserControl
         _player = null;
     }
 
-    void DisposeHikPlayer()
+    /// <summary>
+    /// NET_DVR_StopRealPlay blocks (and waits for a command in progress on the player), so the player is disposed
+    /// in the SDK queue; at shutdown it must finish before the SDK is cleaned up.
+    /// </summary>
+    void DisposeHikPlayer(bool wait = false)
     {
         System.Threading.Volatile.Write(ref _openGeneration, _openGeneration + 1);
-        if (_hikPlayer is null)
+        if (_hikPlayer is not { } player)
         {
             return;
         }
-        _hikPlayer.Error -= OnHikError;
-        _hikPlayer.Started -= OnHikStarted;
-        _hikPlayer.Dispose();
+        player.Error -= OnHikError;
+        player.Started -= OnHikStarted;
         _hikPlayer = null;
+        _hikRecording = false; // the dispose ends the recording
+        if (wait)
+        {
+            player.Dispose();
+        }
+        else
+        {
+            QueueSdk(player.Dispose);
+        }
     }
 
     // ---- Snapshot / recording ----
@@ -531,9 +620,9 @@ public partial class VideoTile : UserControl
         catch (IsapiException)
         {
         }
-        if (HikModeActive && _hikPlayer?.IsStarted == true)
+        if (HikModeActive && _hikPlayer is { IsStarted: true } hik)
         {
-            var saved = await Task.Run(() => _hikPlayer.Snapshot(path));
+            var saved = await Task.Run(() => hik.Snapshot(path)); // waits for a save/stop in progress: off the UI thread
             if (saved is not null)
             {
                 return saved;
@@ -579,18 +668,48 @@ public partial class VideoTile : UserControl
         return file;
     }
 
+    /// <summary>
+    /// NET_DVR_SaveRealData_V30 waits for the SDK's data thread: it runs in the SDK queue, never on the UI thread.
+    /// The button and the KAYIT badge switch at once; a refusal is reported and switches them back.
+    /// </summary>
     void TryStartHikSave(string file)
     {
-        try
+        if (_hikPlayer is not { } player)
         {
-            _hikPlayer!.StartSave(file);
-            RecBadge.Visibility = Visibility.Visible;
-            StateChanged?.Invoke(this);
+            return;
         }
-        catch (HikException ex)
+        _hikRecording = true;
+        var generation = ++_recordGeneration;
+        RecBadge.Visibility = Visibility.Visible;
+        StateChanged?.Invoke(this);
+        QueueSdk(() =>
         {
-            Notice?.Invoke(this, $"Kayıt başlatılamadı: {Shorten(ex.Message)}");
+            string? error;
+            try
+            {
+                error = player.StartSave(file) ? null : "görüntü açık değil";
+            }
+            catch (HikException ex)
+            {
+                error = ex.Message;
+            }
+            if (error is not null)
+            {
+                Dispatcher.BeginInvoke(() => HikSaveFailed(generation, error));
+            }
+        });
+    }
+
+    void HikSaveFailed(int generation, string error)
+    {
+        if (generation != _recordGeneration || !_hikRecording)
+        {
+            return; // stopped (or restarted) meanwhile
         }
+        _hikRecording = false;
+        RecBadge.Visibility = Visibility.Collapsed;
+        Notice?.Invoke(this, $"Kayıt başlatılamadı: {Shorten(error)}");
+        StateChanged?.Invoke(this);
     }
 
     void StopRecording()
@@ -600,9 +719,14 @@ public partial class VideoTile : UserControl
         {
             _player.StopRecording();
         }
-        if (_hikPlayer?.IsSaving == true)
+        if (_hikRecording)
         {
-            _hikPlayer.StopSave();
+            _hikRecording = false;
+            _recordGeneration++;
+            if (_hikPlayer is { } player)
+            {
+                QueueSdk(player.StopSave); // blocking: in the SDK queue, ahead of a following open
+            }
             RecBadge.Visibility = Visibility.Collapsed;
             StateChanged?.Invoke(this);
         }

@@ -8,15 +8,24 @@ namespace SPVision.Hik;
 /// (GetPort → SetSecretKey → SetDecodeEngineEx → OpenStream → Play on an HWND),
 /// following the official 2-Preview-NVRCsharpDemo / ClientDemo patterns.
 /// Callbacks arrive on SDK threads; UI code must dispatch.
+/// <para>
+/// Locking rule: the data callback never takes <see cref="_lock"/>. The SDK holds its own stream lock while it
+/// calls <see cref="OnRealData"/>, and calls such as NET_DVR_SaveRealData_V30 / NET_DVR_StopRealPlay wait for
+/// that lock; with the callback waiting for ours in turn, StartSave froze the UI for good. <see cref="_lock"/>
+/// only serializes the control calls (start, stop, save, snapshot, motion boxes), so a handle or port is never
+/// released while another thread uses it. Those calls block: call them off the UI thread. The state flags are
+/// read without the lock.
+/// </para>
 /// </summary>
 public sealed class HikLivePlayer : IDisposable
 {
     readonly object _lock = new();
 
     HikNative.DataCallback? _callback;
-    int _realHandle = -1;
-    int _port = -1;
-    bool _saving;
+    volatile int _realHandle = -1;
+    int _port = -1;             // set by the data callback (stream header), read lock-free
+    volatile bool _saving;
+    volatile bool _showMotionBoxes = true;
     volatile bool _started;
     volatile bool _disposed;
 
@@ -36,11 +45,11 @@ public sealed class HikLivePlayer : IDisposable
     public event Action? Started;
 
     /// <summary>Draw the recorder's motion / analysis boxes; read when the PlayCtrl port opens.</summary>
-    public bool ShowMotionBoxes { get; set; } = true;
+    public bool ShowMotionBoxes { get => _showMotionBoxes; set => _showMotionBoxes = value; }
 
-    public bool IsRunning { get { lock (_lock) return _realHandle >= 0; } }
+    public bool IsRunning => _realHandle >= 0;
     public bool IsStarted => _started;
-    public bool IsSaving { get { lock (_lock) return _saving; } }
+    public bool IsSaving => _saving;
     public bool IsDisposed => _disposed;
 
     /// <summary>userId: HCNetSDK login id; channel: ISAPI channel id (1-based); hWnd: window PlayCtrl draws into.</summary>
@@ -50,6 +59,7 @@ public sealed class HikLivePlayer : IDisposable
         Stop();
         lock (_lock)
         {
+            ObjectDisposedException.ThrowIf(_disposed, this); // Dispose may have stopped us just before
             _started = false;
             _callback = OnRealData;
             streamKeyPending = string.IsNullOrEmpty(streamKey) ? null : streamKey;
@@ -68,6 +78,7 @@ public sealed class HikLivePlayer : IDisposable
                 Res = new byte[212],
             };
 
+            // The callback may already run (stream header) before this returns; it needs no lock.
             int handle = HikNative.NET_DVR_RealPlay_V40(userId, ref preview, _callback, IntPtr.Zero);
             if (handle < 0)
             {
@@ -78,53 +89,65 @@ public sealed class HikLivePlayer : IDisposable
         }
     }
 
+    /// <summary>Ends the recording and the stream. Blocking (NET_DVR_StopRealPlay): call it off the UI thread.</summary>
     public void Stop()
     {
-        int handle, port;
         lock (_lock)
         {
-            handle = _realHandle;
-            port = _port;
+            int handle = _realHandle;
+            bool wasSaving = _saving;
             _realHandle = -1;
-            _port = -1;
             _saving = false;
             _started = false;
-            _callback = null;
-        }
-        if (handle >= 0) HikNative.NET_DVR_StopRealPlay(handle);
-        if (port >= 0)
-        {
-            HikNative.PlayM4_Stop(port);
-            HikNative.PlayM4_CloseStream(port);
-            HikNative.PlayM4_FreePort(port);
+            if (handle >= 0)
+            {
+                if (wasSaving) HikNative.NET_DVR_StopSaveRealData(handle);
+                HikNative.NET_DVR_StopRealPlay(handle); // the SDK stops calling back
+            }
+            // Read after StopRealPlay: the callback may have opened the port while we were stopping.
+            int port = Interlocked.Exchange(ref _port, -1);
+            if (port >= 0)
+            {
+                HikNative.PlayM4_Stop(port);
+                HikNative.PlayM4_CloseStream(port);
+                HikNative.PlayM4_FreePort(port);
+            }
+            _callback = null; // only now: the SDK no longer calls it
         }
     }
 
-    /// <summary>Switches the motion / analysis boxes on the running stream (UI thread; no-op before the port opens).</summary>
+    /// <summary>Switches the motion / analysis boxes on the running stream (no-op before the port opens). Blocking.</summary>
     public void SetMotionBoxes(bool show)
     {
         ShowMotionBoxes = show;
         lock (_lock)
         {
-            if (!_disposed && _port >= 0)
+            int port = Volatile.Read(ref _port);
+            if (!_disposed && port >= 0)
             {
-                HikRender.SetMotionBoxes(_port, _realHandle, show);
+                HikRender.SetMotionBoxes(port, _realHandle, show);
             }
         }
     }
 
-    /// <summary>Saves the stream (as received, including the SDK's MP4 muxing) via NET_DVR_SaveRealData_V30.</summary>
-    public void StartSave(string path)
+    /// <summary>
+    /// Saves the stream (as received, including the SDK's MP4 muxing) via NET_DVR_SaveRealData_V30.
+    /// False when no stream runs. Blocking: the SDK waits for its data thread.
+    /// </summary>
+    public bool StartSave(string path)
     {
         lock (_lock)
         {
-            if (_disposed || _realHandle < 0 || _saving) return;
+            if (_disposed || _realHandle < 0) return false;
+            if (_saving) return true;
             if (!HikNative.NET_DVR_SaveRealData_V30(_realHandle, HikNative.TransTypeMp4, path))
                 throw HikException.LastError("Kayıt başlatılamadı");
             _saving = true;
+            return true;
         }
     }
 
+    /// <summary>Ends the recording (the stream keeps running). Blocking.</summary>
     public void StopSave()
     {
         lock (_lock)
@@ -135,18 +158,19 @@ public sealed class HikLivePlayer : IDisposable
         }
     }
 
-    /// <summary>Grabs the currently displayed frame via PlayM4_GetJPEG; null when not playing.</summary>
+    /// <summary>Grabs the currently displayed frame via PlayM4_GetJPEG; null when not playing. Blocking.</summary>
     public string? Snapshot(string path)
     {
         lock (_lock)
         {
-            if (_disposed || _port < 0 || !_started) return null;
+            int port = Volatile.Read(ref _port);
+            if (_disposed || port < 0 || !_started) return null;
             const uint maxJpeg = 8 * 1024 * 1024;
             var buffer = Marshal.AllocHGlobal((nint)maxJpeg);
             try
             {
                 uint size = 0;
-                if (!HikNative.PlayM4_GetJPEG(_port, buffer, maxJpeg, ref size) || size == 0)
+                if (!HikNative.PlayM4_GetJPEG(port, buffer, maxJpeg, ref size) || size == 0)
                     return null;
                 var data = new byte[size];
                 Marshal.Copy(buffer, data, 0, (int)size);
@@ -164,38 +188,39 @@ public sealed class HikLivePlayer : IDisposable
     {
         try
         {
-            int port;
-            lock (_lock) port = _port;
+            // No lock anywhere in here (see the class remarks): the SDK holds its stream lock while calling us.
+            // One SDK thread delivers a handle's data in order, so the header setup cannot race the data path;
+            // Stop releases the port only after NET_DVR_StopRealPlay, when this callback is done.
+            int port = Volatile.Read(ref _port);
 
             if (dataType == HikNative.SysHead)
             {
-                lock (_lock)
+                if (port >= 0) return; // already set up
+
+                if (!HikNative.PlayM4_GetPort(ref port))
+                    throw HikException.LastError("PlayCtrl portu alınamadı");
+                Volatile.Write(ref _port, port); // published at once, so Stop frees it even if the setup fails
+
+                // Encrypted streams: key must be registered before OpenStream (ClientDemo DlgPlayRemoteTime.cpp).
+                if (!string.IsNullOrEmpty(streamKeyPending))
+                    HikNative.PlayM4_SetSecretKey(port, HikNative.AesKeyType, streamKeyPending, HikNative.AesKeyBits);
+
+                HikNative.PlayM4_SetDecodeEngineEx(port, HikNative.HardDecodeEngine); // GPU decode
+                HikNative.PlayM4_SetStreamOpenMode(port, HikNative.StreamRealtime);
+                if (!HikNative.PlayM4_OpenStream(port, buffer, size, 2 * 1024 * 1024))
+                    throw HikException.LastError("PlayCtrl akışı açamadı");
+                HikNative.PlayM4_SetDisplayBuf(port, 15);
+                HikNative.PlayM4_SetOverlayMode(port, false, 0);
+                if (!ShowMotionBoxes)
                 {
-                    if (_port >= 0) return; // already set up
-
-                    if (!HikNative.PlayM4_GetPort(ref _port))
-                        throw HikException.LastError("PlayCtrl portu alınamadı");
-
-                    // Encrypted streams: key must be registered before OpenStream (ClientDemo DlgPlayRemoteTime.cpp).
-                    if (!string.IsNullOrEmpty(streamKeyPending))
-                        HikNative.PlayM4_SetSecretKey(_port, HikNative.AesKeyType, streamKeyPending, HikNative.AesKeyBits);
-
-                    HikNative.PlayM4_SetDecodeEngineEx(_port, HikNative.HardDecodeEngine); // GPU decode
-                    HikNative.PlayM4_SetStreamOpenMode(_port, HikNative.StreamRealtime);
-                    if (!HikNative.PlayM4_OpenStream(_port, buffer, size, 2 * 1024 * 1024))
-                        throw HikException.LastError("PlayCtrl akışı açamadı");
-                    HikNative.PlayM4_SetDisplayBuf(_port, 15);
-                    HikNative.PlayM4_SetOverlayMode(_port, false, 0);
-                    if (!ShowMotionBoxes)
-                    {
-                        // PlayCtrl draws them by default; only switch off (keeps today's behaviour when shown).
-                        HikRender.SetMotionBoxes(_port, _realHandle, false);
-                    }
-
-                    int hwndValue = windowHandlePending;
-                    if (!HikNative.PlayM4_Play(_port, (IntPtr)hwndValue))
-                        throw HikException.LastError("PlayCtrl oynatmayı başlatamadı");
+                    // PlayCtrl draws them by default; only switch off (keeps today's behaviour when shown).
+                    // handle = this RealPlay handle (the field may not be set yet while RealPlay_V40 returns).
+                    HikRender.SetMotionBoxes(port, handle, false);
                 }
+
+                int hwndValue = windowHandlePending;
+                if (!HikNative.PlayM4_Play(port, (IntPtr)hwndValue))
+                    throw HikException.LastError("PlayCtrl oynatmayı başlatamadı");
                 _started = true;
                 Started?.Invoke();
                 return;
@@ -219,7 +244,7 @@ public sealed class HikLivePlayer : IDisposable
 
     void OnSdkException(uint type, int userId, int handle)
     {
-        if (type == HikNative.ExceptionPreview && handle == Volatile.Read(ref _realHandle))
+        if (type == HikNative.ExceptionPreview && handle == _realHandle)
         {
             Error?.Invoke("Bağlantı koptu (önizleme)");
         }
@@ -229,6 +254,7 @@ public sealed class HikLivePlayer : IDisposable
     string? streamKeyPending;
     int windowHandlePending;
 
+    /// <summary>Stops the stream (and the recording). Blocking: off the UI thread, except at shutdown.</summary>
     public void Dispose()
     {
         _disposed = true;
