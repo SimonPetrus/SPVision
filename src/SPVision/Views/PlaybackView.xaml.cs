@@ -55,7 +55,7 @@ public partial class PlaybackView : UserControl
     readonly Stopwatch _clock = new();
     readonly Stopwatch _holdWatch = new();
     readonly SemaphoreSlim _searches = new(4, 4); // ISAPI searches at once (the recorder serves them one by one anyway)
-    readonly SemaphoreSlim _markSearches = new(1, 1); // calendar day searches at once (behind the playback day's own)
+    readonly SemaphoreSlim _markSearches = new(2, 2); // calendar requests at once (month queries, or day searches)
     readonly RecordedDays _recordedDays = new();
     readonly Dictionary<CameraRef, CancellationTokenSource> _markLoaders = []; // calendar searches per checked camera
 
@@ -236,6 +236,7 @@ public partial class PlaybackView : UserControl
     /// <summary>Login data of a device changed: its tiles reconnect with the new settings.</summary>
     public void ReloadDevice(Device device)
     {
+        CancelMarkLoaders(camera => camera.DeviceId == device.Id); // restarted below with the new address / login
         foreach (var tile in ActiveTiles.Where(t => t.Device!.Id == device.Id).ToList())
         {
             if (device.Cameras.FirstOrDefault(c => c.Channel == tile.Camera!.Channel) is { } camera)
@@ -753,9 +754,10 @@ public partial class PlaybackView : UserControl
     }
 
     /// <summary>
-    /// Asks the recorder, day by day (newest first), whether the camera recorded anything: the read-only
-    /// recording search with one result per day. Days another checked camera already dotted are skipped. A
-    /// failure leaves the remaining days unknown; they are asked again on the next focus, day or camera change.
+    /// Calendar dots of one camera: first the recorder's month query (one read-only request for the whole month,
+    /// what its own web UI asks); where that is not supported, day by day (newest first) with the read-only
+    /// recording search, one result per day. Days another checked camera already dotted are skipped. A failure
+    /// leaves the remaining days unknown; they are asked again on the next focus, day or camera change.
     /// </summary>
     async Task LoadMarksAsync(CameraRef source, DateTime month, CancellationTokenSource cts)
     {
@@ -768,24 +770,37 @@ public partial class PlaybackView : UserControl
             // Same timeout as the playback day's search: the recorder serves searches one by one, so a day search
             // can wait behind them.
             using var isapi = new IsapiClient(found.Device, TimeSpan.FromSeconds(20));
-            var failures = 0;
-            while (!cts.IsCancellationRequested &&
-                   _recordedDays.NextToSearch(source, CheckedCameras(), month, DateTime.Today) is { } day)
+            if (await LoadMonthMarksAsync(isapi, source, found.Camera.Channel, month, cts.Token))
             {
+                return;
+            }
+            var failures = 0;
+            while (!cts.IsCancellationRequested)
+            {
+                DateTime? next = null;
                 bool? recorded = null;
                 string? error = null;
                 await _markSearches.WaitAsync(cts.Token);
                 try
                 {
-                    recorded = await isapi.HasRecordingsAsync(found.Camera.Channel, day, day.AddDays(1).AddSeconds(-1), cts.Token);
+                    // Chosen after the gate: another camera may have dotted the day while this one waited.
+                    next = _recordedDays.NextToSearch(source, CheckedCameras(), month, DateTime.Today);
+                    if (next is { } ask)
+                    {
+                        recorded = await isapi.HasRecordingsAsync(found.Camera.Channel, ask, ask.AddDays(1).AddSeconds(-1), cts.Token);
+                    }
                 }
-                catch (IsapiException e)
+                catch (Exception e) when (e is IsapiException or System.Net.Http.HttpRequestException or System.IO.IOException)
                 {
-                    error = e.Message;
+                    error = e.Message; // (anything else used to end the loop silently)
                 }
                 finally
                 {
                     _markSearches.Release();
+                }
+                if (next is not { } day)
+                {
+                    return; // every day is known
                 }
                 if (recorded is { } answer)
                 {
@@ -822,6 +837,53 @@ public partial class PlaybackView : UserControl
             }
             cts.Dispose();
         }
+    }
+
+    /// <summary>
+    /// The month query (<see cref="IsapiClient.GetRecordedDaysAsync"/>) for one camera. True when the month is
+    /// answered (or nothing is left to ask); false = ask day by day: not supported (403/404, no day list) or
+    /// still failing after the retries (the day searches then report the error).
+    /// </summary>
+    async Task<bool> LoadMonthMarksAsync(IsapiClient isapi, CameraRef source, int channel, DateTime month, CancellationToken ct)
+    {
+        var failures = 0;
+        while (_recordedDays.NextToSearch(source, CheckedCameras(), month, DateTime.Today) is not null)
+        {
+            IReadOnlySet<int>? days = null;
+            var failed = false;
+            await _markSearches.WaitAsync(ct);
+            try
+            {
+                days = await isapi.GetRecordedDaysAsync(channel, month, ct);
+            }
+            catch (Exception e) when (e is IsapiException or System.Net.Http.HttpRequestException or System.IO.IOException)
+            {
+                failed = true;
+            }
+            finally
+            {
+                _markSearches.Release();
+            }
+            if (!failed)
+            {
+                if (days is null)
+                {
+                    return false;
+                }
+                _recordedDays.SetMonth(source, month, days, DateTime.Today);
+                if (!ct.IsCancellationRequested)
+                {
+                    UpdateDayButtons();
+                }
+                return true;
+            }
+            if (RecordedDays.RetryDelay(++failures) is not { } delay)
+            {
+                return false;
+            }
+            await Task.Delay(delay, ct);
+        }
+        return true;
     }
 
     void PrevMonth_Click(object sender, RoutedEventArgs e)

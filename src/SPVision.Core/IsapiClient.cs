@@ -142,6 +142,77 @@ public sealed partial class IsapiClient : IDisposable
         return segments.Count > 0;
     }
 
+    /// <summary>
+    /// Days of <paramref name="month"/> the camera recorded on: the read-only month query the recorder's own web
+    /// UI uses for its calendar (POST with search semantics, like ContentMgmt/search; never a write, never through
+    /// <see cref="IsapiWritePolicy"/>). One request per camera and month. Null when the recorder does not support
+    /// it (<see cref="MonthQueryUnsupported"/> status, or a body that is not a day list): ask day by day instead.
+    /// Other failures (timeout, busy, 401…) throw <see cref="IsapiException"/>.
+    /// </summary>
+    public async Task<IReadOnlySet<int>?> GetRecordedDaysAsync(int channel, DateTime month, CancellationToken ct = default)
+    {
+        var path = $"ISAPI/ContentMgmt/record/tracks/{StreamUrls.TrackId(channel, StreamQuality.Main)}/dailyDistribution";
+        var request = new HttpRequestMessage(HttpMethod.Post, path)
+        {
+            Content = new StringContent(BuildDailyDistributionRequest(month), Encoding.UTF8, new MediaTypeHeaderValue("application/xml")),
+        };
+        string text;
+        try
+        {
+            using var response = await SendAsync(request, ct);
+            text = await response.Content.ReadAsStringAsync(ct);
+        }
+        catch (IsapiException e) when (MonthQueryUnsupported(e.Status))
+        {
+            return null;
+        }
+        try
+        {
+            return ParseDailyDistribution(XDocument.Parse(text));
+        }
+        catch (System.Xml.XmlException)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>The month query is not there on this recorder (or not for this user): fall back to day searches.</summary>
+    internal static bool MonthQueryUnsupported(HttpStatusCode? status) =>
+        status is HttpStatusCode.BadRequest or HttpStatusCode.Forbidden or HttpStatusCode.NotFound
+            or HttpStatusCode.MethodNotAllowed or HttpStatusCode.NotImplemented;
+
+    internal static string BuildDailyDistributionRequest(DateTime month)
+    {
+        var doc = new XElement("trackDailyParam",
+            new XElement("year", month.Year),
+            new XElement("monthOfYear", month.Month));
+        return "<?xml version=\"1.0\" encoding=\"UTF-8\"?>" + doc;
+    }
+
+    /// <summary>
+    /// <c>trackDailyDistribution/dayList/day</c> (namespace or not): day numbers whose <c>record</c> is "true"
+    /// (<c>dayOfMonth</c>, else <c>id</c>). Null when the document is no day list (e.g. a ResponseStatus refusal).
+    /// </summary>
+    internal static IReadOnlySet<int>? ParseDailyDistribution(XDocument doc)
+    {
+        var root = doc.Root!;
+        var dayList = root.Name.LocalName == "dayList" ? root : Elements(root, "dayList").FirstOrDefault();
+        if (root.Name.LocalName == "ResponseStatus" || dayList is null)
+        {
+            return null;
+        }
+        var days = new HashSet<int>();
+        foreach (var day in dayList.Elements().Where(e => e.Name.LocalName == "day"))
+        {
+            var number = Int(day, "dayOfMonth") is > 0 and var n ? n : Int(day, "id");
+            if (number is >= 1 and <= 31 && string.Equals(Value(day, "record"), "true", StringComparison.OrdinalIgnoreCase))
+            {
+                days.Add(number);
+            }
+        }
+        return days;
+    }
+
     async Task<XDocument> GetXmlAsync(string path, CancellationToken ct)
     {
         using var response = await SendAsync(new HttpRequestMessage(HttpMethod.Get, path), ct);

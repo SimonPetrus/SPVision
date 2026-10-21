@@ -291,6 +291,18 @@ public sealed class RecordedDays
     /// <summary>The stored answer; null when the camera was not asked about that day yet.</summary>
     public bool? Get(CameraRef camera, DateTime day) => _known.TryGetValue((camera, day.Date), out var recorded) ? recorded : null;
 
+    /// <summary>
+    /// Stores the answer of the month query (<see cref="IsapiClient.GetRecordedDaysAsync"/>): every day of the
+    /// month up to today is recorded or not; days after today are left unknown (no dot, whatever the recorder says).
+    /// </summary>
+    public void SetMonth(CameraRef camera, DateTime month, IReadOnlySet<int> recorded, DateTime today)
+    {
+        foreach (var day in DaysOf(month, today))
+        {
+            Set(camera, day, recorded.Contains(day.Day));
+        }
+    }
+
     /// <summary>Day numbers of <paramref name="month"/> that carry a dot for the given cameras.</summary>
     public IReadOnlySet<int> Marked(IEnumerable<CameraRef> cameras, DateTime month, DateTime today)
     {

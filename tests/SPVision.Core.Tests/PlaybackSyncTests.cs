@@ -456,6 +456,43 @@ public class PlaybackSyncTests
     }
 
     [Fact]
+    public void MonthAnswersMergeAcrossCameras()
+    {
+        var days = new RecordedDays();
+        days.SetMonth(Cam(1), Month, new HashSet<int> { 1, 2, 3 }, Day);
+        days.SetMonth(Cam(2), Month, new HashSet<int> { 3, 10, 21 }, Day);
+
+        Assert.Equal(new[] { 1, 2, 3, 10, 21 }, days.Marked([Cam(1), Cam(2)], Month, Day).Order());
+        Assert.False(days.Get(Cam(1), new DateTime(2026, 10, 10))); // answered "no", not unknown
+        Assert.Null(days.NextToSearch(Cam(1), [Cam(1), Cam(2)], Month, Day)); // nothing left to ask
+    }
+
+    [Fact]
+    public void MonthAnswerNeverDotsFutureDays()
+    {
+        var days = new RecordedDays();
+        days.SetMonth(Cam(1), Month, new HashSet<int> { 20, 21, 22, 31 }, Day); // "today" is 21 Oct
+
+        Assert.Equal(new[] { 20, 21 }, days.Marked([Cam(1)], Month, Day).Order());
+        Assert.Null(days.Get(Cam(1), new DateTime(2026, 10, 22)));
+        // The next day: 22 Oct was not stored from the earlier answer, so it is asked again (no stale "yes").
+        Assert.Equal(new[] { 20, 21 }, days.Marked([Cam(1)], Month, new DateTime(2026, 10, 22)).Order());
+        Assert.Equal(new DateTime(2026, 10, 22), days.NextToSearch(Cam(1), [Cam(1)], Month, new DateTime(2026, 10, 22)));
+    }
+
+    [Fact]
+    public void UncheckingACameraRemovesOnlyItsMonthDots()
+    {
+        var days = new RecordedDays();
+        days.SetMonth(Cam(1), Month, new HashSet<int> { 1, 5 }, Day);
+        days.SetMonth(Cam(2), Month, new HashSet<int> { 5, 9 }, Day);
+
+        Assert.Equal(new[] { 1, 5 }, days.Marked([Cam(1)], Month, Day).Order());   // camera 2 unchecked
+        Assert.Equal(new[] { 5, 9 }, days.Marked([Cam(2)], Month, Day).Order());   // camera 1 unchecked
+        Assert.Equal(new[] { 1, 5, 9 }, days.Marked([Cam(1), Cam(2)], Month, Day).Order()); // checked again: no new query
+    }
+
+    [Fact]
     public void SearchFailureText()
     {
         Assert.Equal("Kayıt listesi alınamadı: Cihaz zaman aşımına uğradı.", PlaybackText.SearchFailed("Cihaz zaman aşımına uğradı."));

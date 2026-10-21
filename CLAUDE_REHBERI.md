@@ -206,6 +206,19 @@ dotnet run --project src\SPVision
   yok"dur); hata hiçbir zaman "kayıt yok" diye saklanmaz, aynı gün 5 / 15 / 30 sn sonra yeniden sorulur
   (`RecordedDays.RetryDelay`), üçüncü hatadan sonra durum çubuğunda "Takvim için kayıt günleri alınamadı (kamera): …"
   yazar; gün araması zaman aşımı 20 sn (oynatma aramasıyla aynı), aynı anda 1 gün araması.
+- **Takvim noktaları ay sorgusuyla (21.10.2026, cihazda doğrulandı):** kayıt cihazının kendi web arayüzünün takvim
+  sorgusu kullanılır: `POST ISAPI/ContentMgmt/record/tracks/{kanal×100+1}/dailyDistribution`, gövde
+  `<trackDailyParam><year>…</year><monthOfYear>…</monthOfYear></trackDailyParam>` (ad alanısız, arama gövdesi gibi),
+  cevap `trackDailyDistribution/dayList/day` (`dayOfMonth`, yoksa `id`; `record` true/false; ad alanı olsa da olmasa da
+  okunur) → `IsapiClient.GetRecordedDaysAsync`. **Salt okunur** (arama gibi POST; `IsapiWritePolicy`/PUT yolundan geçmez,
+  izinli PUT listesi bu yolu kapsamaz — testli). İşaretli kamera başına ay başına **1 istek** (en çok 2 eş zamanlı),
+  `RecordedDays.SetMonth` ile birleşir (bugünden sonrası saklanmaz → nokta yok). 400/403/404/405/501 ya da gün listesi
+  olmayan / okunamayan cevap → o kamera için eski gün gün aramaya düşülür; diğer hatalar 5/15/30 sn sonra yeniden.
+  DS-8632NI-I8'de 200, ~0,1–0,5 sn. (Yukarıdaki "ayrı uç nokta yok" artık geçersiz.) Eski gün gün döngüsünün
+  kusurları da düzeltildi: sorulacak gün kapıdan (`_markSearches`) **önce** seçildiği için her işaretli kamera her
+  günü ayrı ayrı soruyordu (8 kamerada 21 yerine 168 istek, sırayla); `IsapiException` dışı hata (gövde okunurken kopan
+  bağlantı) döngüyü sessizce bitiriyordu; cihazın bağlantı ayarı değişince (`ReloadDevice`, ör. HTTP → HTTPS) döngü
+  eski adresle sürüyordu — artık o cihazın döngüleri yeniden başlatılır.
 
 ### Temalar (açık / koyu / sistem)
 

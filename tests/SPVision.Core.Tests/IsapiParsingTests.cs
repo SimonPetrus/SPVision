@@ -250,4 +250,108 @@ public class IsapiParsingTests
         Assert.All(handler.Requests, r => Assert.Equal("1", r.Root!.Element("maxResults")!.Value));
         Assert.Equal("201", handler.Requests[0].Root!.Element("trackList")!.Element("trackID")!.Value);
     }
+
+    // ---- Month query (calendar dots): record/tracks/{t}/dailyDistribution ----
+
+    static string Distribution(string xmlns, params (int Day, string Record)[] days) =>
+        $"<trackDailyDistribution version=\"2.0\"{xmlns}><dayList>" +
+        string.Concat(days.Select(d => $"<day><id>{d.Day}</id><dayOfMonth>{d.Day}</dayOfMonth><record>{d.Record}</record><recordType>time</recordType></day>")) +
+        "</dayList></trackDailyDistribution>";
+
+    [Fact]
+    public void ParsesDailyDistributionWithNamespace()
+    {
+        var doc = XDocument.Parse(Distribution(" xmlns=\"http://www.isapi.org/ver20/XMLSchema\"", (1, "true"), (2, "false"), (3, "TRUE"), (4, "false")));
+
+        Assert.Equal(new[] { 1, 3 }, IsapiClient.ParseDailyDistribution(doc)!.Order());
+    }
+
+    [Fact]
+    public void ParsesDailyDistributionWithoutNamespace()
+    {
+        var doc = XDocument.Parse("""
+            <trackDailyDistribution><dayList>
+              <day><id>5</id><dayOfMonth>5</dayOfMonth><record>true</record></day>
+              <day><id>6</id><record>true</record></day>
+              <day><id>7</id><dayOfMonth>7</dayOfMonth><record>false</record></day>
+              <day><id>x</id><dayOfMonth>?</dayOfMonth><record>true</record></day>
+            </dayList></trackDailyDistribution>
+            """);
+
+        Assert.Equal(new[] { 5, 6 }, IsapiClient.ParseDailyDistribution(doc)!.Order()); // 6: id when dayOfMonth is missing
+        Assert.Empty(IsapiClient.ParseDailyDistribution(XDocument.Parse(Distribution("")))!); // a month without recordings
+    }
+
+    [Fact]
+    public void DailyDistributionWithoutDayListIsUnsupported()
+    {
+        Assert.Null(IsapiClient.ParseDailyDistribution(XDocument.Parse(
+            $"""<ResponseStatus xmlns="{Ns}"><statusCode>4</statusCode><statusString>Invalid Operation</statusString><subStatusCode>notSupport</subStatusCode></ResponseStatus>""")));
+        Assert.Null(IsapiClient.ParseDailyDistribution(XDocument.Parse("<trackDailyDistribution />")));
+    }
+
+    [Fact]
+    public void MonthQueryRequest()
+    {
+        var body = XDocument.Parse(IsapiClient.BuildDailyDistributionRequest(new DateTime(2026, 3, 1)));
+
+        Assert.Equal("trackDailyParam", body.Root!.Name.LocalName);
+        Assert.Equal("2026", body.Root.Element("year")!.Value);
+        Assert.Equal("3", body.Root.Element("monthOfYear")!.Value);
+    }
+
+    /// <summary>Answers the month query with a fixed status and body, and records what was asked (no network).</summary>
+    sealed class MonthAnswer(System.Net.HttpStatusCode status, string body) : HttpMessageHandler
+    {
+        public List<(HttpMethod Method, string Path, XDocument Body)> Requests { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Requests.Add((request.Method, request.RequestUri!.AbsolutePath, XDocument.Parse(await request.Content!.ReadAsStringAsync(ct))));
+            return new HttpResponseMessage(status) { Content = new StringContent(body) };
+        }
+    }
+
+    [Fact]
+    public async Task MonthQueryIsOneReadOnlyPostPerCameraAndMonth()
+    {
+        var handler = new MonthAnswer(System.Net.HttpStatusCode.OK, Distribution(" xmlns=\"http://www.isapi.org/ver20/XMLSchema\"", (20, "true"), (21, "true"), (22, "false")));
+        using var client = new IsapiClient(new Uri("http://recorder.test/"), handler);
+
+        var days = await client.GetRecordedDaysAsync(3, new DateTime(2026, 10, 1));
+
+        Assert.Equal(new[] { 20, 21 }, days!.Order());
+        var request = Assert.Single(handler.Requests);
+        Assert.Equal(HttpMethod.Post, request.Method); // search semantics, never a PUT
+        Assert.Equal("/ISAPI/ContentMgmt/record/tracks/301/dailyDistribution", request.Path);
+        Assert.Equal("10", request.Body.Root!.Element("monthOfYear")!.Value);
+        // Not a write: the PUT allowlist does not cover it (its record/tracks pattern is the schedule only).
+        Assert.NotNull(IsapiWritePolicy.Check("ISAPI/ContentMgmt/record/tracks/301/dailyDistribution"));
+    }
+
+    [Theory]
+    [InlineData(System.Net.HttpStatusCode.Forbidden, "")]
+    [InlineData(System.Net.HttpStatusCode.NotFound, "")]
+    [InlineData(System.Net.HttpStatusCode.OK, "not xml")]
+    [InlineData(System.Net.HttpStatusCode.OK, "<ResponseStatus><statusCode>4</statusCode><subStatusCode>notSupport</subStatusCode></ResponseStatus>")]
+    public async Task MonthQueryFallsBackToDaySearchesWhenUnsupported(System.Net.HttpStatusCode status, string body)
+    {
+        using var client = new IsapiClient(new Uri("http://recorder.test/"), new MonthAnswer(status, body));
+
+        Assert.Null(await client.GetRecordedDaysAsync(1, new DateTime(2026, 10, 1)));
+    }
+
+    [Theory]
+    [InlineData(System.Net.HttpStatusCode.Unauthorized)]
+    [InlineData(System.Net.HttpStatusCode.InternalServerError)]
+    [InlineData(System.Net.HttpStatusCode.ServiceUnavailable)]
+    public async Task MonthQueryFailureIsRetriedNotTakenAsUnsupported(System.Net.HttpStatusCode status)
+    {
+        using var client = new IsapiClient(new Uri("http://recorder.test/"), new MonthAnswer(status, ""));
+
+        var error = await Assert.ThrowsAsync<IsapiException>(() => client.GetRecordedDaysAsync(1, new DateTime(2026, 10, 1)));
+        Assert.Equal(status, error.Status);
+        Assert.False(IsapiClient.MonthQueryUnsupported(status));
+        Assert.True(IsapiClient.MonthQueryUnsupported(System.Net.HttpStatusCode.NotFound));
+    }
 }
