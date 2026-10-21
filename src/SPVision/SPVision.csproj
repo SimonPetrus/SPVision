@@ -11,8 +11,13 @@
     <SelfContained>false</SelfContained>
     <AssemblyName>SPVision</AssemblyName>
     <RootNamespace>SPVision</RootNamespace>
-    <Version>0.1.0</Version>
+    <!-- Single version source. The in-app updater compares it (informational version, "+commit" stripped) with the signed
+         manifest; tools/release/release.ps1 and .github/workflows/release.yml read it here and require the tag vX.Y.Z to match.
+         Raise it for every release. -->
+    <Version>1.0.0</Version>
     <Product>SPVision</Product>
+    <Company>Simon Petrus</Company>
+    <Copyright>© 2026 Simon Petrus</Copyright>
     <AssemblyTitle>SPVision</AssemblyTitle>
     <Description>SPVision - Hikvision kayıt cihazı için canlı izleme ve kayıt oynatma istemcisi</Description>
     <!-- Uygulama ikonu (exe + pencere başlığı/görev çubuğu). Kaynak: Assets\SPVision.svg -->

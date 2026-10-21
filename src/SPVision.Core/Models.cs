@@ -126,6 +126,30 @@ public sealed class AppSettings
 
     /// <summary>Open the main window in full screen (F11).</summary>
     public bool StartFullScreen { get; set; }
+
+    /// <summary>In-app updater state (no secrets): last successful check and a remembered mandatory update.</summary>
+    public UpdateState? Update { get; set; }
+}
+
+/// <summary>
+/// What the updater remembers between runs. The manifests are the exact bytes (base64) of signed manifest.json files with
+/// their .sig; they are verified again on every use, so editing settings.json cannot force or fake an update. Nothing here
+/// is secret. <see cref="LatestManifest"/>: the last successful check's result (an optional offer survives a restart within
+/// the 6 h check interval). <see cref="MandatoryManifest"/>: a manifest that made the update mandatory — still enforced
+/// when later checks fail or a newer release is optional, until that version is installed.
+/// </summary>
+public sealed class UpdateState
+{
+    /// <summary>Last successful automatic or manual check (UTC); automatic checks run at most every 6 hours.</summary>
+    public DateTimeOffset? LastCheckUtc { get; set; }
+
+    public string? LatestManifest { get; set; }
+
+    public string? LatestSignature { get; set; }
+
+    public string? MandatoryManifest { get; set; }
+
+    public string? MandatorySignature { get; set; }
 }
 
 public sealed record DeviceDetails(string Name, string? Model, string? SerialNumber, string? Firmware, string? DeviceType = null);

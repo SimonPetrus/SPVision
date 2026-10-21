@@ -78,6 +78,46 @@
             </Grid>
         </Border>
 
+        <!-- ===== Update banner under the top bar: an optional update (a mandatory one gets a blocking dialog). 41 px = 40 px
+             content + 1 px bottom border, so the 30 px buttons have exactly 5 px above and below. Same 12 px inset as the top
+             bar; three 120×30 slots with 8 px gaps on the right:
+             [Neler yeni] [Sonra | progress 120] [Güncelle | İptal]. Hidden in full screen. ===== -->
+        <Border x:Name="UpdateBanner" DockPanel.Dock="Top" Height="41" Background="{DynamicResource InfoSoftBg}"
+                BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" Padding="12,0" Visibility="Collapsed"
+                AutomationProperties.AutomationId="UpdateBanner" AutomationProperties.Name="Güncelleme">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <c:GlyphIcon Data="{StaticResource IconInfo}" Size="16" Foreground="{DynamicResource Accent}" VerticalAlignment="Center"
+                             Margin="0,0,8,0" />
+                <TextBlock x:Name="UpdateBannerText" Grid.Column="1" VerticalAlignment="Center" Margin="0,0,16,0"
+                           Foreground="{DynamicResource TextFg}" TextTrimming="CharacterEllipsis"
+                           AutomationProperties.AutomationId="UpdateBannerText" AutomationProperties.LiveSetting="Polite" />
+                <StackPanel Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button x:Name="UpdateNotesButton" Content="Neler yeni" Style="{StaticResource SettingsButton}" Click="UpdateNotes_Click"
+                            ToolTip="Bu sürümdeki değişiklikleri göster" AutomationProperties.Name="Neler yeni" />
+                    <Button x:Name="UpdateLaterButton" Content="Sonra" Style="{StaticResource SettingsButton}" Margin="8,0,0,0"
+                            Click="UpdateLater_Click" ToolTip="SPVision yeniden açılana kadar bu sürümü gösterme"
+                            AutomationProperties.Name="Sonra" />
+                    <Grid x:Name="UpdateBannerProgress" Width="120" Height="6" Margin="8,0,0,0" Visibility="Collapsed"
+                          AutomationProperties.AutomationId="UpdateBannerProgress" AutomationProperties.Name="İndirme ilerlemesi">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="0*" />
+                            <ColumnDefinition Width="100*" />
+                        </Grid.ColumnDefinitions>
+                        <Border Grid.ColumnSpan="2" CornerRadius="3" Background="{DynamicResource InputBorder}" />
+                        <Border CornerRadius="3" Background="{DynamicResource Accent}" />
+                    </Grid>
+                    <Button x:Name="UpdateNowButton" Content="Güncelle" Style="{StaticResource SettingsAccentButton}" Margin="8,0,0,0"
+                            Click="UpdateNow_Click" ToolTip="İndir, doğrula ve kur (yönetici izni istenir; SPVision yeniden açılır)"
+                            AutomationProperties.Name="Güncelle" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
         <!-- ===== Status bar, 28 px. Three columns (* / Auto / *): the live view's page control sits exactly in the middle of
              the window whatever the status texts on the left and right are (they trim instead of pushing it). ===== -->
         <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Height="28" Background="{DynamicResource BarBg}"

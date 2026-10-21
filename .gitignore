@@ -19,3 +19,12 @@ reversing/raw/
 # Local secrets / test config
 *.local.json
 secrets/
+
+# Update signing key (private, never committed; tools/release/new-signing-key.ps1 writes it outside the repo)
+*.pem
+*.key
+
+# Cloudflare Worker (tools/update-proxy): local state and secrets
+node_modules/
+.wrangler/
+.dev.vars

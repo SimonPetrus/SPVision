@@ -98,4 +98,6 @@
     <!-- Danger band and filled danger button of Bakım › Fabrika ayarları (phase 3) -->
     <SolidColorBrush x:Key="DangerSoftBg" Color="#FDE7E9" />
     <SolidColorBrush x:Key="OnDanger" Color="#FFFFFF" />
+    <!-- In-app update banner of the main window (accent-tinted, under the top bar) -->
+    <SolidColorBrush x:Key="InfoSoftBg" Color="#E8F1FA" />
 </ResourceDictionary>

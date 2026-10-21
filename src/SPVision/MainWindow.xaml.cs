@@ -9,6 +9,7 @@ using System.Windows.Threading;
 using SPVision.Controls;
 using SPVision.Core;
 using SPVision.Hik;
+using SPVision.Updates;
 using SPVision.Views;
 
 namespace SPVision;
@@ -66,6 +67,9 @@ public partial class MainWindow : Window
         SettingsPanel.MotionBoxesChanged += SetMotionBoxes;
         SettingsPanel.QualitySelected += quality => Live.SelectQuality(quality);
         MotionToggle.IsChecked = App.Settings.ShowMotionBoxes;
+        UpdateController.Changed += UpdateBannerState;
+        UpdateController.Message += ShowMessage;
+        UpdateController.MandatoryRequired += ShowMandatoryUpdate;
         BuildCameraList();
         Playback.RefreshCameras();
 
@@ -92,6 +96,7 @@ public partial class MainWindow : Window
             {
                 ToggleFullScreen();
             }
+            UpdateController.Start(); // remembered mandatory update now, automatic check after 15 s
         };
     }
 
@@ -148,6 +153,128 @@ public partial class MainWindow : Window
         }
         _closeDone = true;
         Application.Current.Shutdown();
+    }
+
+    // ---- In-app update (banner for an optional update, blocking dialog for a mandatory one) ----
+
+    bool _mandatoryOpen;
+    DispatcherTimer? _mandatoryRetry;
+
+    /// <summary>
+    /// Banner text, progress and buttons follow <see cref="UpdateController"/>. Three equal 120 px slots: Neler yeni ·
+    /// Sonra (progress bar while downloading) · Güncelle (İptal while downloading).
+    /// </summary>
+    void UpdateBannerState()
+    {
+        var show = UpdateController.ShowBanner;
+        UpdateBanner.Visibility = show && !_fullScreen ? Visibility.Visible : Visibility.Collapsed;
+        if (!show || UpdateController.Offer is not { } offer)
+        {
+            return;
+        }
+        var phase = UpdateController.Phase;
+        var downloading = phase == UpdatePhase.Downloading;
+
+        UpdateBannerText.Inlines.Clear();
+        if (UpdateController.Activity is { } activity)
+        {
+            UpdateBannerText.Inlines.Add(new System.Windows.Documents.Run($"SPVision {offer.Version}") { FontWeight = FontWeights.SemiBold });
+            var detail = new System.Windows.Documents.Run(" · " + activity);
+            detail.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, UpdateController.ActivityFailed ? "DangerText" : "TextFg");
+            UpdateBannerText.Inlines.Add(detail);
+            UpdateBannerText.ToolTip = activity;
+        }
+        else
+        {
+            UpdateBannerText.Inlines.Add(new System.Windows.Documents.Run($"Yeni sürüm var: {offer.Version}") { FontWeight = FontWeights.SemiBold });
+            var installed = new System.Windows.Documents.Run($" · yüklü sürüm {UpdateController.CurrentVersion}");
+            installed.SetResourceReference(System.Windows.Documents.TextElement.ForegroundProperty, "TextSecondary");
+            UpdateBannerText.Inlines.Add(installed);
+            UpdateBannerText.ToolTip = Core.Updates.UpdateText.FirstLine(offer.Notes);
+        }
+        AutomationPropertiesName(UpdateBannerText, string.Concat(UpdateBannerText.Inlines.OfType<System.Windows.Documents.Run>().Select(r => r.Text)));
+
+        UpdateLaterButton.Visibility = downloading ? Visibility.Collapsed : Visibility.Visible;
+        UpdateBannerProgress.Visibility = downloading ? Visibility.Visible : Visibility.Collapsed;
+        if (downloading)
+        {
+            var percent = Core.Updates.UpdateText.Percent(UpdateController.Progress.Received, UpdateController.Progress.Total);
+            UpdateBannerProgress.ColumnDefinitions[0].Width = new GridLength(percent, GridUnitType.Star);
+            UpdateBannerProgress.ColumnDefinitions[1].Width = new GridLength(100 - percent, GridUnitType.Star);
+        }
+        UpdateNowButton.Content = downloading ? "İptal" : "Güncelle";
+        UpdateNowButton.SetResourceReference(StyleProperty, downloading ? "SettingsButton" : "SettingsAccentButton");
+        AutomationPropertiesName(UpdateNowButton, downloading ? "İndirmeyi iptal et" : "Güncelle");
+        UpdateNowButton.IsEnabled = phase is UpdatePhase.Available or UpdatePhase.Downloading;
+        UpdateLaterButton.IsEnabled = phase is UpdatePhase.Available or UpdatePhase.Failed or UpdatePhase.Checking;
+    }
+
+    void UpdateNotes_Click(object sender, RoutedEventArgs e)
+    {
+        if (UpdateController.Offer is { } offer && UpdateDialog.ShowNotes(this, offer) && !UpdateController.IsBusy)
+        {
+            InstallUpdate();
+        }
+    }
+
+    void UpdateLater_Click(object sender, RoutedEventArgs e) => UpdateController.Dismiss();
+
+    void UpdateNow_Click(object sender, RoutedEventArgs e)
+    {
+        if (UpdateController.Phase == UpdatePhase.Downloading)
+        {
+            UpdateController.CancelDownload();
+        }
+        else
+        {
+            InstallUpdate();
+        }
+    }
+
+    /// <summary>Güncelle (banner, "Neler yeni", Settings): download + verify + elevated installer, then the normal close.</summary>
+    public async void InstallUpdate()
+    {
+        if (await UpdateController.InstallAsync())
+        {
+            Close(); // OnClosing: streams released, recordings finalized, SDK cleaned up, so Inno Setup can replace the files
+        }
+    }
+
+    /// <summary>
+    /// Mandatory update: a blocking dialog (Güncelle / Çıkış) — the app cannot be used without updating. Postponed while a
+    /// recorder firmware upgrade runs (closing would cut it off). Either way the app closes when the dialog ends.
+    /// </summary>
+    void ShowMandatoryUpdate()
+    {
+        if (_mandatoryOpen || _closeStarted || UpdateController.Kind != Core.Updates.UpdateKind.Mandatory)
+        {
+            return;
+        }
+        if (RecorderSettingsView.FirmwareBusy)
+        {
+            if (_mandatoryRetry is null)
+            {
+                _mandatoryRetry = new DispatcherTimer { Interval = TimeSpan.FromSeconds(30) };
+                _mandatoryRetry.Tick += (_, _) =>
+                {
+                    _mandatoryRetry!.Stop();
+                    _mandatoryRetry = null;
+                    ShowMandatoryUpdate();
+                };
+                _mandatoryRetry.Start();
+            }
+            return;
+        }
+        _mandatoryOpen = true;
+        Dispatcher.BeginInvoke(() =>
+        {
+            if (WindowState == WindowState.Minimized)
+            {
+                WindowState = WindowState.Normal;
+            }
+            UpdateDialog.ShowMandatory(this); // true: installer started; false: Çıkış
+            Close();
+        });
     }
 
     // ---- Sidebar: device rows + camera list ----
@@ -649,6 +776,7 @@ public partial class MainWindow : Window
             WindowState = _stateBeforeFullScreen;
             DarkTitleBar.Reapply(this); // the theme may have changed while the caption was hidden
         }
+        UpdateBannerState(); // hidden in full screen, like the top bar
     }
 
     void Window_KeyDown(object sender, KeyEventArgs e)

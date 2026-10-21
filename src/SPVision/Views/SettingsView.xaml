@@ -273,6 +273,66 @@
                             </Border>
                         </StackPanel>
                     </Border>
+
+                    <!-- Güncellemeler (in-app updater, Updates/UpdateController). Row 1: installed version + last check | Denetle.
+                         Row 2: status + detail | [Neler yeni] [Güncelle] (while downloading: [Neler yeni] [progress 120] [İptal]);
+                         same 120×30 buttons with 8 px gaps, right edges aligned with the rows above. -->
+                    <Border Style="{StaticResource Card}" Margin="0,16,0,0" AutomationProperties.AutomationId="UpdatesCard">
+                        <StackPanel>
+                            <Border Padding="16,14" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+                                <TextBlock Text="Güncellemeler" Style="{StaticResource CardTitle}" />
+                            </Border>
+                            <Border Padding="16,10" MinHeight="60" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="240" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                        <TextBlock x:Name="UpdateVersionText" Style="{StaticResource RowLabel}" AutomationProperties.AutomationId="UpdateVersionText" />
+                                        <TextBlock x:Name="UpdateLastCheckText" Style="{StaticResource RowHelp}" AutomationProperties.AutomationId="UpdateLastCheckText" />
+                                    </StackPanel>
+                                    <Button x:Name="UpdateCheckButton" Grid.Column="1" Style="{StaticResource SettingsButton}" HorizontalAlignment="Right"
+                                            VerticalAlignment="Center" Click="UpdateCheck_Click" ToolTip="Yeni SPVision sürümü olup olmadığını şimdi denetler; hiçbir şey indirmez"
+                                            AutomationProperties.Name="Güncellemeleri denetle">
+                                        <StackPanel Orientation="Horizontal">
+                                            <c:GlyphIcon Data="{StaticResource IconRefresh}" Size="13" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                            <TextBlock Text="Denetle" VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </Button>
+                                </Grid>
+                            </Border>
+                            <Border Padding="16,10" MinHeight="60">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                        <TextBlock x:Name="UpdateStatusText" Style="{StaticResource RowLabel}" AutomationProperties.AutomationId="UpdateStatusText"
+                                                   AutomationProperties.LiveSetting="Polite" />
+                                        <TextBlock x:Name="UpdateDetailText" Style="{StaticResource RowHelp}" AutomationProperties.AutomationId="UpdateDetailText" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                                        <Button x:Name="UpdateNotesButton" Content="Neler yeni" Style="{StaticResource SettingsButton}" Click="UpdateNotes_Click"
+                                                ToolTip="Bu sürümdeki değişiklikleri göster" AutomationProperties.Name="Neler yeni" />
+                                        <Grid x:Name="UpdateProgress" Width="120" Height="6" Margin="8,0,0,0" Visibility="Collapsed"
+                                              AutomationProperties.AutomationId="UpdateProgress" AutomationProperties.Name="İndirme ilerlemesi">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="0*" />
+                                                <ColumnDefinition Width="100*" />
+                                            </Grid.ColumnDefinitions>
+                                            <Border Grid.ColumnSpan="2" CornerRadius="3" Background="{DynamicResource Divider}" />
+                                            <Border CornerRadius="3" Background="{DynamicResource Accent}" />
+                                        </Grid>
+                                        <Button x:Name="UpdateInstallButton" Content="Güncelle" Style="{StaticResource SettingsAccentButton}" Margin="8,0,0,0"
+                                                Click="UpdateInstall_Click" ToolTip="İndir, doğrula ve kur (yönetici izni istenir; SPVision yeniden açılır)"
+                                                AutomationProperties.Name="Güncelle" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
 

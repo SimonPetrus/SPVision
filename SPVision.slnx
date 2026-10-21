@@ -3,6 +3,9 @@
     <Project Path="src/SPVision.Core/SPVision.Core.csproj" />
     <Project Path="src/SPVision/SPVision.csproj" />
   </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/release/UpdateSigner/UpdateSigner.csproj" />
+  </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/SPVision.Core.Tests/SPVision.Core.Tests.csproj" />
   </Folder>

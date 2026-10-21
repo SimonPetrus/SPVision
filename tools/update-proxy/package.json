@@ -1,0 +1,10 @@
+{
+  "name": "spvision-update",
+  "private": true,
+  "type": "module",
+  "description": "SPVision güncelleme vekili (Cloudflare Worker): özel GitHub sürümlerinden manifest, imza ve kurulum dosyasını verir.",
+  "scripts": {
+    "test": "node --test",
+    "deploy": "npx wrangler deploy"
+  }
+}

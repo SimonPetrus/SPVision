@@ -1,0 +1,9 @@
+# SPVision güncelleme vekili — Cloudflare Worker. Kurulum: README.md.
+# Hesap kimliği BİLEREK yok (wrangler login ile seçilir). Belirteç burada DEĞİL: `npx wrangler secret put GITHUB_TOKEN`.
+name = "spvision-update"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+workers_dev = true
+
+[vars]
+GITHUB_REPO = "SimonPetrus/SPVision"

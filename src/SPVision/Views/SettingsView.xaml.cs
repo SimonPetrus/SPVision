@@ -7,7 +7,9 @@ using System.Windows.Media;
 using System.Windows.Shapes;
 using SPVision.Controls;
 using SPVision.Core;
+using SPVision.Core.Updates;
 using SPVision.Hik;
+using SPVision.Updates;
 
 namespace SPVision.Views;
 
@@ -70,6 +72,8 @@ public partial class SettingsView : UserControl
             CamerasRenamed?.Invoke(device);
         };
         NavDevices.IsChecked = true;
+        UpdateController.Changed += RefreshUpdates;
+        RefreshUpdates();
     }
 
     /// <summary>Short feedback for the status bar.</summary>
@@ -566,6 +570,70 @@ public partial class SettingsView : UserControl
         finally
         {
             _loadingSwitches = false;
+        }
+        RefreshUpdates();
+    }
+
+    // ---- Güncellemeler card ----
+
+    /// <summary>Version, last check, status and the offer's buttons, from <see cref="UpdateController"/>.</summary>
+    void RefreshUpdates()
+    {
+        var phase = UpdateController.Phase;
+        var offer = UpdateController.Offer;
+        var downloading = phase == UpdatePhase.Downloading;
+        UpdateVersionText.Text = $"Yüklü sürüm: SPVision {UpdateController.CurrentVersion}";
+        UpdateLastCheckText.Text = phase == UpdatePhase.Disabled
+            ? "Bu kopyada güncelleme denetimi kapalı."
+            : UpdateText.LastCheck(UpdateController.LastCheckUtc) + " · kendiliğinden en çok 6 saatte bir denetlenir.";
+        UpdateCheckButton.IsEnabled = phase != UpdatePhase.Disabled && !UpdateController.IsBusy;
+        UpdateCheckButton.ToolTip = phase == UpdatePhase.Disabled
+            ? UpdateController.Status
+            : "Yeni SPVision sürümü olup olmadığını şimdi denetler; hiçbir şey indirmez";
+        ToolTipService.SetShowOnDisabled(UpdateCheckButton, true);
+
+        UpdateStatusText.Text = UpdateController.Status;
+        UpdateStatusText.SetResourceReference(TextBlock.ForegroundProperty,
+            phase == UpdatePhase.Failed || phase == UpdatePhase.Disabled ? "WarningText" : "TextFg");
+        UpdateDetailText.Text = UpdateController.Activity ?? (offer is null ? "" : UpdateText.FirstLine(offer.Notes));
+        UpdateDetailText.SetResourceReference(TextBlock.ForegroundProperty, UpdateController.ActivityFailed ? "DangerText" : "TextSecondary");
+        UpdateDetailText.Visibility = UpdateDetailText.Text.Length == 0 ? Visibility.Collapsed : Visibility.Visible;
+
+        var hasOffer = offer is not null && UpdateController.Kind != UpdateKind.None;
+        UpdateNotesButton.Visibility = hasOffer ? Visibility.Visible : Visibility.Collapsed;
+        UpdateInstallButton.Visibility = hasOffer ? Visibility.Visible : Visibility.Collapsed;
+        UpdateProgress.Visibility = hasOffer && downloading ? Visibility.Visible : Visibility.Collapsed;
+        if (downloading)
+        {
+            var percent = UpdateText.Percent(UpdateController.Progress.Received, UpdateController.Progress.Total);
+            UpdateProgress.ColumnDefinitions[0].Width = new GridLength(percent, GridUnitType.Star);
+            UpdateProgress.ColumnDefinitions[1].Width = new GridLength(100 - percent, GridUnitType.Star);
+        }
+        UpdateInstallButton.Content = downloading ? "İptal" : "Güncelle";
+        UpdateInstallButton.SetResourceReference(StyleProperty, downloading ? "SettingsButton" : "SettingsAccentButton");
+        System.Windows.Automation.AutomationProperties.SetName(UpdateInstallButton, downloading ? "İndirmeyi iptal et" : "Güncelle");
+        UpdateInstallButton.IsEnabled = phase is UpdatePhase.Available or UpdatePhase.Downloading;
+    }
+
+    async void UpdateCheck_Click(object sender, RoutedEventArgs e) => await UpdateController.CheckNowAsync();
+
+    void UpdateNotes_Click(object sender, RoutedEventArgs e)
+    {
+        if (UpdateController.Offer is { } offer && UpdateDialog.ShowNotes(Window.GetWindow(this), offer) && !UpdateController.IsBusy)
+        {
+            (Window.GetWindow(this) as MainWindow)?.InstallUpdate();
+        }
+    }
+
+    void UpdateInstall_Click(object sender, RoutedEventArgs e)
+    {
+        if (UpdateController.Phase == UpdatePhase.Downloading)
+        {
+            UpdateController.CancelDownload();
+        }
+        else
+        {
+            (Window.GetWindow(this) as MainWindow)?.InstallUpdate();
         }
     }
 

@@ -1,0 +1,183 @@
+# SPVision sürümü — CI yolu (İSTEĞE BAĞLI, varsayılan KAPALI).
+#
+# Önerilen yol YERELDİR: tools/release/release.ps1 (CLAUDE_REHBERI.md › "Uygulama güncelleme"). Lisanslı Hikvision SDK'sı
+# ve imza anahtarı o zaman sahibinin bilgisayarından hiç çıkmaz. Bu iş akışı yalnız depo DEĞİŞKENİ
+# SPVISION_CI_RELEASE = true ise çalışır (Settings › Secrets and variables › Actions › Variables); değilken etiket
+# gönderilince işler "skipped" olur ve yerel betikle çakışmaz (ikisini birden açmayın: aynı etiketi iki kez yayınlamaya çalışır).
+#
+# CI'ı açmadan önce bir kez:
+#   1. Secret UPDATE_SIGNING_KEY = gizli imza anahtarı (PEM): tools/release/new-signing-key.ps1 -SetGitHubSecret
+#   2. Lisanslı SDK depoda yok; CI onu bu ÖZEL deponun "deps-sdk" ön sürümünden (pre-release) indirir:
+#        Compress-Archive -Path sdk\EN-HCNetSDKV6.1.11.40_build20260922_win64\lib\* -DestinationPath deps-hiksdk.zip
+#        gh release create deps-sdk deps-hiksdk.zip --prerelease --title "CI bağımlılığı (yayın değil)" --notes "Lisanslı SDK, paylaşmayın."
+#      Bu, SDK DLL'lerini GitHub'a (özel depo) yüklemek demektir — lisans kararı sahibinindir; istemiyorsanız yerel yolu kullanın.
+#      Ön sürümler "en son sürüm" sayılmaz; güncelleme vekili (tools/update-proxy) bu dosyayı asla vermez.
+#   3. FFmpeg herkese açık LGPL derlemesidir; CI tools/get-ffmpeg.ps1 ile indirir.
+#
+# Yetkiler en dar: derleme ve imzalama işleri yalnız OKUR; sürüme yazma yetkisi yalnız "publish" işindedir ve o iş depo kodunu
+# hiç çalıştırmaz (checkout yok). İmza anahtarı yalnız "sign" işine verilir (yazma yetkisi olmayan iş).
+name: Sürüm yayınla (CI)
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Yayınlanacak etiket (ör. v1.2.0; etiket GitHub'da olmalı)"
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: spvision-release
+  cancel-in-progress: false
+
+env:
+  TAG: ${{ github.event_name == 'workflow_dispatch' && inputs.tag || github.ref_name }}
+
+jobs:
+  build:
+    if: vars.SPVISION_CI_RELEASE == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Sürüm denetimi (etiket = csproj <Version>, sürüm notları var)
+        shell: pwsh
+        run: |
+          [xml]$project = Get-Content -Raw src/SPVision/SPVision.csproj
+          $version = @($project.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
+          if ("v$version" -ne $env:TAG) { Write-Error "Etiket $env:TAG, SPVision.csproj sürümü $version: eşleşmiyor."; exit 1 }
+          if (-not (Test-Path "release-notes/$env:TAG.md")) { Write-Error "release-notes/$env:TAG.md yok."; exit 1 }
+          if ((Get-Content -Raw src/SPVision.Core/Updates/UpdateTrust.cs) -notmatch '-----BEGIN PUBLIC KEY-----') { Write-Error "Uygulamada açık anahtar yok (new-signing-key.ps1)."; exit 1 }
+          if ((Get-Content -Raw src/SPVision/Updates/UpdateService.cs) -match 'UpdateProxyBaseUrl = "[^"]*<') { Write-Error "UpdateProxyBaseUrl yer tutucu."; exit 1 }
+          "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Bağımlılıklar (Hikvision SDK — özel ön sürüm "deps-sdk"; FFmpeg — herkese açık)
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $lib = "sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/lib"
+          New-Item -ItemType Directory -Force $lib | Out-Null
+          gh release download deps-sdk --repo $env:GITHUB_REPOSITORY --pattern deps-hiksdk.zip --dir $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { Write-Error "deps-sdk ön sürümünde deps-hiksdk.zip yok (bu dosyanın başındaki 2. adım)."; exit 1 }
+          Expand-Archive "$env:RUNNER_TEMP/deps-hiksdk.zip" -DestinationPath $lib -Force
+          Remove-Item "$env:RUNNER_TEMP/deps-hiksdk.zip"
+          if (-not (Test-Path "$lib/HCNetSDK.dll")) { Write-Error "deps-hiksdk.zip içinde HCNetSDK.dll yok."; exit 1 }
+          ./tools/get-ffmpeg.ps1
+
+      - name: Testler
+        run: dotnet test tests/SPVision.Core.Tests/SPVision.Core.Tests.csproj -c Release --nologo
+
+      - name: dotnet publish (self-contained, win-x64)
+        run: dotnet publish src/SPVision/SPVision.csproj -c Release -r win-x64 --self-contained true -p:PublishSingleFile=false -o out/publish --nologo
+
+      - name: Yayın içeriği denetimi
+        shell: pwsh
+        run: |
+          foreach ($f in 'SPVision.exe', 'HCNetSDK.dll', 'PlayCtrl.dll', 'HCCore.dll') {
+            if (-not (Test-Path "out/publish/$f")) { Write-Error "Yayın çıktısında $f yok."; exit 1 }
+          }
+          if (-not (Get-ChildItem out/publish/HCNetSDKCom -Filter *.dll -ErrorAction SilentlyContinue)) { Write-Error "HCNetSDKCom yok."; exit 1 }
+          if (-not (Get-ChildItem out/publish/FFmpeg -Filter avcodec-*.dll -ErrorAction SilentlyContinue)) { Write-Error "FFmpeg yok."; exit 1 }
+
+      - name: Inno Setup ile kurulum dosyası
+        shell: pwsh
+        run: |
+          choco install innosetup -y --no-progress
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Qp "/DAppVersion=$env:VERSION" "/DPublishDir=$pwd\out\publish" "/DOutputDir=$pwd\out\release" installer\SPVision.iss
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer
+          path: out/release/SPVision-Kurulum-*.exe
+          retention-days: 1
+          if-no-files-found: error
+
+  sign:
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TAG }}
+          persist-credentials: false
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: installer
+          path: out
+
+      # manifest.json is signed with UPDATE_SIGNING_KEY and checked against the public key compiled into the app
+      # (src/SPVision.Core/Updates/UpdateTrust.cs); a mismatch stops here, before anything is published.
+      - name: manifest.json + imza
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${UPDATE_SIGNING_KEY}" ]; then echo "::error::UPDATE_SIGNING_KEY secret tanımlı değil — imzasız sürüm yayınlanmaz."; exit 1; fi
+          version="${TAG#v}"
+          installer="out/SPVision-Kurulum-${version}.exe"
+          signer=tools/release/UpdateSigner/UpdateSigner.csproj
+          dotnet run --project "$signer" -c Release -- manifest --installer "$installer" --notes "release-notes/${TAG}.md" --version "$version" --out out/manifest.json --notes-out out/notes.md
+          dotnet run --project "$signer" -c Release -- sign --manifest out/manifest.json --key-env UPDATE_SIGNING_KEY
+          dotnet run --project "$signer" -c Release -- verify --manifest out/manifest.json --installer "$installer"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-files
+          path: |
+            out/SPVision-Kurulum-*.exe
+            out/manifest.json
+            out/manifest.json.sig
+            out/notes.md
+          retention-days: 1
+          if-no-files-found: error
+
+  publish:
+    needs: sign
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-files
+          path: out
+
+      - name: GitHub sürümü
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          files=("out/SPVision-Kurulum-${version}.exe" out/manifest.json out/manifest.json.sig)
+          gh release create "$TAG" "${files[@]}" --repo "$GITHUB_REPOSITORY" --verify-tag --title "SPVision ${version}" --notes-file out/notes.md --latest
+          # gh can skip a file on a transient error: upload it once more, then fail loudly.
+          missing() { names=$(gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets -q '.assets[].name'); for f in "${files[@]}"; do echo "$names" | grep -qxF "$(basename "$f")" || echo "$f"; done; }
+          for f in $(missing); do gh release upload "$TAG" "$f" --repo "$GITHUB_REPOSITORY" --clobber; done
+          left=$(missing); if [ -n "$left" ]; then echo "::error::Sürümde eksik dosya: $left"; exit 1; fi
+          echo "SPVision ${version} yayınlandı."

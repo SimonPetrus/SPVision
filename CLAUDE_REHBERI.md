@@ -3,9 +3,10 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 998/998 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 1124/1124 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
 > (21.10.2026'daki düzen seçici + eş zamanlı çoklu oynatma değişikliği ile cihaz düzenleyicideki HTTPS varsayılanı / HTTP'ye düşme sorusu henüz cihazda denenmedi; bkz. §4, §5.)
 > (Canlı izlemede sayfalar — §4 "Canlı izlemede sayfalar" — da henüz cihazda denenmedi.)
+> (Uygulama içi güncelleme — §11 — kod + testlerle hazır; anahtar, Worker ve ilk sürüm sahibinin bir kerelik adımlarını bekliyor, gerçek yayınla denenmedi.)
 > (Ayarlar › Cihaz ayarları'ndan kayıt cihazına yazma — §9, 2. ve 3. aşama, SDK ile kamera adı ve Ağ › Portlar dahil — henüz cihazda denenmedi; okuma uç noktaları cihazda GET / SDK Get ile doğrulandı. 3. aşama (Bakım: yazılım güncelleme, fabrika ayarları) gerçek cihazda **hiç** çalıştırılmadı. İlk gerçek yazmayı sahibi uygulamadan yapar; Claude cihaza **hiçbir şey yazmaz**, deneme için bile.)
 >
 > **Ad değişikliği (21.10.2026):** Uygulamanın eski adı **SP-2026 Lite** idi (proje/namespace
@@ -30,18 +31,21 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
 | `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SPVision.Core.Tests/` | 998 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
+| `tests/SPVision.Core.Tests/` | 1124 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
-| `tools/` | `get-ffmpeg.ps1` vb. yardımcı betikler |
+| `tools/` | `get-ffmpeg.ps1` vb. yardımcı betikler; `tools/release/` (yayın betikleri + `UpdateSigner` aracı), `tools/update-proxy/` (güncelleme vekili, Cloudflare Worker) — §11 |
+| `installer/SPVision.iss` | Inno Setup kurulum betiği (bilgisayar geneli, `Program Files\SPVision`) — §11 |
+| `release-notes/` | Her sürümün Türkçe notları (`vX.Y.Z.md`, ön bilgide `mandatory` / `minSupportedVersion`) — §11 |
+| `.github/workflows/release.yml` | İsteğe bağlı CI yayın yolu (varsayılan kapalı) — §11 |
 
 ## 3. Derleme ve çalıştırma (Windows 11, .NET 10 SDK, x64)
 
 ```powershell
 cd SPVision
 dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 998/998 geçer
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1124/1124 geçer
 dotnet run --project src\SPVision
 ```
 
@@ -413,6 +417,7 @@ dotnet run --project src\SPVision
 | `Hik/HikPlaybackPlayer.cs` | Oynatma SDK oturumu (PlayBackByTime — SDK'ya pencere yok, tek çizici bizim PlayCtrl portu, akış `QueueAhead` ile portumuza göre — + `GetTime` = `PlayM4_GetSystemTime` + `CatchUp` gizli 4× yakalama + MP4 klip + `SyncControls` hız/duraklat) |
 | `Hik/HikFrameRecorder.cs` | Kayıt/klip: ikinci PlayCtrl portu (yazılım çözücü, pencere yok) → çözülmüş YV12 → Core `VideoRecorder` (H.264 MP4) |
 | `Hik/HikException.cs` | SDK hata kodlarının Türkçe açıklamaları (`Describe`) |
+| `Updates/UpdateService.cs`, `Updates/UpdateController.cs`, `Views/UpdateDialog.cs` | Uygulama içi güncelleme (§11): vekil adresi (`UpdateProxyBaseUrl`), indir/doğrula/başlat; uygulama geneli durum; "Neler yeni" ve zorunlu güncelleme kutusu. Ana pencerede güncelleme bandı, Ayarlar › Uygulama'da "Güncellemeler" kartı |
 
 Core tarafı: [`IsapiClient`](src/SPVision.Core/IsapiClient.cs) (Digest auth; cihaz bilgisi,
 kamera listesi, kayıt arama, anlık görüntü, şifreleme durumu + doğrulama kodu okuma),
@@ -453,6 +458,11 @@ Cihaz ayarları (§9): [`IsapiWritePolicy`](src/SPVision.Core/IsapiWritePolicy.c
 - Derleme 0 hata/0 uyarı, 41/41 test (o gün 32/32 idi; geçiş testleriyle 41). Kalan tek iş: **paketleme (yayınlama)**.
 
 ## 7. Senin (Claude'un) yapacağın iş: paketleme
+
+> **21.10.2026 güncellemesi:** Karar bilgisayar geneli **Inno Setup kurulumu** (`installer/SPVision.iss`, `Program Files\SPVision`,
+> yönetici) + kendi içinde .NET + SDK + FFmpeg DLL'leri; yayın ve uygulama içi güncelleme §11'de (`tools/release/release.ps1`).
+> Aşağıdaki maddeler (publish komutu, çıktıda olması gerekenler, el ile test) geçerliliğini korur; `release.ps1` publish çıktısını
+> bu listeye göre denetler. Paketlemenin kendisi sahibinin onayını bekliyor.
 
 Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
 
@@ -752,3 +762,162 @@ yasağı nedeniyle denenmedi; bulunursa `CameraFirmwareCheck.Evaluate(…, lates
 - Etkileşimli her denetimin anlamlı `AutomationProperties.Name`'i olmalı; ana denetimlerde `x:Name` (= AutomationId) bulunur,
   kodda üretilenlerde `AutomationProperties.AutomationId` verilir (`Day21`, `Layout16`, `RecorderTabMotion`). Takvim günü adı
   "21 Ekim 2026[, kayıt var]", yardım metni tık / çift tık / Enter'ı anlatır.
+
+## 11. Uygulama güncelleme (uygulama içi; 21.10.2026 — kod + testler hazır, gerçek yayınla HENÜZ denenmedi)
+
+> **Durum:** Hiçbir anahtar, belirteç, Worker, GitHub secret'ı ya da sürüm **oluşturulmadı**; kurulum paketi derlenmedi
+> (paketleme sahibinin onayını bekliyor). Uygulamada iki yer tutucu var ve ikisi de durdukça güncelleyici **kapalıdır**:
+> açık anahtar (`UpdateTrust.PublicKeyPem` → "Güncelleme imza anahtarı ayarlanmamış") ve vekil adresi
+> (`UpdateService.UpdateProxyBaseUrl` → "Güncelleme sunucusu ayarlanmamış"). Sahibinin bir kerelik adımları aşağıda.
+> Claude bu adımların hiçbirini kendisi yapmaz (anahtar/belirteç üretmez, `wrangler`/`gh release`/`gh secret` çalıştırmaz).
+
+### Mimari
+
+```
+SPVision (C:\Program Files\SPVision)        Cloudflare Worker "spvision-update"           GitHub (ÖZEL depo)
+  UpdateService --https GET-->  /manifest.json      -+  GITHUB_TOKEN (ince ayarlı PAT:       releases/latest
+                                /manifest.json.sig  -+- yalnız SimonPetrus/SPVision,  ----> (taslak/ön sürüm değil)
+                                /download --302------+  Contents: Read-only), ~60 sn önbellek  assets/{id} -> 302 CDN
+        ^   doğrular: ECDSA P-256 imzası (UpdateTrust açık anahtarı) + SHA-256 + boyut
+        +-- indirir: /download -> GitHub'ın kısa ömürlü imzalı CDN adresi
+```
+
+- **Depo özel kalır.** Uygulamada hiçbir GitHub kimlik bilgisi yoktur; belirteç yalnız Worker'da (`wrangler secret`).
+  Worker'ın adresini bilen herkes **kurulum dosyasını** indirebilir (kaynak kodu değil) — devAU'daki kurulum dağıtımıyla aynı karar.
+- **Güven uygulamadadır, Worker'da değil:** `manifest.json` her sürümde gizli anahtarla imzalanır (`manifest.json.sig`,
+  IEEE P1363 r‖s 64 bayt, base64). Uygulama imzayı **ham baytlar** üzerinde, derlenmiş açık anahtarla doğrular; imza tutmazsa
+  manifest'in hiçbir alanı kullanılmaz. Kurulum dosyası imzalı manifest'teki **boyut + SHA-256** ile denetlenir. Worker, GitHub
+  ya da ağ ele geçirilse bile sahte program kurdurulamaz; en fazla güncelleme durdurulabilir (eski imzalı bir manifest'i vermek
+  sürüm düşürmez: `Decide` yalnız daha yeni sürümü önerir).
+- **Uç noktalar** (`tools/update-proxy/src/index.js`): `GET /manifest.json`, `GET /manifest.json.sig` (en son sürümün dosyaları,
+  64 KB / 512 B sınırı), `GET /download` (manifest'teki `asset` adına göre `releases/assets/{id}`'ye `Accept: application/octet-stream`,
+  `redirect: "manual"` → GitHub'ın 302 `Location`'ı istemciye 302 olarak; yönlendirme yoksa akıtılır). Başka her yol ve GET dışı her
+  yöntem 404. Hata gövdeleri kısa ("Bulunamadı", "Yapılandırılmamış", "Güncelleme sunucusu hatası"); belirteç hiçbir yanıta girmez,
+  CDN'e belirteç gönderilmez; `User-Agent` her istekte. Önbellek: isolate belleği 60 sn (+ özel alan adında Cache API;
+  `*.workers.dev`'de Cache API etkisiz). CORS yok. Testler: `cd tools\update-proxy; npm test` (13 test, `fetch` taklidi, wrangler gerekmez).
+
+### Dosyalar
+
+| Yol | Ne |
+|---|---|
+| `src/SPVision.Core/Updates/AppVersion.cs` | `X.Y.Z` sürümü; sayısal karşılaştırma (1.2.10 > 1.2.9); katı (manifest) ve esnek ayrıştırma (`v` öneki, `-pre`, `+commit` yok sayılır) |
+| `src/SPVision.Core/Updates/UpdateManifest.cs` | `UpdateManifest.Parse` (katı: ≤ 64 KB, tek JSON nesnesi, her alan bir kez ve doğru türde, `asset` düz `.exe` adı, 64 küçük hex, 0 < boyut ≤ 1 GiB, notlar ≤ 8000; bilinmeyen alanlar yok sayılır) + `ToJson` (sabit sıra, ASCII); `ReleaseNotes.Parse` (ön bilgi); `UpdateFile` (SHA-256 + boyut, sabit zamanlı karşılaştırma) |
+| `src/SPVision.Core/Updates/UpdateSignature.cs` | `Verify(manifest, sig, açıkAnahtarPem)` → `Valid` / `Invalid` / `KeyNotConfigured` (yalnız P-256 `PUBLIC KEY`; yer tutucu, P-384, RSA, gizli anahtar PEM'i reddedilir); `Sign` (yalnız araç kullanır) |
+| `src/SPVision.Core/Updates/UpdateTrust.cs` | Uygulamanın açık anahtarı, `// BEGIN/END UPDATE PUBLIC KEY` işaretleri arasında (**elle düzenlemeyin**; `new-signing-key.ps1` yazar). `WithPublicKey` = bu bloğu yeniden yazan saf işlev |
+| `src/SPVision.Core/Updates/UpdatePolicy.cs` | `Decide` (yok / isteğe bağlı / zorunlu), `Resolve` (taze denetim + hatırlanan zorunlu), `IsCheckDue` (6 sa), `UpdateEndpoint` (yalnız https), `UpdateText` (Türkçe metinler) |
+| `src/SPVision/Updates/UpdateService.cs` | Ağ + dosya: `UpdateProxyBaseUrl` (**TODO: Worker adresi**), HttpClient (otomatik yönlendirme kapalı — en çok 3 https yönlendirmesi elle; çerez/kimlik yok; sertifika doğrulaması normal; bağlantı 15 sn, küçük istekler 30 sn, indirmede 60 sn veri gelmezse iptal), indir → doğrula → `VerifiedInstaller` → `Launch` |
+| `src/SPVision/Updates/UpdateController.cs` | Uygulama geneli durum (UI iş parçacığı): zamanlayıcılar, denetim, "Sonra", indirme/iptal, kurulum başlatma; `Changed` / `MandatoryRequired` / `Message` olayları |
+| `src/SPVision/Views/UpdateDialog.cs` | "Neler yeni" (Kapat / Güncelle) ve **zorunlu** iletişim kutusu (Çıkış / Güncelle, ilerleme çubuğu); 520 px, `DialogChrome` |
+| `MainWindow.xaml(.cs)` | Üst çubuğun altında **güncelleme bandı** (41 px = 40 + 1 px alt çizgi, 30 px düğmelerin üstünde/altında 5'er px; sağda üç 120×30 yuva, 8 px ara: Neler yeni · Sonra/ilerleme · Güncelle/İptal; tam ekranda gizli; yeni fırça `InfoSoftBg` Light/Dark) |
+| `Views/SettingsView.xaml(.cs)` | Uygulama ayarları › **Güncellemeler** kartı: "Yüklü sürüm: SPVision X" + "Son denetim …" · **Denetle** (120×30, `IconRefresh`; erişilebilir ad "Güncellemeleri denetle" — tam metin 120 px'e sığmaz, Bakım'daki "Denetle" düğmeleriyle aynı); durum satırı + ayrıntı · Neler yeni / Güncelle (indirirken ilerleme 120 px + İptal) |
+| `installer/SPVision.iss` | Inno Setup 6: `{autopf}\SPVision`, sabit `AppId` (**değiştirmeyin**), `PrivilegesRequired=admin`, `CloseApplications=yes`, `RestartApplications=no`, Türkçe, masaüstü simgesi isteğe bağlı, kaldırmada HKCU Run değeri silinir; `Permissions: users-modify` YOK |
+| `tools/release/UpdateSigner/` | .NET aracı (`Updates/*.cs`'i bağlantıyla derler → biçim ve açık anahtar uygulamayla birebir; `SPVision.slnx`'te): `keygen`, `manifest`, `sign`, `verify` |
+| `tools/release/new-signing-key.ps1` | Bir kerelik anahtar çifti (aşağıda). **Claude çalıştırmaz** |
+| `tools/release/release.ps1` | Yerel yayın (önerilen yol, aşağıda) |
+| `.github/workflows/release.yml` | İsteğe bağlı CI yolu (varsayılan kapalı; aşağıda) |
+| `release-notes/vX.Y.Z.md` | Her sürümün Türkçe notları + ön bilgi (`v1.0.0.md` hazır) |
+| `tools/update-proxy/` | Worker: `src/index.js`, `wrangler.toml` (hesap kimliği yok), `README.md` (adım adım), `test/` |
+
+Ayar: `AppSettings.Update` (`UpdateState`: `LastCheckUtc`, son doğrulanmış manifest + imza, hatırlanan zorunlu manifest + imza;
+sır yok, her kullanımda imza yeniden doğrulanır — settings.json'u düzenlemek güncelleme zorlayamaz). Sürüm:
+`SPVision.csproj` `<Version>` (tek kaynak, şimdi 1.0.0; derlemede `AssemblyInformationalVersion` = `1.0.0+commit`, `+` sonrası atılır).
+
+### Uygulamadaki davranış
+
+- **Açılış:** `MainWindow.Loaded` → `UpdateController.Start()`: 1 günden eski indirme klasörleri silinir; hatırlanan sonuç hemen
+  uygulanır (ağ yok); **15 sn sonra** otomatik denetim, sonra saatte bir — ama başarılı denetimden sonra **en çok 6 saatte bir**
+  (`IsCheckDue`; saat geri alınmışsa denetlenir). Ayarlar'daki **Denetle** her zaman denetler.
+- **İsteğe bağlı güncelleme:** bant "**Yeni sürüm var: X.Y.Z** · yüklü sürüm A.B.C" + Neler yeni / Sonra / Güncelle. **Sonra** o
+  sürümü yalnız bu çalışma için gizler (bellekte; yeniden açılınca bant yine çıkar). Güncelle'de indirme arka planda sürer (bantta
+  ve kartta ilerleme + İptal), kameralar çalışmaya devam eder.
+- **Zorunlu güncelleme** (`mandatory: true` ya da yüklü sürüm < `minSupportedVersion`): engelleyen iletişim kutusu "Bu güncelleme
+  zorunlu" + notlar + **Çıkış / Güncelle**; pencereyi kapatmak = Çıkış; her iki sonuçta da uygulama normal kapanış yoluyla kapanır.
+  Kayıt cihazı yazılım güncellemesi sürerken (`FirmwareBusy`) kutu 30 sn'de bir ertelenir; güncelleme de o sürerken başlatılmaz.
+- **Kullanıcı Güncelle'ye basmadan hiçbir şey kurulmaz** (zorunluda da; zorunlu yalnız kullanımı engeller).
+- **Fail-open:** denetim başarısızsa (çevrimdışı, Worker kapalı) uygulama engellenmez — **ama** daha önce doğrulanmış bir zorunlu
+  manifest hatırlanıyorsa, o sürüm kurulana kadar zorunluluk sürer (sonraki sürüm isteğe bağlı olsa da; kurulan hedef bilinen en
+  yeni sürümdür).
+- **İndirme ve kurulum:** `/download` → `%TEMP%\SPVision-Update\<rastgele 24 hex>\<asset>` (`CreateNew`, en çok manifest boyutu
+  kadar) → yazma tutamacı kapatılır, dosya **salt okunur + `FileShare.Read`** ile yeniden açılır (kimse yazamaz/silemez/yeniden
+  adlandıramaz), boyut + SHA-256 bu tutamaçla denetlenir ve tutamaç **kurulum süreci başlayana kadar** açık kalır (doğrulama ile
+  yükseltilmiş başlatma arasında dosya değiştirilemez). Başlatma: `UseShellExecute=true`, `Verb="runas"`, `/VERYSILENT
+  /SUPPRESSMSGBOXES /NORESTART /CLOSEAPPLICATIONS /RELAUNCH=1 /LOG="…\kurulum.log"`. UAC'de "Hayır" (Win32 1223) → "Güncelleme
+  iptal edildi", uygulama sürer, doğrulanmış dosya bir sonraki Güncelle için açık tutulur. Başlarsa → `MainWindow.Close()` →
+  §8 "Kapanış" yolu (akışlar bırakılır, MP4'ler tamamlanır, SDK temizlenir, bekçi 8 + 3 sn).
+- **Inno tarafı:** sessiz + `/RELAUNCH=1` iken `PrepareToInstall` `SPVision.exe` serbest kalana kadar en çok 20 sn bekler (sonra
+  Restart Manager). Kurulum bitince uygulama **yönetici olmadan** yeniden açılır: Setup zaten yükseltilmiş başlatıldığı için
+  `runasoriginaluser` işe yaramaz (Inno belgesi), bu yüzden `{win}\explorer.exe "{app}\SPVision.exe"` (`skipifnotsilent`,
+  `Check: RelaunchRequested`) — açma işi kullanıcının mevcut (yönetici olmayan) kabuğuna devredilir. Etkileşimli kurulumda bitiş
+  sayfasındaki "SPVision'u başlat" kutusu (`postinstall skipifsilent`). Kurulum günlüğü indirme klasöründe 1 gün kalır.
+  **`.iss` henüz ISCC ile derlenmedi** (bu makinede Inno Setup yok, paketleme onaylanmadı): ilk `release.ps1 -DryRun`'da bir
+  derleme hatası çıkarsa (özellikle `[Code]`) orada düzeltilir.
+
+### Sahibinin bir kerelik adımları (sırayla)
+
+1. **Cloudflare + Worker + GitHub belirteci:** `tools/update-proxy/README.md` adım 1–5: ince ayarlı PAT (**yalnız**
+   `SimonPetrus/SPVision`, **Repository permissions › Contents: Read-only**, başka izin yok, süre 1 yıl), `npx wrangler login`,
+   `npx wrangler deploy` (adresi not edin), `npx wrangler secret put GITHUB_TOKEN`, `curl.exe -i <adres>/manifest.json` → 404.
+2. **İmza anahtarı:** `powershell -ExecutionPolicy Bypass -File tools\release\new-signing-key.ps1` → gizli anahtar
+   `%USERPROFILE%\SPVision-guncelleme-imza-anahtari.pem` (yalnız sizin okuyabileceğiniz izinlerle; depo içine yazmayı ve var olan
+   dosyanın üzerine yazmayı reddeder), açık anahtar `UpdateTrust.cs`'e. **Gizli anahtarı yedekleyin** (kaybolursa kurulu kopyalar bir
+   daha uygulama içinden güncellenemez). CI kullanılacaksa `-SetGitHubSecret` (secret `UPDATE_SIGNING_KEY`).
+3. **Adres:** `src\SPVision\Updates\UpdateService.cs` → `UpdateProxyBaseUrl = "https://spvision-update.<alt-alan>.workers.dev"`.
+4. **Inno Setup 6:** `winget install JRSoftware.InnoSetup` (ya da jrsoftware.org).
+5. Commit + push (`UpdateTrust.cs`, `UpdateService.cs`).
+6. **İlk sürüm** (aşağıdaki gibi; `release-notes\v1.0.0.md` hazır). İlk kurulum her bilgisayarda **elle** yapılır (GitHub sürüm
+   sayfasından ya da `<Worker adresi>/download`'dan indirilen `SPVision-Kurulum-1.0.0.exe`); sonraki sürümler uygulamanın içinden
+   gelir. Eski "klasörden çalıştırılan" kopyalar kendini güncelleyemez (anahtarı/adresi yoktu).
+
+### Sürüm yayınlama (her sürüm)
+
+1. `src\SPVision\SPVision.csproj` → `<Version>` artırın (ör. `1.1.0`; her zaman öncekinden büyük).
+2. `release-notes\v1.1.0.md` yazın:
+   ```
+   ---
+   mandatory: false
+   minSupportedVersion: 1.0.0
+   ---
+   - Kullanıcının göreceği Türkçe notlar (düz metin, en çok 8000 karakter).
+   ```
+   `mandatory` zorunlu alandır (`true`/`false`); `minSupportedVersion` isteğe bağlı (yoksa 0.0.0 = hiçbir sürüm zorlanmaz). Başka
+   alan, yinelenen alan ya da yazım hatası yayını durdurur.
+3. Commit + `git push`.
+4. Deneme: `powershell -ExecutionPolicy Bypass -File tools\release\release.ps1 -DryRun` (her şeyi yapar, yüklemez; çıktı
+   `artifacts\release\1.1.0\`). İsterseniz bu kurulum dosyasını bir test bilgisayarında elle deneyin.
+5. Yayın: aynı komut `-DryRun` olmadan → denetimler (temiz ağaç, commit GitHub'da, etiket/sürüm yok, anahtar eşleşiyor, adres yer
+   tutucu değil, SDK + FFmpeg DLL'leri yayın çıktısında, exe sürümü doğru) → "evet" onayı → `gh release create v1.1.0` (kurulum +
+   `manifest.json` + `manifest.json.sig`, `--latest`; eksik dosya bir kez yeniden yüklenir).
+6. Kontrol: `curl.exe <Worker>/manifest.json` yeni sürümü göstermeli (≤ 60 sn); bir bilgisayarda Ayarlar › Güncellemeler › Denetle.
+   Geri çekmek: GitHub'da sürümü silmek ya da taslağa almak yeter (Worker bir öncekini verir; o arada kuranlar yeni sürümde kalır).
+
+### Neden yerel yayın (CI değil) varsayılan
+
+Lisanslı Hikvision SDK'sı (ve FFmpeg) depoda yok; §7'ye göre SDK "repoya/internete yüklenmez" (paketin içinde dağıtılması hariç).
+Yerel betik SDK'yı ve **gizli imza anahtarını bilgisayardan hiç çıkarmaz**, CI secret'ı gerekmez, Inno Setup kurulu makinede
+çalışır. `.github/workflows/release.yml` yine de hazırdır ama **depo değişkeni `SPVISION_CI_RELEASE=true` olmadan hiçbir iş
+çalışmaz** (etiket gönderilince işler "skipped"). Açılırsa: SDK `deps-sdk` adlı **ön sürümdeki** `deps-hiksdk.zip`'ten indirilir
+(SDK'nın özel GitHub'a yüklenmesi = sahibinin lisans kararı), FFmpeg `get-ffmpeg.ps1` ile; işler en dar yetkiyle: `build`
+(Windows, okur: sürüm denetimi, test, publish, Inno — choco ile), `sign` (Ubuntu, okur; `UPDATE_SIGNING_KEY`'i yalnız bu iş görür,
+uygulamanın açık anahtarıyla doğrular), `publish` (Ubuntu, `contents: write`, depo kodu çalıştırmaz, `gh release create
+--verify-tag`). İkisini birden kullanmayın (aynı etiketi iki kez yayınlamaya çalışır).
+
+### Anahtar değiştirme (yalnız gerekirse — ör. anahtar sızdıysa)
+
+Kurulu kopyalar yalnız **eski** açık anahtarı tanır. Sırayla: (1) `new-signing-key.ps1 -Force -OutFile <YENİ dosya>` (eski dosyanın
+üzerine asla yazmaz; eskisini saklayın) → `UpdateTrust.cs` yeni açık anahtarı alır. (2) Bu değişiklikle **bir** sürüm yayınlayın,
+**eski** anahtarla imzalayarak: `release.ps1 -SigningKey <ESKİ.pem> -KeyRotation` (araç bu tek sürümde "uygulamadaki anahtarla
+eşleşme" şartını bilerek atlar ve imzayı eski anahtarla doğrular). (3) Kopyalar bu sürüme güncellenince sonraki sürümler yeni
+anahtarla, bayraksız. Sızıntıda değişim sürümünü `mandatory: true` yapın. Eski anahtar **kaybolduysa** uygulama içi yol yoktur: her
+bilgisayara yeni kurulum elle.
+
+### Testler
+
+`UpdateTests` (121 durum): sürüm sırası ve ayrıştırma (1.2.10 > 1.2.9, ön sürüm yok sayılır, katı biçim), manifest (geçerli, her eksik
+alan, yanlış tür/değer, yol içeren/uzantısı yanlış dosya adı, büyük harf hex, boyut sınırları, yinelenen alan, yorum/sondaki virgül,
+64 KB'tan büyük, derin iç içe, bilinmeyen alan, yaz-oku), imza (geçerli, değiştirilmiş manifest, yanlış anahtar, yer tutucu / bozuk /
+P-384 / RSA / gizli anahtar, DER biçimi, bozuk/uzun/BOM'lu imza dosyası, boşluk toleransı), `UpdateTrust.WithPublicKey` (gerçek
+`UpdateTrust.cs` üzerinde yalnız işaretli blok değişir, iki kez değiştirilebilir, işaretsiz/ters/gizli anahtar reddi), karar (aynı/eski
+sürüm, isteğe bağlı, zorunlu bayrak, `minSupportedVersion`, başarısız denetim engellemez, hatırlanan zorunlu: çevrimdışı, sonraki isteğe
+bağlı sürüm, eski manifest, kurulunca biter), 6 sa kuralı, https/yer tutucu adres, SHA-256/boyut, sürüm notu ön bilgisi, metinler,
+ayarlarda saklama. Worker: `tools/update-proxy/test` (13, `npm test`). Uygulama elle denenmedi (güncelleyici yer tutucular yüzünden
+kapalı; Ayarlar kartı "Güncelleme imza anahtarı ayarlanmamış" gösterir).
