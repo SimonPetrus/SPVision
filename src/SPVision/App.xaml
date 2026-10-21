@@ -4,9 +4,11 @@
              ShutdownMode="OnMainWindowClose">
     <Application.Resources>
         <ResourceDictionary>
-            <!-- Colours, fonts, icons and control styles: see Themes/Dark.xaml -->
+            <!-- First: the theme's colours and brushes (Themes/Light.xaml or Themes/Dark.xaml; ThemeManager swaps
+                 it at run time). Second: fonts, icons and control styles shared by both themes. -->
             <ResourceDictionary.MergedDictionaries>
                 <ResourceDictionary Source="Themes/Dark.xaml" />
+                <ResourceDictionary Source="Themes/Controls.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

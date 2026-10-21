@@ -11,15 +11,14 @@ namespace SPVision.Controls;
 /// </summary>
 public sealed class TimelineBar : FrameworkElement
 {
-    // Colours come from the theme (Themes/Dark.xaml); the timeline is created after App resources load.
-    static readonly Brush Background = Theme("WindowBg");
-    static readonly Brush SegmentBrush = Theme("Recorded");
-    static readonly Brush HeadBrush = Theme("Accent");
-    static readonly Brush HoverBrush = Theme("IconFg");
-    static readonly Brush TextBrush = Theme("TextSecondary");
-    static readonly Pen TickPen = new(Theme("InputBorder"), 1);
-    static readonly Pen HeadPen = new(HeadBrush, 2);
-    static readonly Pen HoverPen = new(HoverBrush, 1);
+    // Colours come from the active theme (Themes/Light.xaml or Dark.xaml) and are looked up again after a switch.
+    Brush Background = Brushes.Transparent;
+    Brush SegmentBrush = Brushes.Transparent;
+    Brush HoverBrush = Brushes.Transparent;
+    Brush TextBrush = Brushes.Transparent;
+    Pen TickPen = new(Brushes.Transparent, 1);
+    Pen HeadPen = new(Brushes.Transparent, 2);
+    Pen HoverPen = new(Brushes.Transparent, 1);
     static readonly TimeSpan MinSpan = TimeSpan.FromMinutes(10);
     static readonly TimeSpan[] TickSteps =
         [TimeSpan.FromMinutes(1), TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(30),
@@ -40,6 +39,26 @@ public sealed class TimelineBar : FrameworkElement
         Height = 56;
         Cursor = Cursors.Hand;
         ClipToBounds = true;
+        LoadThemeBrushes();
+        Loaded += (_, _) => ThemeManager.ThemeChanged += OnThemeChanged;
+        Unloaded += (_, _) => ThemeManager.ThemeChanged -= OnThemeChanged;
+    }
+
+    void OnThemeChanged()
+    {
+        LoadThemeBrushes();
+        InvalidateVisual();
+    }
+
+    void LoadThemeBrushes()
+    {
+        Background = Theme("WindowBg");
+        SegmentBrush = Theme("Recorded");
+        HoverBrush = Theme("IconFg");
+        TextBrush = Theme("TextSecondary");
+        TickPen = new Pen(Theme("InputBorder"), 1);
+        HeadPen = new Pen(Theme("Accent"), 2);
+        HoverPen = new Pen(HoverBrush, 1);
     }
 
     public event Action<DateTime>? TimeSelected;

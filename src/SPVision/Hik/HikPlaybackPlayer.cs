@@ -38,6 +38,10 @@ public sealed class HikPlaybackPlayer : IDisposable
 
     public bool IsRunning { get { lock (_lock) return _playHandle >= 0; } }
     public bool IsStarted => _started;
+
+    /// <summary>Draw the recorder's motion / analysis boxes; read when the PlayCtrl port opens.</summary>
+    public bool ShowMotionBoxes { get; set; } = true;
+
     public bool IsSaving { get { lock (_lock) return _saving; } }
     public bool IsPaused { get { lock (_lock) return _paused; } }
     public bool IsDisposed => _disposed;
@@ -225,6 +229,19 @@ public sealed class HikPlaybackPlayer : IDisposable
         }
     }
 
+    /// <summary>Switches the motion / analysis boxes on the running playback (no-op before the port opens).</summary>
+    public void SetMotionBoxes(bool show)
+    {
+        ShowMotionBoxes = show;
+        lock (_lock)
+        {
+            if (!_disposed && _port >= 0)
+            {
+                HikRender.SetMotionBoxes(_port, -1, show);
+            }
+        }
+    }
+
     void OnPlayData(int handle, uint dataType, IntPtr buffer, uint size, IntPtr user)
     {
         try
@@ -251,6 +268,10 @@ public sealed class HikPlaybackPlayer : IDisposable
                         throw HikException.LastError("PlayCtrl akışı açamadı");
                     HikNative.PlayM4_SetDisplayBuf(_port, 15);
                     HikNative.PlayM4_SetOverlayMode(_port, false, 0);
+                    if (!ShowMotionBoxes)
+                    {
+                        HikRender.SetMotionBoxes(_port, -1, false); // drawn by default; only switch off
+                    }
 
                     int hwndValue = windowHandlePending;
                     if (!HikNative.PlayM4_Play(_port, (IntPtr)hwndValue))

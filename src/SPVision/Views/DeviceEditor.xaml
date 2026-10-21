@@ -1,0 +1,124 @@
+<UserControl x:Class="SPVision.Views.DeviceEditor"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- Inline edit panel under an expanded device row (Settings › Cihaz yönetimi). 16 px inset on every side,
+         like the rows above it. Every input and button is 36 px high; every button is 136 px wide. -->
+    <Border Padding="16" Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource Divider}" BorderThickness="0,1,0,0">
+        <StackPanel>
+            <!-- ===== Bağlantı: two equal columns ===== -->
+            <TextBlock Text="BAĞLANTI" Style="{StaticResource CaptionText}" Margin="0,0,0,8" />
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="12" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="12" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="12" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <StackPanel>
+                    <TextBlock Text="Cihaz adı" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="NameBox" Height="36" AutomationProperties.Name="Cihaz adı" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="IP adresi" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="HostBox" Height="36" AutomationProperties.Name="IP adresi" />
+                </StackPanel>
+
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="8" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="8" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="HTTP port" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="HttpPortBox" Height="36" AutomationProperties.Name="HTTP port" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="2">
+                        <TextBlock Text="RTSP port" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="RtspPortBox" Height="36" AutomationProperties.Name="RTSP port" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="4">
+                        <TextBlock Text="SDK port" Style="{StaticResource FieldLabel}" />
+                        <TextBox x:Name="SdkPortBox" Height="36" AutomationProperties.Name="SDK port" />
+                    </StackPanel>
+                </Grid>
+                <StackPanel Grid.Row="2" Grid.Column="2">
+                    <TextBlock Text="Kullanıcı adı" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="UserBox" Height="36" AutomationProperties.Name="Kullanıcı adı" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="4">
+                    <TextBlock Text="Şifre" Style="{StaticResource FieldLabel}" />
+                    <Grid>
+                        <PasswordBox x:Name="PasswordBox" Height="36" PasswordChanged="Secret_Changed" AutomationProperties.Name="Şifre" />
+                        <TextBlock x:Name="PasswordPlaceholder" Style="{StaticResource InputPlaceholder}" />
+                    </Grid>
+                </StackPanel>
+                <StackPanel Grid.Row="4" Grid.Column="2">
+                    <TextBlock Text="Akış anahtarı (doğrulama kodu)" Style="{StaticResource FieldLabel}" />
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="8" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <PasswordBox x:Name="StreamKeyBox" Height="36" PasswordChanged="Secret_Changed"
+                                     AutomationProperties.Name="Akış anahtarı"
+                                     ToolTip="Kayıt cihazında akış şifreleme açıkken görüntüyü açmak için gerekir (Hik-Connect doğrulama kodu). Windows hesabınıza bağlı olarak şifreli saklanır." />
+                        <TextBlock x:Name="StreamKeyPlaceholder" Style="{StaticResource InputPlaceholder}" />
+                        <Button x:Name="FetchKeyButton" Grid.Column="2" Content="Cihazdan oku" Style="{StaticResource SettingsButton}"
+                                ToolTip="Anahtarı cihazdan okur (yalnızca okuma: ISAPI/System/Network/EZVIZ)" Click="FetchKey_Click" />
+                    </Grid>
+                </StackPanel>
+
+                <Grid Grid.Row="6">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="TestButton" Content="Bağlantıyı test et" Style="{StaticResource SettingsButton}" Click="Test_Click"
+                            ToolTip="Cihaz bilgisini ve kamera listesini okur (yalnızca okuma)" />
+                    <TextBlock x:Name="ResultText" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource CellText}"
+                               Foreground="{DynamicResource TextSecondary}" />
+                </Grid>
+                <CheckBox x:Name="HttpsBox" Grid.Row="6" Grid.Column="2" Content="HTTPS kullan" VerticalAlignment="Center"
+                          AutomationProperties.Name="HTTPS kullan" />
+            </Grid>
+
+            <!-- ===== Kameralar: KANAL | KAMERA ADI | DURUM | LİSTEDE GÖSTER ===== -->
+            <TextBlock Text="KAMERALAR" Style="{StaticResource CaptionText}" Margin="0,20,0,8" />
+            <Border BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="6" SnapsToDevicePixels="True">
+                <StackPanel x:Name="CameraTable" />
+            </Border>
+
+            <!-- ===== Footer: Auto | * | Auto ===== -->
+            <Grid Margin="0,16,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Button x:Name="RemoveButton" Content="Cihazı kaldır" Style="{StaticResource SettingsDangerButton}" Click="Remove_Click"
+                        ToolTip="Cihazı SPVision'dan kaldırır; kayıt cihazında hiçbir şey değişmez" />
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal">
+                    <Button x:Name="RefreshButton" Content="Kameraları yenile" Style="{StaticResource SettingsButton}" Click="Refresh_Click"
+                            ToolTip="Kamera listesini cihazdan yeniden okur (yalnızca okuma)" />
+                    <Button Content="İptal" Style="{StaticResource SettingsButton}" Margin="8,0,0,0" Click="Cancel_Click" />
+                    <Button x:Name="SaveButton" Content="Kaydet" Style="{StaticResource SettingsAccentButton}" Margin="8,0,0,0" Click="Save_Click" />
+                </StackPanel>
+            </Grid>
+        </StackPanel>
+    </Border>
+</UserControl>

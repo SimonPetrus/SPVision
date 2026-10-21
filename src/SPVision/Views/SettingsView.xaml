@@ -1,0 +1,300 @@
+<UserControl x:Class="SPVision.Views.SettingsView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:SPVision.Controls">
+    <!-- Third main view (gear in the top bar). Left nav has the live sidebar's width (260) and padding (10). -->
+    <DockPanel Background="{DynamicResource WindowBg}">
+        <Border DockPanel.Dock="Left" Width="260" Background="{DynamicResource BarBg}"
+                BorderBrush="{DynamicResource Border}" BorderThickness="0,0,1,0">
+            <StackPanel Margin="10">
+                <TextBlock Text="AYARLAR" Style="{StaticResource CaptionText}" Margin="0,0,0,6" />
+                <RadioButton x:Name="NavDevices" GroupName="SettingsNav" Style="{StaticResource NavButton}" Checked="Nav_Checked"
+                             AutomationProperties.Name="Cihaz yönetimi">
+                    <StackPanel Orientation="Horizontal">
+                        <c:GlyphIcon Data="{StaticResource IconServer}" Size="16" />
+                        <TextBlock Text="Cihaz yönetimi" Margin="10,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </RadioButton>
+                <RadioButton x:Name="NavApp" GroupName="SettingsNav" Style="{StaticResource NavButton}" Checked="Nav_Checked"
+                             AutomationProperties.Name="Uygulama ayarları">
+                    <StackPanel Orientation="Horizontal">
+                        <c:GlyphIcon Data="{StaticResource IconMonitor}" Size="16" />
+                        <TextBlock Text="Uygulama ayarları" Margin="10,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </RadioButton>
+                <RadioButton x:Name="NavRecorder" GroupName="SettingsNav" Style="{StaticResource NavButton}" Checked="Nav_Checked"
+                             AutomationProperties.Name="Cihaz ayarları">
+                    <StackPanel Orientation="Horizontal">
+                        <c:GlyphIcon Data="{StaticResource IconSliders}" Size="16" />
+                        <TextBlock Text="Cihaz ayarları" Margin="10,0,0,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </RadioButton>
+            </StackPanel>
+        </Border>
+
+        <Grid>
+            <!-- ===== Cihaz yönetimi: device list, each row expands an inline edit panel ===== -->
+            <ScrollViewer x:Name="DevicesPage" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24">
+                <StackPanel MaxWidth="1040">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <StackPanel Margin="0,0,16,0" VerticalAlignment="Center">
+                            <TextBlock Text="Cihaz yönetimi" Style="{StaticResource PageTitle}" />
+                            <TextBlock Style="{StaticResource PageDescription}"
+                                       Text="Kayıt cihazlarını ve IP kameraları ekleyin, düzenleyin veya kaldırın; hangi kameraların listede görüneceğini seçin."
+                                       ToolTip="Kayıt cihazlarını ve IP kameraları ekleyin, düzenleyin veya kaldırın; hangi kameraların listede görüneceğini seçin." />
+                        </StackPanel>
+                        <Button x:Name="AddDeviceButton" Grid.Column="1" Style="{StaticResource SettingsAccentButton}" VerticalAlignment="Center"
+                                Click="AddDevice_Click" AutomationProperties.Name="Cihaz ekle">
+                            <StackPanel Orientation="Horizontal">
+                                <c:GlyphIcon Data="{StaticResource IconPlus}" Size="14" StrokeThickness="2.5" />
+                                <TextBlock Text="Cihaz ekle" Margin="6,0,0,0" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+                    </Grid>
+
+                    <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                        <StackPanel c:RoundedClip.Radius="7">
+                            <!-- Header row: same columns and 16 px inset as the device rows (SettingsView.ListColumns). -->
+                            <Border x:Name="ListHeader" Height="36" Padding="16,0" Background="{DynamicResource SubtleBg}"
+                                    BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" />
+                            <StackPanel x:Name="DeviceRows" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ===== Uygulama ayarları: cards of rows, grid *,240 (label + help | control) ===== -->
+            <ScrollViewer x:Name="AppPage" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Padding="24"
+                          Visibility="Collapsed">
+                <StackPanel MaxWidth="1040">
+                    <TextBlock Text="Uygulama ayarları" Style="{StaticResource PageTitle}" />
+                    <TextBlock Style="{StaticResource PageDescription}"
+                               Text="Yalnızca bu bilgisayardaki SPVision'u etkiler; kayıt cihazına hiçbir şey yazılmaz." />
+
+                    <!-- Görünüm -->
+                    <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                        <StackPanel>
+                            <Border Padding="16,14" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+                                <TextBlock Text="Görünüm" Style="{StaticResource CardTitle}" />
+                            </Border>
+                            <Border Padding="16,10" MinHeight="60">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="240" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Tema" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Style="{StaticResource RowHelp}"
+                                                   Text="Sistem: Windows açık temadaysa açık, koyu temadaysa koyu kullanılır; Windows'ta değişince uygulama da anında değişir." />
+                                    </StackPanel>
+                                    <Border Grid.Column="1" Style="{StaticResource SegmentGroup}" HorizontalAlignment="Right" AutomationProperties.Name="Tema">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ToggleButton x:Name="ThemeLight" Content="Açık" Width="64" Style="{StaticResource SegmentButton}" Click="Theme_Click"
+                                                          AutomationProperties.Name="Açık tema" />
+                                            <ToggleButton x:Name="ThemeDark" Content="Koyu" Width="64" Style="{StaticResource SegmentButton}" Click="Theme_Click"
+                                                          Margin="2,0,0,0" AutomationProperties.Name="Koyu tema" />
+                                            <ToggleButton x:Name="ThemeSystem" Content="Sistem" Width="64" Style="{StaticResource SegmentButton}" Click="Theme_Click"
+                                                          Margin="2,0,0,0" AutomationProperties.Name="Sistem teması" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Görüntü -->
+                    <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                        <StackPanel>
+                            <Border Padding="16,14" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+                                <TextBlock Text="Görüntü" Style="{StaticResource CardTitle}" />
+                            </Border>
+                            <Border Padding="16,10" MinHeight="60" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="240" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Hareket kutularını göster" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Style="{StaticResource RowHelp}"
+                                                   Text="Kayıt cihazının algıladığı hareketi şifreli (SDK) görüntü üzerinde kutularla gösterir. Canlı izlemedeki düğmeyle de açılıp kapatılır." />
+                                    </StackPanel>
+                                    <CheckBox x:Name="MotionSwitch" Grid.Column="1" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                              Click="MotionSwitch_Click" AutomationProperties.Name="Hareket kutularını göster" />
+                                </Grid>
+                            </Border>
+                            <Border Padding="16,10" MinHeight="60" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="240" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Varsayılan görüntü kalitesi" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Style="{StaticResource RowHelp}"
+                                                   Text="Oto: küçük karelerde alt akış (SD), büyük karelerde ana akış (HD). Üst çubuktaki Oto/HD/SD ile aynı ayardır." />
+                                    </StackPanel>
+                                    <Border Grid.Column="1" Style="{StaticResource SegmentGroup}" HorizontalAlignment="Right" AutomationProperties.Name="Varsayılan görüntü kalitesi">
+                                        <StackPanel Orientation="Horizontal">
+                                            <ToggleButton x:Name="QualityAuto" Content="Oto" Width="64" Style="{StaticResource SegmentButton}" Click="Quality_Click"
+                                                          AutomationProperties.Name="Otomatik kalite" />
+                                            <ToggleButton x:Name="QualityHd" Content="HD" Width="64" Style="{StaticResource SegmentButton}" Click="Quality_Click"
+                                                          Margin="2,0,0,0" AutomationProperties.Name="HD kalite" />
+                                            <ToggleButton x:Name="QualitySd" Content="SD" Width="64" Style="{StaticResource SegmentButton}" Click="Quality_Click"
+                                                          Margin="2,0,0,0" AutomationProperties.Name="SD kalite" />
+                                        </StackPanel>
+                                    </Border>
+                                </Grid>
+                            </Border>
+                            <Border Padding="16,10" MinHeight="60">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="240" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Ekran kartıyla çözme" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Style="{StaticResource RowHelp}"
+                                                   Text="Görüntüyü işlemci yerine ekran kartında çözer; işlemci yükünü düşürür. Şimdilik her zaman açık." />
+                                    </StackPanel>
+                                    <!-- There is no decode-engine setting yet (both paths always decode on the GPU). -->
+                                    <CheckBox x:Name="GpuSwitch" Grid.Column="1" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                              IsChecked="True" IsEnabled="False" ToolTip="Yakında" ToolTipService.ShowOnDisabled="True"
+                                              AutomationProperties.Name="Ekran kartıyla çözme (yakında)" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Kayıt ve anlık görüntü -->
+                    <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                        <StackPanel>
+                            <Border Padding="16,14" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+                                <TextBlock Text="Kayıt ve anlık görüntü" Style="{StaticResource CardTitle}" />
+                            </Border>
+                            <Border Padding="16,10" MinHeight="60" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="240" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Anlık görüntü klasörü" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Style="{StaticResource RowHelp}" Text="Kameradan alınan fotoğrafların kaydedildiği yer." />
+                                    </StackPanel>
+                                    <Grid Grid.Column="1" VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="SnapshotFolderText" Style="{StaticResource CellText}" TextAlignment="Right" Margin="0,0,8,0" />
+                                        <Button Grid.Column="1" Content="Değiştir" Width="88" Height="36" MinHeight="0" Margin="0" Padding="0"
+                                                Click="SnapshotFolder_Click" AutomationProperties.Name="Anlık görüntü klasörünü değiştir" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                            <Border Padding="16,10" MinHeight="60">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="240" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Video kayıt klasörü" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Style="{StaticResource RowHelp}" Text="Yerel MP4 kayıtların ve kliplerin kaydedildiği yer." />
+                                    </StackPanel>
+                                    <Grid Grid.Column="1" VerticalAlignment="Center">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <TextBlock x:Name="RecordingFolderText" Style="{StaticResource CellText}" TextAlignment="Right" Margin="0,0,8,0" />
+                                        <Button Grid.Column="1" Content="Değiştir" Width="88" Height="36" MinHeight="0" Margin="0" Padding="0"
+                                                Click="RecordingFolder_Click" AutomationProperties.Name="Video kayıt klasörünü değiştir" />
+                                    </Grid>
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Genel -->
+                    <Border Style="{StaticResource Card}" Margin="0,16,0,0">
+                        <StackPanel>
+                            <Border Padding="16,14" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+                                <TextBlock Text="Genel" Style="{StaticResource CardTitle}" />
+                            </Border>
+                            <Border Padding="16,10" MinHeight="60" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="240" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Açılışta son görünümü geri yükle" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Style="{StaticResource RowHelp}" Text="Izgara düzeni ve karelerdeki kameralar kapatırken nasılsa öyle açılır." />
+                                    </StackPanel>
+                                    <CheckBox x:Name="RestoreSwitch" Grid.Column="1" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                              Click="RestoreSwitch_Click" AutomationProperties.Name="Açılışta son görünümü geri yükle" />
+                                </Grid>
+                            </Border>
+                            <Border Padding="16,10" MinHeight="60" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="240" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Windows ile birlikte başlat" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Style="{StaticResource RowHelp}" Text="Oturum açıldığında SPVision kendiliğinden açılır." />
+                                    </StackPanel>
+                                    <CheckBox x:Name="AutoStartSwitch" Grid.Column="1" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                              Click="AutoStartSwitch_Click" AutomationProperties.Name="Windows ile birlikte başlat" />
+                                </Grid>
+                            </Border>
+                            <Border Padding="16,10" MinHeight="60">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="240" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Tam ekranda aç" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Style="{StaticResource RowHelp}" Text="Uygulama doğrudan tam ekran (F11) açılır." />
+                                    </StackPanel>
+                                    <CheckBox x:Name="FullScreenSwitch" Grid.Column="1" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                              Click="FullScreenSwitch_Click" AutomationProperties.Name="Tam ekranda aç" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- ===== Cihaz ayarları: placeholder only; SPVision never writes to the recorder ===== -->
+            <Grid x:Name="RecorderPage" Visibility="Collapsed" Margin="24">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="*" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <Border Grid.Row="1" Grid.Column="1" Style="{StaticResource Card}" Padding="40,32">
+                    <StackPanel>
+                        <c:GlyphIcon Data="{StaticResource IconLock}" Size="28" Foreground="{DynamicResource TextSecondary}" />
+                        <TextBlock Text="Kayıt cihazı ayarları yakında" Style="{StaticResource CardTitle}" Margin="0,12,0,0"
+                                   HorizontalAlignment="Center" TextAlignment="Center" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+        </Grid>
+    </DockPanel>
+</UserControl>

@@ -45,6 +45,8 @@ public partial class App : Application
             Settings = new AppSettings();
         }
 
+        ThemeManager.Initialize(); // light/dark from the setting (or Windows), before the first window
+
         var logDir = Path.Combine(Path.GetDirectoryName(Store.Path)!, "logs");
         Directory.CreateDirectory(logDir);
 
@@ -69,6 +71,7 @@ public partial class App : Application
 
     protected override void OnExit(ExitEventArgs e)
     {
+        ThemeManager.Shutdown();
         HikSdk.Shutdown();
         base.OnExit(e);
     }

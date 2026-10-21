@@ -127,8 +127,9 @@ public partial class VideoTile : UserControl
         set
         {
             _selected = value;
-            Frame.BorderBrush = ThemeBrush(value ? "Accent" : "TileBorder");
-            EmptyOutline.Stroke = ThemeBrush(value ? "Accent" : "InputBorder");
+            // Resource references (not brush values) so the frame follows a theme switch.
+            Frame.SetResourceReference(Border.BorderBrushProperty, value ? "Accent" : "TileBorder");
+            EmptyOutline.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, value ? "Accent" : "WallLine");
         }
     }
 
@@ -182,6 +183,18 @@ public partial class VideoTile : UserControl
         Camera = null;
         ShowEmpty();
         Changed?.Invoke(this);
+    }
+
+    /// <summary>Settings or the top bar toggled the motion boxes: re-applies them to the running SDK stream.</summary>
+    public void ApplyMotionBoxes(bool show) => _hikPlayer?.SetMotionBoxes(show);
+
+    /// <summary>The camera list was refreshed (names may have changed): update the header strip.</summary>
+    public void RefreshCameraInfo()
+    {
+        if (Camera is not null)
+        {
+            CameraName.Text = Camera.Name;
+        }
     }
 
     public void Stop()
@@ -266,6 +279,7 @@ public partial class VideoTile : UserControl
             _hikPlayer.Error += OnHikError;
             _hikPlayer.Started += OnHikStarted;
         }
+        _hikPlayer.ShowMotionBoxes = App.Settings.ShowMotionBoxes;
         var player = _hikPlayer;
 
         Task.Run(() =>
@@ -376,6 +390,10 @@ public partial class VideoTile : UserControl
             }
             _retryCount = 0;
             _preferHik = true;
+            if (!App.Settings.ShowMotionBoxes)
+            {
+                _hikPlayer?.SetMotionBoxes(false); // again now that the RealPlay handle is known
+            }
             SetState(TileState.Playing);
             if (_pendingRecordFile is not null)
             {
@@ -426,7 +444,7 @@ public partial class VideoTile : UserControl
     void SetState(TileState state, string? detail = null)
     {
         _state = state;
-        StatusDot.Fill = ThemeBrush(state switch
+        StatusDot.SetResourceReference(System.Windows.Shapes.Shape.FillProperty, state switch
         {
             TileState.Playing => "Online",
             TileState.Connecting => "Warning",
@@ -454,8 +472,6 @@ public partial class VideoTile : UserControl
         EmptyFrame.ToolTip = "Listeden bir kamerayı buraya sürükleyin ya da listede çift tıklayın";
         SetState(TileState.Empty);
     }
-
-    Brush ThemeBrush(string key) => (Brush)FindResource(key);
 
     void DisposePlayers()
     {
@@ -798,6 +814,8 @@ public partial class VideoTile : UserControl
         var animation = new System.Windows.Media.Animation.ColorAnimation(
             (Color)FindResource("FlashColor"), (Color)FindResource("TileHeaderColor"), TimeSpan.FromMilliseconds(450));
         var brush = new SolidColorBrush((Color)FindResource("FlashColor"));
+        // Afterwards the header goes back to the theme brush, so a later theme switch still reaches it.
+        animation.Completed += (_, _) => Header.SetResourceReference(Border.BackgroundProperty, "TileHeaderBg");
         Header.Background = brush;
         brush.BeginAnimation(SolidColorBrush.ColorProperty, animation);
     }

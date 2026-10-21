@@ -4,13 +4,13 @@
         xmlns:v="clr-namespace:SPVision.Views"
         xmlns:c="clr-namespace:SPVision.Controls"
         Title="SPVision" Width="1440" Height="900" MinWidth="1100" MinHeight="600"
-        WindowStartupLocation="CenterScreen" Background="{StaticResource WindowBg}"
+        WindowStartupLocation="CenterScreen" Background="{DynamicResource WindowBg}" Foreground="{DynamicResource TextFg}"
         FontFamily="{StaticResource UiFont}" FontSize="{StaticResource FontSizeBase}"
         KeyDown="Window_KeyDown">
     <DockPanel>
-        <!-- ===== Top bar, 52 px: wordmark · tabs · (live) layout, quality, actions, settings ===== -->
-        <Border x:Name="Header" DockPanel.Dock="Top" Height="52" Background="{StaticResource BarBg}"
-                BorderBrush="{StaticResource Border}" BorderThickness="0,0,0,1" Padding="12,0">
+        <!-- ===== Top bar, 52 px: wordmark · tabs · (live) layout, quality, actions · settings (gear = third view) ===== -->
+        <Border x:Name="Header" DockPanel.Dock="Top" Height="52" Background="{DynamicResource BarBg}"
+                BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" Padding="12,0">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
@@ -21,9 +21,9 @@
 
                 <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0"
                             AutomationProperties.Name="SPVision">
-                    <c:GlyphIcon Data="{StaticResource IconVideo}" Size="22" Foreground="{StaticResource Accent}" />
+                    <c:GlyphIcon Data="{StaticResource IconVideo}" Size="22" Foreground="{DynamicResource Accent}" />
                     <TextBlock FontSize="{StaticResource FontSizeBrand}" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0,0,0"
-                               Foreground="{StaticResource TextStrong}"><Run Text="SP" Foreground="{StaticResource Accent}" /><Run Text="Vision" /></TextBlock>
+                               Foreground="{DynamicResource TextStrong}"><Run Text="SP" Foreground="{DynamicResource Accent}" /><Run Text="Vision" /></TextBlock>
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal">
@@ -56,33 +56,37 @@
                                               ToolTip="Tüm kareler alt akış (düşük çözünürlük)" AutomationProperties.Name="SD kalite" />
                             </StackPanel>
                         </Border>
-                        <Button Style="{StaticResource IconButton}" Margin="12,0,0,0" Click="Snapshot_Click"
+                        <ToggleButton x:Name="MotionToggle" Style="{StaticResource IconToggleButton}" Margin="12,0,0,0" Click="MotionToggle_Click"
+                                      ToolTip="Hareket kutularını göster/gizle" AutomationProperties.Name="Hareket kutularını göster/gizle">
+                            <c:GlyphIcon Data="{StaticResource IconMotion}" FillData="{StaticResource IconMotionDot}" />
+                        </ToggleButton>
+                        <Button Style="{StaticResource IconButton}" Margin="4,0,0,0" Click="Snapshot_Click"
                                 ToolTip="Anlık görüntü (seçili kare)" AutomationProperties.Name="Seçili kameradan anlık görüntü al">
                             <c:GlyphIcon Data="{StaticResource IconCamera}" />
                         </Button>
                         <Button x:Name="RecordButton" Style="{StaticResource IconButton}" Margin="4,0,0,0" Click="Record_Click"
                                 ToolTip="Kayıt (seçili kare, MP4)" AutomationProperties.Name="Seçili kamerayı kaydet">
                             <c:GlyphIcon x:Name="RecordIcon" Data="{StaticResource IconRecord}" FillData="{StaticResource IconRecordDot}"
-                                         Foreground="{StaticResource DangerIcon}" />
+                                         Foreground="{DynamicResource DangerIcon}" />
                         </Button>
                         <Button Style="{StaticResource IconButton}" Margin="4,0,0,0" Click="FullScreen_Click"
                                 ToolTip="Tam ekran (F11)" AutomationProperties.Name="Tam ekran (F11)">
                             <c:GlyphIcon Data="{StaticResource IconFullScreen}" />
                         </Button>
-                        <Rectangle Width="1" Height="24" Margin="12,0" Fill="{StaticResource Border}" VerticalAlignment="Center" />
+                        <Rectangle Width="1" Height="24" Margin="12,0" Fill="{DynamicResource Border}" VerticalAlignment="Center" />
                     </StackPanel>
-                    <Button Style="{StaticResource IconButton}" Click="Settings_Click"
-                            ToolTip="Ayarlar" AutomationProperties.Name="Ayarlar">
+                    <ToggleButton x:Name="SettingsButton" Style="{StaticResource IconToggleButton}" Click="Settings_Click"
+                                  ToolTip="Ayarlar" AutomationProperties.Name="Ayarlar">
                         <c:GlyphIcon Data="{StaticResource IconSettings}" />
-                    </Button>
+                    </ToggleButton>
                 </StackPanel>
             </Grid>
         </Border>
 
         <!-- ===== Status bar, 28 px ===== -->
-        <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Height="28" Background="{StaticResource BarBg}"
-                BorderBrush="{StaticResource Border}" BorderThickness="0,1,0,0" Padding="12,0"
-                TextElement.FontSize="{StaticResource FontSizeStatus}" TextElement.Foreground="{StaticResource TextSecondary}">
+        <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Height="28" Background="{DynamicResource BarBg}"
+                BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" Padding="12,0"
+                TextElement.FontSize="{StaticResource FontSizeStatus}" TextElement.Foreground="{DynamicResource TextSecondary}">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -92,27 +96,27 @@
                 </Grid.ColumnDefinitions>
                 <DockPanel VerticalAlignment="Center" ClipToBounds="True">
                     <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
-                        <Ellipse x:Name="ConnectionDot" Style="{StaticResource StatusDot}" Fill="{StaticResource Offline}" Margin="0,0,6,0" />
-                        <TextBlock x:Name="ConnectionText" Foreground="{StaticResource TextSecondary}" />
+                        <Ellipse x:Name="ConnectionDot" Style="{StaticResource StatusDot}" Fill="{DynamicResource Offline}" Margin="0,0,6,0" />
+                        <TextBlock x:Name="ConnectionText" Foreground="{DynamicResource TextSecondary}" />
                     </StackPanel>
-                    <TextBlock x:Name="OnScreenText" DockPanel.Dock="Left" Margin="18,0,0,0" Foreground="{StaticResource TextSecondary}" />
+                    <TextBlock x:Name="OnScreenText" DockPanel.Dock="Left" Margin="18,0,0,0" Foreground="{DynamicResource TextSecondary}" />
                     <StackPanel x:Name="ReconnectPanel" DockPanel.Dock="Left" Orientation="Horizontal" Margin="18,0,0,0" Visibility="Collapsed">
-                        <Ellipse Style="{StaticResource StatusDot}" Fill="{StaticResource Warning}" Margin="0,0,6,0" />
-                        <TextBlock x:Name="ReconnectText" Foreground="{StaticResource WarningText}" />
+                        <Ellipse Style="{StaticResource StatusDot}" Fill="{DynamicResource Warning}" Margin="0,0,6,0" />
+                        <TextBlock x:Name="ReconnectText" Foreground="{DynamicResource WarningText}" />
                     </StackPanel>
-                    <TextBlock x:Name="VideoPathText" Margin="18,0,0,0" Foreground="{StaticResource TextSecondary}" TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="VideoPathText" Margin="18,0,0,0" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" />
                 </DockPanel>
                 <TextBlock x:Name="MessageText" Grid.Column="1" MaxWidth="460" Margin="18,0,0,0" VerticalAlignment="Center"
-                           Foreground="{StaticResource TextFg}" TextTrimming="CharacterEllipsis" Visibility="Collapsed" />
-                <TextBlock x:Name="CpuText" Grid.Column="2" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource TextSecondary}"
+                           Foreground="{DynamicResource TextFg}" TextTrimming="CharacterEllipsis" Visibility="Collapsed" />
+                <TextBlock x:Name="CpuText" Grid.Column="2" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}"
                            ToolTip="Bu uygulamanın işlemci kullanımı (tüm çekirdeklerin yüzdesi)" />
-                <TextBlock x:Name="ClockText" Grid.Column="3" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{StaticResource TextSecondary}" />
+                <TextBlock x:Name="ClockText" Grid.Column="3" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}" />
             </Grid>
         </Border>
 
         <!-- ===== Sidebar, 260 px, 10 px padding on every side ===== -->
-        <Border x:Name="SidePanel" DockPanel.Dock="Left" Width="260" Background="{StaticResource BarBg}"
-                BorderBrush="{StaticResource Border}" BorderThickness="0,0,1,0">
+        <Border x:Name="SidePanel" DockPanel.Dock="Left" Width="260" Background="{DynamicResource BarBg}"
+                BorderBrush="{DynamicResource Border}" BorderThickness="0,0,1,0">
             <DockPanel>
                 <StackPanel DockPanel.Dock="Top" Margin="10">
                     <TextBlock Text="KAMERALAR" Style="{StaticResource CaptionText}" Margin="0,0,0,6" />
@@ -133,6 +137,7 @@
         <Grid>
             <v:LiveView x:Name="Live" />
             <v:PlaybackView x:Name="Playback" Visibility="Collapsed" />
+            <v:SettingsView x:Name="SettingsPanel" Visibility="Collapsed" />
         </Grid>
     </DockPanel>
 </Window>

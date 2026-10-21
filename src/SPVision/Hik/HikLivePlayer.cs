@@ -35,6 +35,9 @@ public sealed class HikLivePlayer : IDisposable
     /// <summary>Raised once on the first successfully rendered frame (SDK thread).</summary>
     public event Action? Started;
 
+    /// <summary>Draw the recorder's motion / analysis boxes; read when the PlayCtrl port opens.</summary>
+    public bool ShowMotionBoxes { get; set; } = true;
+
     public bool IsRunning { get { lock (_lock) return _realHandle >= 0; } }
     public bool IsStarted => _started;
     public bool IsSaving { get { lock (_lock) return _saving; } }
@@ -94,6 +97,19 @@ public sealed class HikLivePlayer : IDisposable
             HikNative.PlayM4_Stop(port);
             HikNative.PlayM4_CloseStream(port);
             HikNative.PlayM4_FreePort(port);
+        }
+    }
+
+    /// <summary>Switches the motion / analysis boxes on the running stream (UI thread; no-op before the port opens).</summary>
+    public void SetMotionBoxes(bool show)
+    {
+        ShowMotionBoxes = show;
+        lock (_lock)
+        {
+            if (!_disposed && _port >= 0)
+            {
+                HikRender.SetMotionBoxes(_port, _realHandle, show);
+            }
         }
     }
 
@@ -170,6 +186,11 @@ public sealed class HikLivePlayer : IDisposable
                         throw HikException.LastError("PlayCtrl akışı açamadı");
                     HikNative.PlayM4_SetDisplayBuf(_port, 15);
                     HikNative.PlayM4_SetOverlayMode(_port, false, 0);
+                    if (!ShowMotionBoxes)
+                    {
+                        // PlayCtrl draws them by default; only switch off (keeps today's behaviour when shown).
+                        HikRender.SetMotionBoxes(_port, _realHandle, false);
+                    }
 
                     int hwndValue = windowHandlePending;
                     if (!HikNative.PlayM4_Play(_port, (IntPtr)hwndValue))

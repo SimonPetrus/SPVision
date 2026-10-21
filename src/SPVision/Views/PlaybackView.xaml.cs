@@ -41,6 +41,9 @@ public partial class PlaybackView : UserControl
         Loaded += (_, _) => _clock.Start();
     }
 
+    /// <summary>Settings or the top bar toggled the motion boxes.</summary>
+    public void ApplyMotionBoxes(bool show) => _hikPlayer?.SetMotionBoxes(show);
+
     public void RefreshCameras()
     {
         var selected = CameraBox.SelectedItem as CameraItem;
@@ -213,6 +216,7 @@ public partial class PlaybackView : UserControl
             player.Ended += OnHikEnded;
             _hikPlayer = player;
         }
+        player.ShowMotionBoxes = App.Settings.ShowMotionBoxes;
 
         Task.Run(() =>
         {

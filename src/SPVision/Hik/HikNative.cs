@@ -47,6 +47,15 @@ public static class HikNative
     public const int AesKeyType = 1;
     public const int AesKeyBits = 128;
 
+    // Private-data rendering (plaympeg4.h enum _PLAYM4_PRIDATA_RENDER; HCNetSDK.h _PRIDATA_RENDER has the same values).
+    // The green boxes the recorder sends with the stream are intelligent-analysis rules/targets and
+    // motion-detection info; PlayCtrl draws them on the video unless switched off per port.
+    public const int RenderAnaIntelData = 0x00000001; // PLAYM4_RENDER_ANA_INTEL_DATA
+    public const int RenderMotionDetection = 0x00000002; // PLAYM4_RENDER_MD
+
+    /// <summary>The private-data types toggled by the "Hareket kutularını göster" setting.</summary>
+    public static readonly int[] MotionBoxRenderTypes = [RenderAnaIntelData, RenderMotionDetection];
+
     // NET_DVR_SaveRealData_V30 dwTransType: 0 = ASF, 1 = MP4, 2 = AVI
     public const uint TransTypeMp4 = 1;
 
@@ -239,6 +248,10 @@ public static class HikNative
     [DllImport(NetSdk, CharSet = CharSet.Ansi)] public static extern bool NET_DVR_SaveRealData_V30(int realHandle, uint transType, string fileName);
     [DllImport(NetSdk)] public static extern bool NET_DVR_StopSaveRealData(int realHandle);
 
+    // NET_DVR_API BOOL __stdcall NET_DVR_RenderPrivateData(LONG lRealHandle, int iIntelType, BOOL bTrue);
+    // Only affects video the SDK decodes itself (RealPlay with a play window); display-only, nothing is sent to the device.
+    [DllImport(NetSdk)] public static extern bool NET_DVR_RenderPrivateData(int realHandle, int intelType, bool enable);
+
     // ---- PlayCtrl ----
 
     [DllImport(PlayCtrl)] public static extern bool PlayM4_GetPort(ref int port);
@@ -259,6 +272,10 @@ public static class HikNative
     [DllImport(PlayCtrl)] public static extern bool PlayM4_GetPictureSize(int port, ref int width, ref int height);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_GetJPEG(int port, IntPtr jpeg, uint bufSize, ref uint jpegSize);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_SetOverlayMode(int port, bool overlay, uint colorKey);
+
+    // PLAYM4_API BOOL __stdcall PlayM4_RenderPrivateData(LONG nPort, int nIntelType, BOOL bTrue);
+    // LONG and BOOL are 32-bit on Windows x64 (int / 4-byte bool); display-only, per port.
+    [DllImport(PlayCtrl)] public static extern bool PlayM4_RenderPrivateData(int port, int intelType, bool enable);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_PlaySound(int port);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_StopSound();
 }

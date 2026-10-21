@@ -181,7 +181,8 @@ public sealed class IsapiClient : IDisposable
             Value(root, "deviceName") ?? "",
             Value(root, "model"),
             Value(root, "serialNumber"),
-            Value(root, "firmwareVersion"));
+            Value(root, "firmwareVersion"),
+            Value(root, "deviceType"));
     }
 
     internal static StreamEncryptionInfo ParseStreamEncryption(XDocument doc)

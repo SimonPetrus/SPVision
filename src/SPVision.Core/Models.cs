@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace SPVision.Core;
 
 /// <summary>A recorder (NVR/DVR) or standalone camera reachable over ISAPI + RTSP.</summary>
@@ -25,10 +27,20 @@ public sealed class Device
 
     public string? Model { get; set; }
     public string? SerialNumber { get; set; }
+
+    /// <summary>ISAPI deviceInfo deviceType (e.g. "NVR", "IPCamera"); shown in the Settings device list.</summary>
+    public string? DeviceType { get; set; }
+
+    /// <summary>IP channel capacity reported by the SDK login (e.g. 32); null until known.</summary>
+    public int? ChannelCount { get; set; }
+
     public List<Camera> Cameras { get; set; } = [];
 
     public string? StreamKeyFor(Camera camera) =>
         string.IsNullOrEmpty(camera.StreamKey) ? StreamKey : camera.StreamKey;
+
+    /// <summary>Cameras shown in the live sidebar list (not hidden in Settings), in channel order.</summary>
+    public IEnumerable<Camera> ListedCameras() => Cameras.Where(c => !c.Hidden).OrderBy(c => c.Channel);
 }
 
 public sealed class Camera
@@ -40,6 +52,9 @@ public sealed class Camera
 
     /// <summary>Optional per-camera encryption key; encrypted with DPAPI on disk.</summary>
     public string? StreamKey { get; set; }
+
+    /// <summary>Settings › "Listede göster" off: the camera is left out of the live sidebar list.</summary>
+    public bool Hidden { get; set; }
 }
 
 public enum StreamQuality
@@ -81,9 +96,22 @@ public sealed class AppSettings
 
     /// <summary>Use the sub stream when a tile is smaller than this many pixels high.</summary>
     public int MainStreamMinTileHeight { get; set; } = 540;
+
+    /// <summary>Light, dark or follow Windows (default). Stored as text in settings.json.</summary>
+    [JsonConverter(typeof(JsonStringEnumConverter<AppTheme>))]
+    public AppTheme Theme { get; set; } = AppTheme.System;
+
+    /// <summary>Draw the recorder's motion / intelligent-analysis boxes on SDK video (PlayCtrl private data).</summary>
+    public bool ShowMotionBoxes { get; set; } = true;
+
+    /// <summary>Restore the grid layout and its cameras on startup.</summary>
+    public bool RestoreLastView { get; set; } = true;
+
+    /// <summary>Open the main window in full screen (F11).</summary>
+    public bool StartFullScreen { get; set; }
 }
 
-public sealed record DeviceDetails(string Name, string? Model, string? SerialNumber, string? Firmware);
+public sealed record DeviceDetails(string Name, string? Model, string? SerialNumber, string? Firmware, string? DeviceType = null);
 
 public sealed record StreamEncryptionInfo(bool Enabled, string? VerificationCode);
 

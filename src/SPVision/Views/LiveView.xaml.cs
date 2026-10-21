@@ -102,7 +102,8 @@ public partial class LiveView : UserControl
     /// <summary>Opens every camera of a device into the grid, growing the layout if needed.</summary>
     public void ShowDevice(Device device)
     {
-        var cameras = device.Cameras.Where(c => c.Online).Take(GridLayout.MaxTiles).ToList();
+        // Cameras hidden in Settings are left out, like in the sidebar list.
+        var cameras = device.ListedCameras().Where(c => c.Online).Take(GridLayout.MaxTiles).ToList();
         if (cameras.Count == 0)
         {
             return;
@@ -146,6 +147,37 @@ public partial class LiveView : UserControl
             {
                 tile.Show(device, camera);
             }
+        }
+    }
+
+    /// <summary>Camera list of a device was refreshed in place: clear tiles whose camera is gone, rename the rest.</summary>
+    public void RefreshDeviceCameras(Device device)
+    {
+        foreach (var tile in _tiles.Where(t => t.Device?.Id == device.Id))
+        {
+            var camera = device.Cameras.FirstOrDefault(c => c.Channel == tile.Camera!.Channel);
+            if (camera is null)
+            {
+                tile.Clear();
+            }
+            else if (!ReferenceEquals(camera, tile.Camera) || !ReferenceEquals(device, tile.Device))
+            {
+                tile.Show(device, camera);
+            }
+            else
+            {
+                tile.RefreshCameraInfo();
+            }
+        }
+        RaiseStateChanged();
+    }
+
+    /// <summary>Shows or hides the recorder's motion boxes on every SDK tile.</summary>
+    public void ApplyMotionBoxes(bool show)
+    {
+        foreach (var tile in _tiles)
+        {
+            tile.ApplyMotionBoxes(show);
         }
     }
 
@@ -331,7 +363,8 @@ public partial class LiveView : UserControl
     void RestoreLayout()
     {
         SetGlobalQuality(App.Settings.LiveQuality);
-        var view = App.Settings.LastView;
+        // "Açılışta son görünümü geri yükle" off: start with the default layout and empty tiles.
+        var view = App.Settings.RestoreLastView ? App.Settings.LastView : null;
         // Settings from the 1/4/9/16 era map to the smallest layout that holds as many tiles.
         SetLayout(GridLayout.ForSavedView(view));
         if (view is null)

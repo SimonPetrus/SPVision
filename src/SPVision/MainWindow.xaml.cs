@@ -8,9 +8,18 @@ using System.Windows.Shapes;
 using System.Windows.Threading;
 using SPVision.Controls;
 using SPVision.Core;
+using SPVision.Hik;
 using SPVision.Views;
 
 namespace SPVision;
+
+/// <summary>The three views of the main window (top bar tabs + gear).</summary>
+enum MainSection
+{
+    Live,
+    Playback,
+    Settings,
+}
 
 public partial class MainWindow : Window
 {
@@ -29,6 +38,8 @@ public partial class MainWindow : Window
 
     Point? _dragOrigin;
     bool _fullScreen;
+    MainSection _section = MainSection.Live;
+    MainSection _sectionBeforeSettings = MainSection.Live;
     WindowState _stateBeforeFullScreen;
 
     public MainWindow()
@@ -37,6 +48,13 @@ public partial class MainWindow : Window
         DarkTitleBar.Attach(this);
         Live.StateChanged += LiveStateChanged;
         Live.Message += ShowMessage;
+        SettingsPanel.Message += ShowMessage;
+        SettingsPanel.LiveStateOf = DeviceLiveState;
+        SettingsPanel.DeviceSaved += DeviceSaved;
+        SettingsPanel.DeviceRemoved += DeviceRemoved;
+        SettingsPanel.MotionBoxesChanged += SetMotionBoxes;
+        SettingsPanel.QualitySelected += quality => Live.SelectQuality(quality);
+        MotionToggle.IsChecked = App.Settings.ShowMotionBoxes;
         BuildCameraList();
         Playback.RefreshCameras();
 
@@ -62,7 +80,11 @@ public partial class MainWindow : Window
         {
             if (App.Settings.Devices.Count == 0)
             {
-                AddDevice();
+                AddDevice(); // first run: Settings > Cihaz yönetimi with a new, expanded row
+            }
+            else if (App.Settings.StartFullScreen && !_fullScreen)
+            {
+                ToggleFullScreen();
             }
         };
     }
@@ -80,17 +102,17 @@ public partial class MainWindow : Window
             {
                 Text = "Henüz cihaz yok. Sağ üstteki Ayarlar düğmesiyle ekleyin.",
                 TextWrapping = TextWrapping.Wrap,
-                Foreground = Res<Brush>("TextSecondary"),
                 FontSize = Res<double>("FontSizeTile"),
                 Margin = new Thickness(10),
-            });
+            }.WithBrush(TextBlock.ForegroundProperty, "TextSecondary"));
             return;
         }
         foreach (var device in App.Settings.Devices)
         {
             DeviceList.Children.Add(DeviceRow(device));
             var list = new ListBox { Padding = new Thickness(0, 4, 0, 4) };
-            foreach (var camera in device.Cameras.OrderBy(c => c.Channel))
+            // Cameras switched off under Settings > "Listede göster" are left out.
+            foreach (var camera in device.ListedCameras())
             {
                 list.Items.Add(CameraItem(device, camera));
             }
@@ -120,33 +142,31 @@ public partial class MainWindow : Window
             Text = device.Name,
             FontWeight = FontWeights.SemiBold,
             FontSize = Res<double>("FontSizeList"),
-            Foreground = Res<Brush>("TextStrong"),
             TextTrimming = TextTrimming.CharacterEllipsis,
-        });
+        }.WithBrush(TextBlock.ForegroundProperty, "TextStrong"));
         text.Children.Add(new TextBlock
         {
             Text = $"{device.Host} · {online}/{device.Cameras.Count} çevrim içi",
             FontSize = Res<double>("FontSizeSmall"),
-            Foreground = Res<Brush>("TextSecondary"),
             TextTrimming = TextTrimming.CharacterEllipsis,
-        });
+        }.WithBrush(TextBlock.ForegroundProperty, "TextSecondary"));
         var grid = new Grid
         {
             ColumnDefinitions = { new ColumnDefinition { Width = GridLength.Auto }, new ColumnDefinition() },
         };
-        grid.Children.Add(new GlyphIcon { Data = Res<Geometry>("IconServer"), Size = 16, Foreground = Res<Brush>("IconFg") });
+        grid.Children.Add(new GlyphIcon { Data = Res<Geometry>("IconServer"), Size = 16 }.WithBrush(GlyphIcon.ForegroundProperty, "IconFg"));
         Grid.SetColumn(text, 1);
         grid.Children.Add(text);
         var row = new Border
         {
-            Background = Res<Brush>("DeviceRowBg"),
-            BorderBrush = Res<Brush>("Border"),
             BorderThickness = new Thickness(0, 1, 0, 1),
             Padding = new Thickness(10, 8, 10, 8),
             Child = grid,
             Tag = device,
             ToolTip = $"{device.Name} — çift tıklayın: tüm kameraları canlı izle",
         };
+        row.SetResourceReference(Border.BackgroundProperty, "DeviceRowBg");
+        row.SetResourceReference(Border.BorderBrushProperty, "Border");
         AutomationPropertiesName(row, $"{device.Name}, {device.Host}, {online}/{device.Cameras.Count} çevrim içi");
         row.MouseLeftButtonDown += (_, e) =>
         {
@@ -171,10 +191,9 @@ public partial class MainWindow : Window
         var number = new TextBlock
         {
             FontSize = Res<double>("FontSizeSmall"),
-            Foreground = Res<Brush>("TextSecondary"),
             VerticalAlignment = VerticalAlignment.Center,
             Margin = new Thickness(8, 0, 0, 0),
-        };
+        }.WithBrush(TextBlock.ForegroundProperty, "TextSecondary");
         var grid = new Grid
         {
             ColumnDefinitions =
@@ -208,7 +227,7 @@ public partial class MainWindow : Window
         foreach (var row in _cameraRows)
         {
             var tile = Live.TileOf(row.Source);
-            row.Dot.Fill = Res<Brush>(tile?.State switch
+            row.Dot.SetResourceReference(Shape.FillProperty, tile?.State switch
             {
                 TileState.Playing => "Online",
                 TileState.Connecting => "Warning",
@@ -250,7 +269,7 @@ public partial class MainWindow : Window
         {
             return;
         }
-        if (PlaybackTab.IsChecked == true)
+        if (_section == MainSection.Playback)
         {
             Playback.SelectCamera(source);
         }
@@ -292,46 +311,39 @@ public partial class MainWindow : Window
         return node as T;
     }
 
-    // ---- Device management (interim: the gear opens the device dialog) ----
+    // ---- Device management (Settings > Cihaz yönetimi) ----
 
-    // TODO: a Settings view (add/edit/remove devices and cameras) will replace this; until then the
-    // gear opens the existing device dialog so device management stays reachable.
-    void Settings_Click(object sender, RoutedEventArgs e)
-    {
-        var device = Live.SelectedDevice ?? App.Settings.Devices.FirstOrDefault();
-        if (device is null)
-        {
-            AddDevice();
-        }
-        else
-        {
-            EditDevice(device);
-        }
-    }
+    /// <summary>Gear: opens the Settings view; pressed again it returns to the previous view.</summary>
+    void Settings_Click(object sender, RoutedEventArgs e) =>
+        SelectSection(_section == MainSection.Settings ? _sectionBeforeSettings : MainSection.Settings);
 
+    /// <summary>Opens Settings > Cihaz yönetimi with a new, already expanded device row.</summary>
     void AddDevice()
     {
-        var dialog = new DeviceDialog(null) { Owner = this };
-        if (dialog.ShowDialog() == true && dialog.Result is { } device)
+        SelectSection(MainSection.Settings);
+        SettingsPanel.BeginAddDevice();
+    }
+
+    /// <summary>Kaydet in the device editor: new login data needs a new SDK session, then the tiles reconnect.</summary>
+    void DeviceSaved(Device device, bool loginChanged)
+    {
+        if (loginChanged)
         {
-            App.Settings.Devices.Add(device);
-            App.SaveSettings();
-            DevicesChanged();
-            ShowLive(device);
+            HikSession.Find(device.Id)?.Dispose();
+        }
+        DevicesChanged();
+        Live.ReloadDevice(device);
+        if (App.Settings.Devices.Count == 1 && Live.VisibleTiles.All(t => t.Camera is null))
+        {
+            ShowLive(device); // first device (e.g. first run): show its cameras right away
         }
     }
 
-    void EditDevice(Device device)
+    void DeviceRemoved(Device device)
     {
-        var dialog = new DeviceDialog(device) { Owner = this };
-        if (dialog.ShowDialog() == true && dialog.Result is { } updated)
-        {
-            var index = App.Settings.Devices.IndexOf(device);
-            App.Settings.Devices[index] = updated;
-            App.SaveSettings();
-            DevicesChanged();
-            Live.ReloadDevice(updated);
-        }
+        Live.RemoveDevice(device.Id);
+        HikSession.Find(device.Id)?.Dispose();
+        DevicesChanged();
     }
 
     void DevicesChanged()
@@ -342,9 +354,31 @@ public partial class MainWindow : Window
         UpdateStatusBar();
     }
 
+    /// <summary>Best live state among the device's tiles (Playing over Connecting over the rest).</summary>
+    TileState? DeviceLiveState(Guid deviceId)
+    {
+        var states = Live.VisibleTiles.Where(t => t.Device?.Id == deviceId).Select(t => t.State).ToList();
+        return states.Contains(TileState.Playing) ? TileState.Playing :
+            states.Contains(TileState.Connecting) ? TileState.Connecting :
+            states.Count > 0 ? states[0] : null;
+    }
+
+    /// <summary>Top bar toggle and Settings switch share one setting; both stay in sync.</summary>
+    void SetMotionBoxes(bool show)
+    {
+        App.Settings.ShowMotionBoxes = show;
+        App.SaveSettings();
+        MotionToggle.IsChecked = show;
+        Live.ApplyMotionBoxes(show);
+        Playback.ApplyMotionBoxes(show);
+        SettingsPanel.RefreshAppSettings();
+    }
+
+    void MotionToggle_Click(object sender, RoutedEventArgs e) => SetMotionBoxes(MotionToggle.IsChecked == true);
+
     void ShowLive(Device device)
     {
-        SelectTab(live: true);
+        SelectSection(MainSection.Live);
         Live.ShowDevice(device);
     }
 
@@ -396,7 +430,7 @@ public partial class MainWindow : Window
         var device = Live.SelectedDevice ?? tiles.FirstOrDefault()?.Device ?? App.Settings.Devices.FirstOrDefault();
         if (device is null)
         {
-            ConnectionDot.Fill = Res<Brush>("Offline");
+            ConnectionDot.SetResourceReference(Shape.FillProperty, "Offline");
             ConnectionText.Text = "Cihaz yok";
         }
         else
@@ -407,7 +441,7 @@ public partial class MainWindow : Window
                 own.Any(t => t.State == TileState.Connecting) ? ("Warning", "Bağlanıyor…") :
                 own.Any(t => t.State == TileState.Failed) ? ("Danger", "Bağlantı yok") :
                 ("Offline", "Görüntü açık değil");
-            ConnectionDot.Fill = Res<Brush>(dot);
+            ConnectionDot.SetResourceReference(Shape.FillProperty, dot);
             var others = tiles.Select(t => t.Device!.Id).Distinct().Count(id => id != device.Id);
             ConnectionText.Text = others > 0 ? $"{state} · {device.Name} (+{others} cihaz)" : $"{state} · {device.Name}";
         }
@@ -459,27 +493,49 @@ public partial class MainWindow : Window
 
     // ---- Tabs / full screen ----
 
-    void LiveTab_Click(object sender, RoutedEventArgs e) => SelectTab(live: true);
+    void LiveTab_Click(object sender, RoutedEventArgs e) => SelectSection(MainSection.Live);
 
-    void PlaybackTab_Click(object sender, RoutedEventArgs e) => SelectTab(live: false);
+    void PlaybackTab_Click(object sender, RoutedEventArgs e) => SelectSection(MainSection.Playback);
 
-    void SelectTab(bool live)
+    /// <summary>
+    /// Shows one of the three views. The live wall keeps streaming behind the other two (it is only hidden);
+    /// playback stops when it is left. The camera sidebar belongs to live/playback, Settings has its own nav.
+    /// </summary>
+    void SelectSection(MainSection section)
     {
-        LiveTab.IsChecked = live;
-        PlaybackTab.IsChecked = !live;
-        LiveTools.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
-        Live.Visibility = live ? Visibility.Visible : Visibility.Collapsed;
-        Playback.Visibility = live ? Visibility.Collapsed : Visibility.Visible;
-        if (live)
+        var previous = _section;
+        if (section == MainSection.Settings && previous != MainSection.Settings)
+        {
+            _sectionBeforeSettings = previous;
+        }
+        _section = section;
+        LiveTab.IsChecked = section == MainSection.Live;
+        PlaybackTab.IsChecked = section == MainSection.Playback;
+        SettingsButton.IsChecked = section == MainSection.Settings;
+        LiveTools.Visibility = section == MainSection.Live ? Visibility.Visible : Visibility.Collapsed;
+        SidePanel.Visibility = section == MainSection.Settings || _fullScreen ? Visibility.Collapsed : Visibility.Visible;
+        Live.Visibility = section == MainSection.Live ? Visibility.Visible : Visibility.Collapsed;
+        Playback.Visibility = section == MainSection.Playback ? Visibility.Visible : Visibility.Collapsed;
+        SettingsPanel.Visibility = section == MainSection.Settings ? Visibility.Visible : Visibility.Collapsed;
+        if (previous == MainSection.Playback && section != MainSection.Playback)
         {
             Playback.Stop();
+        }
+        if (section == MainSection.Settings && previous != MainSection.Settings)
+        {
+            SettingsPanel.Open(SettingsPanel.Page);
+        }
+        else if (previous == MainSection.Settings && section != MainSection.Settings)
+        {
+            SettingsPanel.Close();
         }
     }
 
     void ToggleFullScreen()
     {
         _fullScreen = !_fullScreen;
-        Header.Visibility = SidePanel.Visibility = StatusBar.Visibility = _fullScreen ? Visibility.Collapsed : Visibility.Visible;
+        Header.Visibility = StatusBar.Visibility = _fullScreen ? Visibility.Collapsed : Visibility.Visible;
+        SidePanel.Visibility = _fullScreen || _section == MainSection.Settings ? Visibility.Collapsed : Visibility.Visible;
         if (_fullScreen)
         {
             _stateBeforeFullScreen = WindowState;
@@ -491,6 +547,7 @@ public partial class MainWindow : Window
         {
             WindowStyle = WindowStyle.SingleBorderWindow;
             WindowState = _stateBeforeFullScreen;
+            DarkTitleBar.Reapply(this); // the theme may have changed while the caption was hidden
         }
     }
 

@@ -25,25 +25,25 @@
             </ContextMenu>
         </Grid.ContextMenu>
 
-        <!-- Empty tile: dashed outline, accent when selected -->
+        <!-- Empty tile: dashed outline, accent when selected. The wall is dark in both themes (WallLine/WallText). -->
         <Grid x:Name="EmptyFrame">
             <Rectangle x:Name="EmptyOutline" RadiusX="3" RadiusY="3" StrokeThickness="1" StrokeDashArray="4 3"
-                       Stroke="{StaticResource InputBorder}" SnapsToDevicePixels="True" />
+                       Stroke="{DynamicResource WallLine}" SnapsToDevicePixels="True" />
             <TextBlock Text="Kamera sürükleyin" HorizontalAlignment="Center" VerticalAlignment="Center"
-                       Foreground="{StaticResource TextSecondary}" FontSize="{StaticResource FontSizeStatus}"
+                       Foreground="{DynamicResource WallText}" FontSize="{StaticResource FontSizeStatus}"
                        TextTrimming="CharacterEllipsis" Margin="8,0" />
         </Grid>
 
         <!-- Tile with a camera: header strip (WPF) above the video host (HWND); nothing overlaps the video. -->
-        <Border x:Name="Frame" Visibility="Collapsed" Background="{StaticResource TileBg}" BorderThickness="1"
-                BorderBrush="{StaticResource TileBorder}" CornerRadius="3" SnapsToDevicePixels="True">
+        <Border x:Name="Frame" Visibility="Collapsed" Background="{DynamicResource TileBg}" BorderThickness="1"
+                BorderBrush="{DynamicResource TileBorder}" CornerRadius="3" SnapsToDevicePixels="True">
             <Grid>
                 <Grid.RowDefinitions>
                     <RowDefinition x:Name="HeaderRow" Height="26" />
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <Border x:Name="Header" Background="{StaticResource TileHeaderBg}" BorderBrush="{StaticResource Border}"
+                <Border x:Name="Header" Background="{DynamicResource TileHeaderBg}" BorderBrush="{DynamicResource Border}"
                         BorderThickness="0,0,0,1" Padding="8,0" CornerRadius="2,2,0,0">
                     <Grid>
                         <Grid.ColumnDefinitions>
@@ -55,31 +55,31 @@
                         </Grid.ColumnDefinitions>
                         <Ellipse x:Name="StatusDot" Style="{StaticResource StatusDot}" Margin="0,0,6,0" />
                         <TextBlock x:Name="CameraName" Grid.Column="1" FontWeight="SemiBold" FontSize="{StaticResource FontSizeTile}"
-                                   Foreground="{StaticResource TextFg}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
-                        <TextBlock x:Name="StateText" Grid.Column="2" Text="Bağlanıyor…" Foreground="{StaticResource WarningText}"
+                                   Foreground="{DynamicResource TextFg}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        <TextBlock x:Name="StateText" Grid.Column="2" Text="Bağlanıyor…" Foreground="{DynamicResource WarningText}"
                                    FontSize="{StaticResource FontSizeSmall}" VerticalAlignment="Center" Margin="6,0,0,0"
                                    Visibility="Collapsed" />
-                        <Border x:Name="RecBadge" Grid.Column="3" Background="{StaticResource Danger}" CornerRadius="3" Padding="5,1"
+                        <Border x:Name="RecBadge" Grid.Column="3" Background="{DynamicResource Danger}" CornerRadius="3" Padding="5,1"
                                 Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed">
                             <StackPanel Orientation="Horizontal">
-                                <Ellipse Width="5" Height="5" Fill="{StaticResource SelectedFg}" VerticalAlignment="Center" Margin="0,0,4,0" />
+                                <Ellipse Width="5" Height="5" Fill="{DynamicResource SelectedFg}" VerticalAlignment="Center" Margin="0,0,4,0" />
                                 <TextBlock Text="KAYIT" FontSize="{StaticResource FontSizeBadge}" FontWeight="Bold"
-                                           Foreground="{StaticResource SelectedFg}" VerticalAlignment="Center" />
+                                           Foreground="{DynamicResource SelectedFg}" VerticalAlignment="Center" />
                             </StackPanel>
                         </Border>
-                        <Border x:Name="QualityBorder" Grid.Column="4" BorderBrush="{StaticResource BadgeBorder}" BorderThickness="1"
+                        <Border x:Name="QualityBorder" Grid.Column="4" BorderBrush="{DynamicResource BadgeBorder}" BorderThickness="1"
                                 CornerRadius="3" Padding="5,0" Margin="6,0,0,0" VerticalAlignment="Center">
                             <TextBlock x:Name="QualityBadge" FontSize="{StaticResource FontSizeBadge}" FontWeight="Bold"
-                                       Foreground="{StaticResource IconFg}" />
+                                       Foreground="{DynamicResource IconFg}" />
                         </Border>
                     </Grid>
                 </Border>
 
-                <Grid x:Name="VideoArea" Grid.Row="1" Background="{StaticResource VideoBg}">
+                <Grid x:Name="VideoArea" Grid.Row="1" Background="{DynamicResource VideoBg}">
                     <!-- Shown only while the video hosts are hidden (failed / stopped) -->
                     <TextBlock x:Name="MessageText" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
                                TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="12"
-                               Foreground="{StaticResource TextSecondary}" FontSize="{StaticResource FontSizeStatus}" />
+                               Foreground="{DynamicResource WallText}" FontSize="{StaticResource FontSizeStatus}" />
                     <Grid x:Name="VideoLayer">
                         <!-- SDK path: plain child HWND PlayCtrl draws into (encrypted streams) -->
                         <local:HikVideoHost x:Name="HikHost" Visibility="Collapsed" />

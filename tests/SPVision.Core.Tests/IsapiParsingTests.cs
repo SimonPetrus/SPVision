@@ -16,6 +16,7 @@ public class IsapiParsingTests
               <model>DS-7616NI-K2</model>
               <serialNumber>DS-7616NI-K21620200101CCRRD12345678WCVU</serialNumber>
               <firmwareVersion>V4.22.005</firmwareVersion>
+              <deviceType>NVR</deviceType>
             </DeviceInfo>
             """);
 
@@ -24,6 +25,7 @@ public class IsapiParsingTests
         Assert.Equal("Network Video Recorder", info.Name);
         Assert.Equal("DS-7616NI-K2", info.Model);
         Assert.Equal("V4.22.005", info.Firmware);
+        Assert.Equal("NVR", info.DeviceType);
     }
 
     [Fact]
