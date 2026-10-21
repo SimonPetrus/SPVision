@@ -9,7 +9,7 @@ namespace SPVision.Controls;
 /// window — the only thing that can be drawn over the SDK/Flyleaf video HWNDs — so it must never be
 /// left hanging: it closes on an outside click (StaysOpen=false), on Esc, and when the main window is
 /// deactivated, moved, resized or minimized. Its toggle button ignores the click that closes it, so
-/// that click does not open it again.
+/// that click does not open it again. The toggle's checked state is the popup's open state.
 /// </summary>
 static class TransientPopup
 {
@@ -39,7 +39,10 @@ static class TransientPopup
                 e.Handled = true;
             }
         };
-        toggle.Click += (_, _) => popup.IsOpen = toggle.IsChecked == true;
+        // Checked/Unchecked rather than Click: UI Automation (TogglePattern.Toggle) changes IsChecked without a click.
+        // Opened/Closed above set IsChecked to the popup's own state, so these then change nothing.
+        toggle.Checked += (_, _) => popup.IsOpen = true;
+        toggle.Unchecked += (_, _) => popup.IsOpen = false;
 
         Window? window = null;
         void Close(object? sender, EventArgs e) => popup.IsOpen = false;

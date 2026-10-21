@@ -95,11 +95,11 @@
                                     </StackPanel>
                                     <Border Grid.Column="1" Style="{StaticResource SegmentGroup}" HorizontalAlignment="Right" AutomationProperties.Name="Tema">
                                         <StackPanel Orientation="Horizontal">
-                                            <ToggleButton x:Name="ThemeLight" Content="Açık" Width="64" Style="{StaticResource SegmentButton}" Click="Theme_Click"
+                                            <c:ClickToggleButton x:Name="ThemeLight" Content="Açık" Width="64" Style="{StaticResource SegmentButton}" Click="Theme_Click"
                                                           AutomationProperties.Name="Açık tema" />
-                                            <ToggleButton x:Name="ThemeDark" Content="Koyu" Width="64" Style="{StaticResource SegmentButton}" Click="Theme_Click"
+                                            <c:ClickToggleButton x:Name="ThemeDark" Content="Koyu" Width="64" Style="{StaticResource SegmentButton}" Click="Theme_Click"
                                                           Margin="2,0,0,0" AutomationProperties.Name="Koyu tema" />
-                                            <ToggleButton x:Name="ThemeSystem" Content="Sistem" Width="64" Style="{StaticResource SegmentButton}" Click="Theme_Click"
+                                            <c:ClickToggleButton x:Name="ThemeSystem" Content="Sistem" Width="64" Style="{StaticResource SegmentButton}" Click="Theme_Click"
                                                           Margin="2,0,0,0" AutomationProperties.Name="Sistem teması" />
                                         </StackPanel>
                                     </Border>
@@ -126,7 +126,7 @@
                                                    Text="Kayıt cihazının algıladığı hareketi şifreli (SDK) görüntü üzerinde kutularla gösterir. Canlı izlemedeki düğmeyle de açılıp kapatılır." />
                                     </StackPanel>
                                     <CheckBox x:Name="MotionSwitch" Grid.Column="1" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
-                                              Click="MotionSwitch_Click" AutomationProperties.Name="Hareket kutularını göster" />
+                                              Checked="MotionSwitch_Changed" Unchecked="MotionSwitch_Changed" AutomationProperties.Name="Hareket kutularını göster" />
                                 </Grid>
                             </Border>
                             <Border Padding="16,10" MinHeight="60" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
@@ -142,11 +142,11 @@
                                     </StackPanel>
                                     <Border Grid.Column="1" Style="{StaticResource SegmentGroup}" HorizontalAlignment="Right" AutomationProperties.Name="Varsayılan görüntü kalitesi">
                                         <StackPanel Orientation="Horizontal">
-                                            <ToggleButton x:Name="QualityAuto" Content="Oto" Width="64" Style="{StaticResource SegmentButton}" Click="Quality_Click"
+                                            <c:ClickToggleButton x:Name="QualityAuto" Content="Oto" Width="64" Style="{StaticResource SegmentButton}" Click="Quality_Click"
                                                           AutomationProperties.Name="Otomatik kalite" />
-                                            <ToggleButton x:Name="QualityHd" Content="HD" Width="64" Style="{StaticResource SegmentButton}" Click="Quality_Click"
+                                            <c:ClickToggleButton x:Name="QualityHd" Content="HD" Width="64" Style="{StaticResource SegmentButton}" Click="Quality_Click"
                                                           Margin="2,0,0,0" AutomationProperties.Name="HD kalite" />
-                                            <ToggleButton x:Name="QualitySd" Content="SD" Width="64" Style="{StaticResource SegmentButton}" Click="Quality_Click"
+                                            <c:ClickToggleButton x:Name="QualitySd" Content="SD" Width="64" Style="{StaticResource SegmentButton}" Click="Quality_Click"
                                                           Margin="2,0,0,0" AutomationProperties.Name="SD kalite" />
                                         </StackPanel>
                                     </Border>
@@ -240,7 +240,7 @@
                                         <TextBlock Style="{StaticResource RowHelp}" Text="Izgara düzeni, kamera sırası ve canlı izlemedeki sayfa kapatırken nasılsa öyle açılır." />
                                     </StackPanel>
                                     <CheckBox x:Name="RestoreSwitch" Grid.Column="1" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
-                                              Click="RestoreSwitch_Click" AutomationProperties.Name="Açılışta son görünümü geri yükle" />
+                                              Checked="RestoreSwitch_Changed" Unchecked="RestoreSwitch_Changed" AutomationProperties.Name="Açılışta son görünümü geri yükle" />
                                 </Grid>
                             </Border>
                             <Border Padding="16,10" MinHeight="60" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
@@ -254,7 +254,7 @@
                                         <TextBlock Style="{StaticResource RowHelp}" Text="Oturum açıldığında SPVision kendiliğinden açılır." />
                                     </StackPanel>
                                     <CheckBox x:Name="AutoStartSwitch" Grid.Column="1" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
-                                              Click="AutoStartSwitch_Click" AutomationProperties.Name="Windows ile birlikte başlat" />
+                                              Checked="AutoStartSwitch_Changed" Unchecked="AutoStartSwitch_Changed" AutomationProperties.Name="Windows ile birlikte başlat" />
                                 </Grid>
                             </Border>
                             <Border Padding="16,10" MinHeight="60">
@@ -268,7 +268,7 @@
                                         <TextBlock Style="{StaticResource RowHelp}" Text="Uygulama doğrudan tam ekran (F11) açılır." />
                                     </StackPanel>
                                     <CheckBox x:Name="FullScreenSwitch" Grid.Column="1" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
-                                              Click="FullScreenSwitch_Click" AutomationProperties.Name="Tam ekranda aç" />
+                                              Checked="FullScreenSwitch_Changed" Unchecked="FullScreenSwitch_Changed" AutomationProperties.Name="Tam ekranda aç" />
                                 </Grid>
                             </Border>
                         </StackPanel>

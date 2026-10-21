@@ -379,3 +379,20 @@ yeniden okunur. "Geri al" formu son okunan değerlere döndürür (cihaza bir ş
 
 **Dikkat:** kanal adı yazımı `InputProxy/channels/{n}` belgesini bütün olarak geri yazar (kameranın IP/port/kullanıcı adı dahil, şifre öğesi
 GET'te gelmez ve gönderilmez). Bu cihazda denenmedi; ad değişikliğinden sonra kameranın çevrimiçi kaldığını doğrulayın.
+
+## 10. Erişilebilirlik: denetimler UI Automation ile de çalışmalı (21.10.2026)
+
+- Her denetim fare, klavye **ve UI Automation** (ekran okuyucu, `TogglePattern.Toggle()`, `SelectionItemPattern.Select()`,
+  `InvokePattern.Invoke()`) ile aynı şeyi yapmalı. **Tuzak:** düz `ToggleButton`/`CheckBox` UIA ile değiştirilince `IsChecked`
+  değişir ama `Click` **gelmez** → yalnız `Click`'e bağlı davranış çalışmaz, denetim seçili görünür ama görünüm değişmez.
+- Davranışı `Click`'te olan, `IsChecked`'i kodun kendisi yöneten düğmeler (sekmeler, Ayarlar dişlisi, kalite/tema/cihaz ayarı
+  segmentleri, hareket kutuları düğmesi, düzen seçici öğeleri, takvim günleri, oynatma kamera satırları, cihaz listesi satırları,
+  cihaz ayarları sekmeleri) [`ClickToggleButton`](src/SPVision/Controls/ClickToggleButton.cs) kullanır: UIA Toggle = gerçek tık
+  (`OnClick`: değiştir + `Click`), fare/klavye davranışı aynen kalır, çift çalışma olmaz. Yeni böyle düğme eklerken düz
+  `ToggleButton` kullanma (stiller `TargetType="ToggleButton"` olduğu için olduğu gibi uyar; stil açıkça verilmeli).
+- Durum anahtarları (`ToggleSwitch` onay kutuları, HTTPS kutusu, "Bilgisayarla eşitle", geçici Popup düğmeleri —
+  `TransientPopup`) `Checked`/`Unchecked`'e bağlıdır; kodun yüklerken koyduğu değer bayrakla (`_loadingSwitches`) ya da
+  olaylar başlangıç değerinden **sonra** bağlanarak yok sayılır. Ayarlar sol menüsü `RadioButton` + `Checked` (zaten uyumlu).
+- Etkileşimli her denetimin anlamlı `AutomationProperties.Name`'i olmalı; ana denetimlerde `x:Name` (= AutomationId) bulunur,
+  kodda üretilenlerde `AutomationProperties.AutomationId` verilir (`Day21`, `Layout16`, `RecorderTabMotion`). Takvim günü adı
+  "21 Ekim 2026[, kayıt var]", yardım metni tık / çift tık / Enter'ı anlatır.

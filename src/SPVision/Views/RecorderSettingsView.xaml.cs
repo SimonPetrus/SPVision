@@ -158,9 +158,10 @@ public partial class RecorderSettingsView : UserControl
         DeviceCombo.ItemTemplate = DeviceItemTemplate();
         foreach (var (tab, text, _) in Tabs)
         {
-            var button = new ToggleButton { Content = text };
+            var button = new ClickToggleButton { Content = text };
             button.SetResourceReference(StyleProperty, "RecorderTab");
             AutomationProperties.SetName(button, text);
+            AutomationProperties.SetAutomationId(button, $"RecorderTab{tab}");
             button.Click += (_, _) => SelectTab(tab);
             _tabButtons[tab] = button;
             TabBar.Children.Add(button);
@@ -616,7 +617,9 @@ public partial class RecorderSettingsView : UserControl
         var box = new CheckBox { IsChecked = value };
         box.SetResourceReference(StyleProperty, "ToggleSwitch");
         AutomationProperties.SetName(box, name);
-        box.Click += (_, _) => changed(box.IsChecked == true);
+        // Checked/Unchecked, not Click: UI Automation toggles without a click. The initial value is set above.
+        box.Checked += (_, _) => changed(true);
+        box.Unchecked += (_, _) => changed(false);
         return box;
     }
 
@@ -650,7 +653,7 @@ public partial class RecorderSettingsView : UserControl
         var buttons = new List<ToggleButton>();
         foreach (var (value, text) in items)
         {
-            var button = new ToggleButton
+            var button = new ClickToggleButton
             {
                 Content = text,
                 Width = buttonWidth,
@@ -1555,7 +1558,8 @@ public partial class RecorderSettingsView : UserControl
             var sync = new ToggleButton { Content = "Bilgisayarla eşitle", IsChecked = data.SyncTime, ToolTip = "Uygulanınca cihaz saati bu bilgisayarın saati ve saat dilimiyle eşitlenir" };
             sync.SetResourceReference(StyleProperty, "SettingsToggleButton");
             AutomationProperties.SetName(sync, "Bilgisayarla eşitle");
-            sync.Click += (_, _) => data.SyncTime = sync.IsChecked == true;
+            sync.Checked += (_, _) => data.SyncTime = true; // not Click: UI Automation toggles without one
+            sync.Unchecked += (_, _) => data.SyncTime = false;
             Grid.SetColumn(sync, 1);
             clockGrid.Children.Add(sync);
             clockControl = clockGrid;

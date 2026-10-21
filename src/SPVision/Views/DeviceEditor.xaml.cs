@@ -38,6 +38,9 @@ public partial class DeviceEditor : UserControl
         SdkPortBox.Text = _device.SdkPort.ToString(CultureInfo.InvariantCulture);
         UserBox.Text = _device.UserName;
         HttpsBox.IsChecked = _isNew || _device.UseHttps;
+        // After the stored value is shown: from here on any change (mouse, keyboard, UI Automation) moves the port.
+        HttpsBox.Checked += Https_Changed;
+        HttpsBox.Unchecked += Https_Changed;
         UpdatePlaceholders();
 
         // A new device has nothing to remove; keep the slot so the right-hand buttons do not move.
@@ -63,8 +66,8 @@ public partial class DeviceEditor : UserControl
 
     void Secret_Changed(object sender, RoutedEventArgs e) => UpdatePlaceholders();
 
-    /// <summary>"HTTPS kullan" clicked: a standard port follows it (80 ↔ 443); a custom port stays.</summary>
-    void Https_Click(object sender, RoutedEventArgs e) => HttpPortBox.Text = HttpsPort.Follow(HttpPortBox.Text, HttpsBox.IsChecked == true);
+    /// <summary>"HTTPS kullan" changed: a standard port follows it (80 ↔ 443); a custom port stays.</summary>
+    void Https_Changed(object sender, RoutedEventArgs e) => HttpPortBox.Text = HttpsPort.Follow(HttpPortBox.Text, HttpsBox.IsChecked == true);
 
     void UpdatePlaceholders()
     {
@@ -393,12 +396,14 @@ public partial class DeviceEditor : UserControl
             Child = grid,
         };
         row.SetResourceReference(Border.BorderBrushProperty, "Divider");
-        toggle.Click += (_, _) =>
+        void Changed(object sender, RoutedEventArgs e)
         {
             camera.Hidden = toggle.IsChecked != true;
             // Dim the row but not the switch itself.
             name.Opacity = channel.Opacity = status.Opacity = camera.Hidden ? 0.55 : 1;
-        };
+        }
+        toggle.Checked += Changed; // not Click: UI Automation toggles without one
+        toggle.Unchecked += Changed;
         name.Opacity = channel.Opacity = status.Opacity = camera.Hidden ? 0.55 : 1;
         return row;
     }

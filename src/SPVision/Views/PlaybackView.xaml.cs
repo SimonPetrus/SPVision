@@ -660,13 +660,16 @@ public partial class PlaybackView : UserControl
             var dot = new Ellipse { Width = 4, Height = 4, Margin = new Thickness(0, 2, 0, 0), Fill = Brushes.Transparent };
             var number = new TextBlock { Text = dayNumber.ToString(CultureInfo.InvariantCulture), HorizontalAlignment = HorizontalAlignment.Center };
             Typography.SetNumeralAlignment(number, FontNumeralAlignment.Tabular);
-            var button = new ToggleButton
+            var button = new ClickToggleButton
             {
                 Style = (Style)FindResource("CalendarDay"),
                 Content = new StackPanel { Children = { number, dot } },
                 IsEnabled = date <= DateTime.Today,
                 ToolTip = PlaybackText.DayToolTip,
             };
+            // Name ("21 Ekim 2026[, kayıt var]") is set in UpdateDayButtons.
+            System.Windows.Automation.AutomationProperties.SetAutomationId(button, $"Day{dayNumber}");
+            System.Windows.Automation.AutomationProperties.SetHelpText(button, "Tıklayın: günü seç. Çift tıklayın ya da Enter'a basın: günün kaydını 00:00'dan oynat");
             // Single click selects the day. A double-click arrives as Click (1st up), MouseDoubleClick (2nd down),
             // Click (2nd up): both Clicks select the same day, so the second one is a no-op in SelectDay and only
             // MouseDoubleClick seeks. Enter (normally a click) does what the double-click does.
@@ -1036,7 +1039,7 @@ public partial class PlaybackView : UserControl
         grid.Children.Add(number);
 
         var source = new CameraRef(device.Id, camera.Channel);
-        var button = new ToggleButton
+        var button = new ClickToggleButton
         {
             Style = (Style)FindResource("CameraCheckRow"),
             Content = grid,

@@ -254,7 +254,7 @@ public partial class SettingsView : UserControl
         var count = Cell("", 10);
         grid.Children.Add(count);
 
-        var row = new ToggleButton { Content = grid };
+        var row = new ClickToggleButton { Content = grid };
         row.SetResourceReference(StyleProperty, "ListRowToggle");
         System.Windows.Automation.AutomationProperties.SetName(row, isNew ? "Yeni cihaz" : $"{device.Name}, {device.Host}");
 
@@ -551,7 +551,9 @@ public partial class SettingsView : UserControl
         LoadAppSettings();
     }
 
-    void MotionSwitch_Click(object sender, RoutedEventArgs e)
+    // The switches act on Checked/Unchecked (mouse, keyboard and UI Automation alike); loading them changes nothing.
+
+    void MotionSwitch_Changed(object sender, RoutedEventArgs e)
     {
         if (!_loadingSwitches)
         {
@@ -618,14 +620,22 @@ public partial class SettingsView : UserControl
         target.ToolTip = path;
     }
 
-    void RestoreSwitch_Click(object sender, RoutedEventArgs e)
+    void RestoreSwitch_Changed(object sender, RoutedEventArgs e)
     {
+        if (_loadingSwitches)
+        {
+            return;
+        }
         App.Settings.RestoreLastView = RestoreSwitch.IsChecked == true;
         App.SaveSettings();
     }
 
-    void AutoStartSwitch_Click(object sender, RoutedEventArgs e)
+    void AutoStartSwitch_Changed(object sender, RoutedEventArgs e)
     {
+        if (_loadingSwitches)
+        {
+            return;
+        }
         try
         {
             WindowsStartup.Set(AutoStartSwitch.IsChecked == true);
@@ -637,8 +647,12 @@ public partial class SettingsView : UserControl
         LoadAppSettings(); // the registry is the truth
     }
 
-    void FullScreenSwitch_Click(object sender, RoutedEventArgs e)
+    void FullScreenSwitch_Changed(object sender, RoutedEventArgs e)
     {
+        if (_loadingSwitches)
+        {
+            return;
+        }
         App.Settings.StartFullScreen = FullScreenSwitch.IsChecked == true;
         App.SaveSettings();
     }

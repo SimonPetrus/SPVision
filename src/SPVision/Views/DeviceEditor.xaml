@@ -93,7 +93,7 @@
                                Foreground="{DynamicResource TextSecondary}" />
                 </Grid>
                 <CheckBox x:Name="HttpsBox" Grid.Row="6" Grid.Column="2" Content="HTTPS kullan" VerticalAlignment="Center"
-                          AutomationProperties.Name="HTTPS kullan" Click="Https_Click"
+                          AutomationProperties.Name="HTTPS kullan"
                           ToolTip="Cihazla ayar ve bilgi alışverişini şifreler (görüntü akışını etkilemez). Varsayılan port 443." />
             </Grid>
 
@@ -116,7 +116,7 @@
                 <StackPanel Grid.Column="2" Orientation="Horizontal">
                     <Button x:Name="RefreshButton" Content="Kameraları yenile" Style="{StaticResource SettingsButton}" Click="Refresh_Click"
                             ToolTip="Kamera listesini cihazdan yeniden okur (yalnızca okuma)" />
-                    <Button Content="İptal" Style="{StaticResource SettingsButton}" Margin="8,0,0,0" Click="Cancel_Click" />
+                    <Button x:Name="CancelButton" Content="İptal" Style="{StaticResource SettingsButton}" Margin="8,0,0,0" Click="Cancel_Click" />
                     <Button x:Name="SaveButton" Content="Kaydet" Style="{StaticResource SettingsAccentButton}" Margin="8,0,0,0" Click="Save_Click" />
                 </StackPanel>
             </Grid>

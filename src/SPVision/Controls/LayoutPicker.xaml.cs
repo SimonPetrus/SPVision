@@ -75,12 +75,13 @@ public partial class LayoutPicker : UserControl
                 Margin = new Thickness(0, 5, 0, 0),
             };
             Typography.SetNumeralAlignment(number, FontNumeralAlignment.Tabular);
-            var item = new ToggleButton
+            var item = new ClickToggleButton
             {
                 Style = (Style)FindResource("LayoutItem"),
                 Content = new StackPanel { Children = { diagram, number } },
             };
             System.Windows.Automation.AutomationProperties.SetName(item, $"{layout.TileCount} {description}");
+            System.Windows.Automation.AutomationProperties.SetAutomationId(item, $"Layout{layout.TileCount}");
             item.Click += (_, _) =>
             {
                 Panel.IsOpen = false;

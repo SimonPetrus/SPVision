@@ -132,7 +132,7 @@
                             ToolTip="Duraklat" AutomationProperties.Name="Duraklat">
                         <c:GlyphIcon x:Name="PlayPauseIcon" FillData="{StaticResource IconPause}" Size="14" />
                     </Button>
-                    <Button Style="{StaticResource PlayerButton}" Margin="4,0,0,0" Click="Snapshot_Click"
+                    <Button x:Name="SnapshotButton" Style="{StaticResource PlayerButton}" Margin="4,0,0,0" Click="Snapshot_Click"
                             ToolTip="Anlık görüntü (seçili kare)" AutomationProperties.Name="Seçili kareden anlık görüntü">
                         <c:GlyphIcon Data="{StaticResource IconCamera}" Size="15" />
                     </Button>
@@ -143,7 +143,7 @@
                 </StackPanel>
 
                 <StackPanel Grid.Column="1" Orientation="Horizontal" Margin="16,0">
-                    <Button Style="{StaticResource PlayerButton}" Click="Back_Click" ToolTip="30 saniye geri" AutomationProperties.Name="30 saniye geri">
+                    <Button x:Name="BackButton" Style="{StaticResource PlayerButton}" Click="Back_Click" ToolTip="30 saniye geri" AutomationProperties.Name="30 saniye geri">
                         <c:GlyphIcon Data="{StaticResource IconBack30}" Label="30" LabelX="12.5" Size="19" StrokeThickness="1.8" />
                     </Button>
                     <ToggleButton x:Name="TimeButton" Style="{StaticResource PlayerTimeButton}" Margin="6,0"
@@ -154,7 +154,7 @@
                                        Typography.NumeralAlignment="Tabular" VerticalAlignment="Center" />
                         </StackPanel>
                     </ToggleButton>
-                    <Button Style="{StaticResource PlayerButton}" Click="Forward_Click" ToolTip="30 saniye ileri" AutomationProperties.Name="30 saniye ileri">
+                    <Button x:Name="ForwardButton" Style="{StaticResource PlayerButton}" Click="Forward_Click" ToolTip="30 saniye ileri" AutomationProperties.Name="30 saniye ileri">
                         <c:GlyphIcon Data="{StaticResource IconForward30}" Label="30" LabelX="11.5" Size="19" StrokeThickness="1.8" />
                     </Button>
                 </StackPanel>
@@ -204,8 +204,8 @@
                                     <ColumnDefinition Width="8" />
                                     <ColumnDefinition Width="*" />
                                 </Grid.ColumnDefinitions>
-                                <Button Content="İptal" Style="{StaticResource PopupButton}" Click="GoToCancel_Click" />
-                                <Button Content="Git" Grid.Column="2" Style="{StaticResource PopupAccentButton}" Click="GoTo_Click" />
+                                <Button x:Name="GoToCancelButton" Content="İptal" Style="{StaticResource PopupButton}" Click="GoToCancel_Click" />
+                                <Button x:Name="GoToButton" Content="Git" Grid.Column="2" Style="{StaticResource PopupAccentButton}" Click="GoTo_Click" />
                             </Grid>
                         </StackPanel>
                     </Border>
