@@ -461,4 +461,103 @@ public class PlaybackSyncTests
         Assert.Equal("Kayıt listesi alınamadı: Cihaz zaman aşımına uğradı.", PlaybackText.SearchFailed("Cihaz zaman aşımına uğradı."));
         Assert.Equal("Kayıt listesi alınamadı", PlaybackText.SearchFailed(""));
     }
+
+    // ---- Calendar day searches: retry instead of giving up ----
+
+    [Fact]
+    public void DaySearchIsRetriedThreeTimesThenStops()
+    {
+        Assert.Equal(TimeSpan.FromSeconds(5), RecordedDays.RetryDelay(1));
+        Assert.Equal(TimeSpan.FromSeconds(15), RecordedDays.RetryDelay(2));
+        Assert.Equal(TimeSpan.FromSeconds(30), RecordedDays.RetryDelay(3));
+        Assert.Null(RecordedDays.RetryDelay(4));
+    }
+
+    [Fact]
+    public void CalendarSearchFailureText() =>
+        Assert.Equal("Takvim için kayıt günleri alınamadı (Kapı): Cihaz zaman aşımına uğradı.",
+            PlaybackText.CalendarSearchFailed("Kapı", "Cihaz zaman aşımına uğradı."));
+
+    // ---- Double-clicked day: start at 00:00 ----
+
+    [Fact]
+    public void DayRecordedAtMidnightStartsAtMidnight()
+    {
+        var result = DayStart.Resolve(Day, [Segment(At(0, 0), At(6, 0))], null);
+
+        Assert.Equal(new DayStartResult(DayStartKind.Midnight, Day), result);
+        Assert.Null(result!.Value.Message);
+    }
+
+    [Fact]
+    public void RecordingRunningOverMidnightCountsAsRecordedAtMidnight()
+    {
+        var result = DayStart.Resolve(Day, [Segment(Day.AddHours(-2), At(1, 0)), Segment(At(8, 0), At(9, 0))], null);
+
+        Assert.Equal(DayStartKind.Midnight, result!.Value.Kind);
+        Assert.Equal(Day, result.Value.Target);
+    }
+
+    [Fact]
+    public void NoRecordingAtMidnightStartsAtTheFocusedCamerasFirstRecording()
+    {
+        // The other cameras are still searching: the focused camera's own recordings decide.
+        var result = DayStart.Resolve(Day, [Segment(At(9, 0), At(10, 0)), Segment(At(7, 12, 5), At(8, 0))], null);
+
+        Assert.Equal(new DayStartResult(DayStartKind.FirstRecording, At(7, 12, 5)), result);
+        Assert.Equal("00:00'da kayıt yok · ilk kayıt 07:12:05'den başlatıldı", result!.Value.Message);
+    }
+
+    [Fact]
+    public void RecordingsOfOtherDaysAreIgnored()
+    {
+        var result = DayStart.Resolve(Day, [Segment(Day.AddHours(-5), Day.AddHours(-1)), Segment(At(3, 0), At(4, 0))], null);
+
+        Assert.Equal(new DayStartResult(DayStartKind.FirstRecording, At(3, 0)), result);
+    }
+
+    [Fact]
+    public void FocusedCameraWithoutRecordingsWaitsForTheOthers()
+    {
+        Assert.Null(DayStart.Resolve(Day, [], null));
+    }
+
+    [Fact]
+    public void FocusedCameraWithoutRecordingsStartsAtTheEarliestOfTheOthers()
+    {
+        IReadOnlyList<RecordingSegment> none = [];
+        var result = DayStart.Resolve(Day, none, [none, [Segment(At(11, 0), At(12, 0))], [Segment(At(5, 30), At(6, 0))]]);
+
+        Assert.Equal(new DayStartResult(DayStartKind.FirstRecording, At(5, 30)), result);
+
+        var midnight = DayStart.Resolve(Day, none, [none, [Segment(At(0, 0), At(2, 0))]]);
+        Assert.Equal(new DayStartResult(DayStartKind.Midnight, Day), midnight);
+    }
+
+    [Fact]
+    public void NoCameraRecordedOnTheDay()
+    {
+        IReadOnlyList<RecordingSegment> none = [];
+        var result = DayStart.Resolve(Day, none, [none, none]);
+
+        Assert.Equal(new DayStartResult(DayStartKind.NoRecordings, Day), result);
+        Assert.Equal("Bu günde kayıt yok", result!.Value.Message);
+    }
+
+    [Fact]
+    public void UnknownRecordingsStartAtMidnight()
+    {
+        // A failed search: the recorder itself starts at its first recording after 00:00.
+        Assert.Equal(new DayStartResult(DayStartKind.Midnight, Day), DayStart.Resolve(Day, null, null));
+        IReadOnlyList<RecordingSegment> none = [];
+        Assert.Equal(new DayStartResult(DayStartKind.Midnight, Day), DayStart.Resolve(Day, none, [none, null]));
+    }
+
+    [Fact]
+    public void DayTexts()
+    {
+        Assert.Equal("Önce kamera seçin", PlaybackText.SelectCameraForDay);
+        Assert.Equal("Çift tıklayın: günün kaydını 00:00'dan oynat", PlaybackText.DayToolTip);
+        Assert.Equal("00:00'da kayıt yok · ilk kayıt 13:05:09'den başlatıldı", PlaybackText.StartedAtFirstRecording(At(13, 5, 9)));
+    }
 }

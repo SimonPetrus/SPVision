@@ -147,6 +147,36 @@ public class IsapiParsingTests
     }
 
     [Theory]
+    [InlineData("""<ResponseStatus><statusCode>3</statusCode><statusString>Device Busy</statusString></ResponseStatus>""", "Device Busy")]
+    [InlineData("""<ResponseStatus><statusCode>6</statusCode><subStatusCode>badParameters</subStatusCode></ResponseStatus>""", "badParameters")]
+    [InlineData("""<CMSearchResult><responseStatus>false</responseStatus><responseStatusStrg>FAILED</responseStatusStrg></CMSearchResult>""", "FAILED")]
+    public void RefusedSearchIsAnErrorNotNoRecordings(string xml, string reason)
+    {
+        // Hand-written: a refusal with HTTP 200 must not be read as "no recordings" (the calendar would keep that answer).
+        var e = Assert.Throws<IsapiException>(() => IsapiClient.ParseSearchResult(XDocument.Parse(xml)));
+        Assert.Contains(reason, e.Message);
+    }
+
+    [Fact]
+    public void NoMatchesWithFalseStatusIsStillNoRecordings()
+    {
+        var doc = XDocument.Parse($"""
+            <CMSearchResult xmlns="{Ns}"><responseStatus>false</responseStatus><responseStatusStrg>NO MATCHES</responseStatusStrg></CMSearchResult>
+            """);
+
+        Assert.Empty(IsapiClient.ParseSearchResult(doc).Segments);
+    }
+
+    [Fact]
+    public async Task DaySearchRefusalThrows()
+    {
+        var handler = new SearchPages($"""<ResponseStatus xmlns="{Ns}"><statusCode>3</statusCode><statusString>Device Busy</statusString></ResponseStatus>""");
+        using var client = new IsapiClient(new Uri("http://recorder.test/"), handler);
+
+        await Assert.ThrowsAsync<IsapiException>(() => client.HasRecordingsAsync(1, new DateTime(2026, 10, 20), new DateTime(2026, 10, 20, 23, 59, 59)));
+    }
+
+    [Theory]
     [InlineData("2026-10-20T08:15:30Z")]
     [InlineData("2026-10-20T08:15:30+03:00")]
     [InlineData("2026-10-20T08:15:30-05:00")]

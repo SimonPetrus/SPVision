@@ -18,7 +18,7 @@ public sealed class IsapiException(string message, HttpStatusCode? status = null
 /// Minimal Hikvision ISAPI client (HTTP Digest). Replaces the HCNetSDK calls the old client made:
 /// Login_V40/DEVICECFG_V40 -> deviceInfo, IPPARACFG_V40/PICCFG_V40 -> channel lists, FindFile_V50 -> search.
 /// </summary>
-public sealed class IsapiClient : IDisposable
+public sealed partial class IsapiClient : IDisposable
 {
     readonly HttpClient _http;
 
@@ -272,11 +272,22 @@ public sealed class IsapiClient : IDisposable
         return (segments, more);
     }
 
-    /// <summary>One result page: the valid segments, the MORE flag and how many match items the page held.</summary>
+    /// <summary>
+    /// One result page: the valid segments, the MORE flag and how many match items the page held. A refusal the
+    /// recorder sends with HTTP 200 (a <c>ResponseStatus</c> document, or <c>responseStatus</c> false without
+    /// "NO MATCHES") throws: it must not read as "no recordings" (the calendar would keep that day without a dot).
+    /// </summary>
     static (List<RecordingSegment> Segments, bool More, int Received) ParseSearchPage(XDocument doc)
     {
         var root = doc.Root!;
         var status = Value(root, "responseStatusStrg") ?? "";
+        if (root.Name.LocalName == "ResponseStatus" ||
+            (string.Equals(Value(root, "responseStatus"), "false", StringComparison.OrdinalIgnoreCase) &&
+             !string.Equals(status, "NO MATCHES", StringComparison.OrdinalIgnoreCase)))
+        {
+            var reason = Value(root, "statusString") ?? Value(root, "subStatusCode") ?? (status.Length > 0 ? status : null);
+            throw new IsapiException(reason is null ? "Cihaz aramayı reddetti." : $"Cihaz aramayı reddetti ({reason}).");
+        }
         var items = Elements(root, "searchMatchItem").ToList();
         var segments = items
             .Select(item =>

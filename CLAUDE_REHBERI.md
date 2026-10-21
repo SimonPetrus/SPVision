@@ -188,6 +188,23 @@ dotnet run --project src\SPVision
   "Kayıt listesi alınamadı: …" yazar (eskiden sessizdi: yeşil yoktu, oynatma gece yarısından başlıyordu).
   `SearchRecordingsAsync` sonraki sayfayı **gelen sonuç sayısı kadar** ilerletir (cihaz istenenden az döndürebilir; eskiden
   100 atlanıyordu) ve okunamayan zaman damgalı tek öğe tüm aramayı düşürmez.
+- **Takvimde çift tık (21.10.2026, cihazda denenmedi):** tek tık günü seçer (değişmedi). Bugün/geçmiş güne çift tık
+  ya da odaktaki gün düğmesinde **Enter** = günü seç + tüm kareleri **00:00'a** ara, geçerli hızda oynat (duraklatılmışsa
+  oynar). Ayrım: tık 1 (bırakınca `Click` → `SelectDay`), 2. basışta `MouseDoubleClick` → `PlayDay`, 2. bırakışta gelen
+  `Click` aynı gün olduğu için `SelectDay`'de etkisizdir (ek arama/arama yok). Enter `PreviewKeyDown`'da yakalanır (düğmenin
+  kendi Enter tıklaması çalışmaz). Gün aramaları bitmemişse `_startFromMidnight` bayrağı `TryStart`'a "00:00'dan başla"
+  der. Karar Core [`DayStart.Resolve`](src/SPVision.Core/PlaybackSync.cs): odaklı kamera 00:00'da kayıtlıysa (gece yarısını
+  aşan kayıt dahil) 00:00; değilse günün ilk kaydı + amber "00:00'da kayıt yok · ilk kayıt HH:MM:SS'den başlatıldı";
+  odaklıda hiç yoksa (tüm aramalar bitince) diğer kameraların en erkeni; kimsede yoksa kareler park + "Bu günde kayıt yok";
+  arama başarısızsa (bilinmiyor) 00:00. Kamera yoksa "Önce kamera seçin"; gelecek günler devre dışı. İpucu: "Çift tıklayın:
+  günün kaydını 00:00'dan oynat".
+- **Yeşil noktalar görünmüyordu (21.10.2026 düzeltmesi, cihazda doğrulanmadı):** nokta yükleyicisi ilk hatalı gün
+  aramasında (kayıt cihazı oynatma aramalarıyla meşgul, 10 sn zaman aşımı…) **sessizce duruyordu**; kalan günler hiç
+  sorulmuyordu. HTTP 200 ile gelen bir ret (`ResponseStatus` belgesi ya da `responseStatus` false) ise "kayıt yok" diye
+  okunup o gün **kalıcı olarak** noktasız kalıyordu. Şimdi: arama reddi `IsapiException` atar ("NO MATCHES" yine "kayıt
+  yok"dur); hata hiçbir zaman "kayıt yok" diye saklanmaz, aynı gün 5 / 15 / 30 sn sonra yeniden sorulur
+  (`RecordedDays.RetryDelay`), üçüncü hatadan sonra durum çubuğunda "Takvim için kayıt günleri alınamadı (kamera): …"
+  yazar; gün araması zaman aşımı 20 sn (oynatma aramasıyla aynı), aynı anda 1 gün araması.
 
 ### Temalar (açık / koyu / sistem)
 

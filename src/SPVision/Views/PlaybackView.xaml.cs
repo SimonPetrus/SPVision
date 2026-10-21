@@ -55,7 +55,7 @@ public partial class PlaybackView : UserControl
     readonly Stopwatch _clock = new();
     readonly Stopwatch _holdWatch = new();
     readonly SemaphoreSlim _searches = new(4, 4); // ISAPI searches at once (the recorder serves them one by one anyway)
-    readonly SemaphoreSlim _markSearches = new(2, 2); // calendar day searches at once (behind the playback day's own)
+    readonly SemaphoreSlim _markSearches = new(1, 1); // calendar day searches at once (behind the playback day's own)
     readonly RecordedDays _recordedDays = new();
     readonly Dictionary<CameraRef, CancellationTokenSource> _markLoaders = []; // calendar searches per checked camera
 
@@ -66,6 +66,7 @@ public partial class PlaybackView : UserControl
     DateTime _anchor = DateTime.Today; // master time when _clock was (re)started
     bool _hasTime;                     // a shared time is set (first recording of the day, a seek…)
     bool _holding;                     // after a seek: the clock waits for the focused tile's first frame
+    bool _startFromMidnight;           // a day was double-clicked: start it at 00:00, not at the first recording
     bool _paused;
     bool _active;                      // the view is shown and playing
     int _speed = PlaybackSpeed.Normal;
@@ -382,6 +383,11 @@ public partial class PlaybackView : UserControl
         {
             return;
         }
+        if (_startFromMidnight)
+        {
+            StartFromMidnight(focused);
+            return;
+        }
         DateTime? start = focused.Segments is { Count: > 0 } own ? own.Min(s => s.Start) : null;
         var tiles = ActiveTiles.ToList();
         if (start is null && tiles.All(t => t.SearchDone))
@@ -407,11 +413,42 @@ public partial class PlaybackView : UserControl
         }
     }
 
+    /// <summary>
+    /// A double-clicked day (<see cref="PlayDay"/>): 00:00, or the focused camera's first recording of the day
+    /// (<see cref="DayStart"/>). When the focused camera has none, waits until every tile searched the day.
+    /// </summary>
+    void StartFromMidnight(PlaybackTile focused)
+    {
+        var tiles = ActiveTiles.ToList();
+        var all = tiles.All(t => t.SearchDone) ? tiles.Select(t => t.Segments).ToList() : null;
+        if (DayStart.Resolve(_day, focused.Segments, all) is not { } start)
+        {
+            return;
+        }
+        if (start.Kind == DayStartKind.NoRecordings)
+        {
+            _startFromMidnight = false;
+            foreach (var tile in tiles)
+            {
+                tile.Park(tile.Segments, _day);
+            }
+        }
+        else
+        {
+            StartAt(start.Target);
+        }
+        if (start.Message is { } message)
+        {
+            ShowMessage(message); // otherwise a search error shown for the focused camera stays
+        }
+    }
+
     /// <summary>Every tile (whose recordings are known) to <paramref name="time"/>; the clock waits for the focused tile.</summary>
     void StartAt(DateTime time)
     {
         SetMaster(time);
         _hasTime = true;
+        _startFromMidnight = false;
         StartHold();
         foreach (var tile in ActiveTiles.Where(t => t.SearchDone))
         {
@@ -627,8 +664,27 @@ public partial class PlaybackView : UserControl
                 Style = (Style)FindResource("CalendarDay"),
                 Content = new StackPanel { Children = { number, dot } },
                 IsEnabled = date <= DateTime.Today,
+                ToolTip = PlaybackText.DayToolTip,
             };
+            // Single click selects the day. A double-click arrives as Click (1st up), MouseDoubleClick (2nd down),
+            // Click (2nd up): both Clicks select the same day, so the second one is a no-op in SelectDay and only
+            // MouseDoubleClick seeks. Enter (normally a click) does what the double-click does.
             button.Click += (_, _) => SelectDay(date);
+            button.MouseDoubleClick += (_, e) =>
+            {
+                if (e.ChangedButton == MouseButton.Left)
+                {
+                    PlayDay(date);
+                }
+            };
+            button.PreviewKeyDown += (_, e) =>
+            {
+                if (e.Key == Key.Enter && Keyboard.Modifiers == ModifierKeys.None)
+                {
+                    PlayDay(date);
+                    e.Handled = true;
+                }
+            };
             _dayButtons.Add((button, dot, date));
             DayGrid.Children.Add(button);
         }
@@ -709,25 +765,46 @@ public partial class PlaybackView : UserControl
             {
                 return;
             }
-            using var isapi = new IsapiClient(found.Device, TimeSpan.FromSeconds(10));
+            // Same timeout as the playback day's search: the recorder serves searches one by one, so a day search
+            // can wait behind them.
+            using var isapi = new IsapiClient(found.Device, TimeSpan.FromSeconds(20));
+            var failures = 0;
             while (!cts.IsCancellationRequested &&
                    _recordedDays.NextToSearch(source, CheckedCameras(), month, DateTime.Today) is { } day)
             {
-                bool recorded;
+                bool? recorded = null;
+                string? error = null;
                 await _markSearches.WaitAsync(cts.Token);
                 try
                 {
                     recorded = await isapi.HasRecordingsAsync(found.Camera.Channel, day, day.AddDays(1).AddSeconds(-1), cts.Token);
                 }
+                catch (IsapiException e)
+                {
+                    error = e.Message;
+                }
                 finally
                 {
                     _markSearches.Release();
                 }
-                _recordedDays.Set(source, day, recorded);
-                if (!cts.IsCancellationRequested)
+                if (recorded is { } answer)
                 {
-                    UpdateDayButtons();
+                    failures = 0;
+                    _recordedDays.Set(source, day, answer);
+                    if (!cts.IsCancellationRequested)
+                    {
+                        UpdateDayButtons();
+                    }
+                    continue;
                 }
+                // A failure is never stored as "no recording": the same day is asked again a little later. (Before,
+                // the first failure ended the loop silently and the remaining days never got their dot.)
+                if (RecordedDays.RetryDelay(++failures) is not { } delay)
+                {
+                    Message?.Invoke(PlaybackText.CalendarSearchFailed(found.Camera.Name, error ?? ""));
+                    return;
+                }
+                await Task.Delay(delay, cts.Token);
             }
         }
         catch (OperationCanceledException)
@@ -769,6 +846,7 @@ public partial class PlaybackView : UserControl
         }
         _day = date.Date;
         _hasTime = false;
+        _startFromMidnight = false;
         _anchor = _day;
         _holding = false;
         ShowMessage(null);
@@ -780,6 +858,32 @@ public partial class PlaybackView : UserControl
         }
         UpdateDayButtons();
         UpdateFocus();
+    }
+
+    /// <summary>
+    /// Double-click (or Enter) on a day: that day on every tile from 00:00 at the current speed, playing even if
+    /// paused. The focused camera without a recording at 00:00 starts at its first recording of the day instead
+    /// (amber notice); the other tiles follow the shared time (parked where they have none). Days after today: nothing.
+    /// </summary>
+    void PlayDay(DateTime date)
+    {
+        if (date.Date > DateTime.Today)
+        {
+            return;
+        }
+        SelectDay(date); // the first click of a double-click already did: no new search
+        if (FocusedTile is null)
+        {
+            ShowMessage(PlaybackText.SelectCameraForDay);
+            return;
+        }
+        _hasTime = false;
+        _holding = false;
+        _anchor = _day;
+        _paused = false; // the tiles get it with the seek
+        _startFromMidnight = true;
+        TryStart(); // now if the searches of the day are done, otherwise when they finish
+        UpdateUi();
     }
 
     // ---- Sidebar: cameras ----

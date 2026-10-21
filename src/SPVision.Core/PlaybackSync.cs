@@ -216,6 +216,66 @@ public static class RecordingJump
     }
 }
 
+public enum DayStartKind
+{
+    /// <summary>Recorded at 00:00 (or recordings unknown): play from midnight.</summary>
+    Midnight,
+
+    /// <summary>Not recorded at 00:00: play from the first recording of the day.</summary>
+    FirstRecording,
+
+    /// <summary>No camera recorded anything on the day.</summary>
+    NoRecordings,
+}
+
+public readonly record struct DayStartResult(DayStartKind Kind, DateTime Target)
+{
+    /// <summary>Amber message for the info bar, or null when playback starts at 00:00.</summary>
+    public string? Message => Kind switch
+    {
+        DayStartKind.FirstRecording => PlaybackText.StartedAtFirstRecording(Target),
+        DayStartKind.NoRecordings => PlaybackText.NoRecordingsOnDay,
+        _ => null,
+    };
+}
+
+/// <summary>A double-clicked calendar day (or Enter on it) plays from 00:00 on every tile.</summary>
+public static class DayStart
+{
+    /// <summary>
+    /// Where the day starts. <paramref name="focused"/>: the focused camera's recordings (null when its search
+    /// failed: midnight, the recorder starts at its first recording). Not recorded at 00:00 → its first recording
+    /// of the day; none at all → the first recording of any camera in <paramref name="all"/> (every camera of the
+    /// grid, null entries unknown; <paramref name="all"/> itself null while some are still searching → null = wait).
+    /// </summary>
+    public static DayStartResult? Resolve(DateTime day, IReadOnlyList<RecordingSegment>? focused, IReadOnlyList<IReadOnlyList<RecordingSegment>?>? all)
+    {
+        var midnight = day.Date;
+        if (focused is null)
+        {
+            return new DayStartResult(DayStartKind.Midnight, midnight);
+        }
+        var own = RecordingJump.ClipToDay(focused, midnight);
+        if (own.Count > 0)
+        {
+            return From(own[0].Start, midnight);
+        }
+        if (all is null)
+        {
+            return null;
+        }
+        var any = RecordingJump.ClipToDay(all.OfType<IReadOnlyList<RecordingSegment>>().SelectMany(s => s), midnight);
+        if (any.Count > 0)
+        {
+            return From(any[0].Start, midnight);
+        }
+        return new DayStartResult(all.Any(s => s is null) ? DayStartKind.Midnight : DayStartKind.NoRecordings, midnight);
+    }
+
+    static DayStartResult From(DateTime first, DateTime midnight) =>
+        first <= midnight ? new DayStartResult(DayStartKind.Midnight, midnight) : new DayStartResult(DayStartKind.FirstRecording, first);
+}
+
 /// <summary>
 /// Calendar dots of the playback sidebar. A day gets a dot when ANY of the checked cameras recorded on it;
 /// days after today never get one. Answers are kept per camera and day, so unchecking a camera only removes
@@ -262,6 +322,18 @@ public sealed class RecordedDays
         }
         return null;
     }
+
+    /// <summary>
+    /// A day search failed (recorder busy with the playback searches, timeout…): wait this long and ask the same
+    /// day again; after the third failure in a row null = stop (asked again on the next focus, day or camera change).
+    /// </summary>
+    public static TimeSpan? RetryDelay(int failures) => failures switch
+    {
+        1 => TimeSpan.FromSeconds(5),
+        2 => TimeSpan.FromSeconds(15),
+        3 => TimeSpan.FromSeconds(30),
+        _ => null,
+    };
 
     static IEnumerable<DateTime> DaysOf(DateTime month, DateTime today)
     {
@@ -368,6 +440,23 @@ public static class PlaybackText
     public const string NoRecordingsToday = "Bu gün için kayıt bulunamadı";
     public const string SelectCameraFirst = "Önce listeden kamera seçin";
     public const string InvalidTime = "Geçerli bir saat girin (00:00 – 23:59)";
+
+    /// <summary>Double-click on a day: no camera of the grid recorded anything on it.</summary>
+    public const string NoRecordingsOnDay = "Bu günde kayıt yok";
+
+    /// <summary>Double-click on a day with no camera checked.</summary>
+    public const string SelectCameraForDay = "Önce kamera seçin";
+
+    /// <summary>Tooltip of the calendar days.</summary>
+    public const string DayToolTip = "Çift tıklayın: günün kaydını 00:00'dan oynat";
+
+    /// <summary>Double-click on a day that is not recorded at 00:00.</summary>
+    public static string StartedAtFirstRecording(DateTime first) =>
+        $"00:00'da kayıt yok · ilk kayıt {first.ToString("HH:mm:ss", CultureInfo.InvariantCulture)}'den başlatıldı";
+
+    /// <summary>The calendar's day searches of a camera kept failing (status bar; the dots of the days left stay off).</summary>
+    public static string CalendarSearchFailed(string cameraName, string reason) =>
+        $"Takvim için kayıt günleri alınamadı ({cameraName}): {reason}";
 
     public static string JumpedToNext(DateTime target) =>
         $"Bu saatte kayıt yok, en yakın kayda atlandı ({target.ToString("HH:mm:ss", CultureInfo.InvariantCulture)})";
