@@ -39,18 +39,7 @@ public partial class App : Application
 
         try
         {
-            // Formerly "SP-2026 Lite": copy the old settings once (old folder is left as is).
-            LegacyMigration.CopySettingsIfMissing(Store.Path, AppPaths.LegacySettingsFile);
-        }
-        catch (Exception ex) when (ex is System.IO.IOException or UnauthorizedAccessException)
-        {
-            // Not fatal: start with empty settings and let the user add the device again.
-        }
-
-        try
-        {
             Settings = Store.Load();
-            LegacyMigration.UpdateLegacyFolders(Settings); // new snapshots/recordings go to the new folders
         }
         catch (Exception ex)
         {

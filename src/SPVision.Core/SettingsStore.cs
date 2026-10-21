@@ -14,11 +14,11 @@ public sealed class SettingsStore(string? path = null)
     const string SecretPrefix = "dpapi:";
 
     /// <summary>
-    /// DPAPI optional entropy. It is the app's former name and must stay exactly this value: settings written
-    /// before the rename to SPVision (and copied over by <see cref="LegacyMigration"/>) hold passwords and stream
-    /// keys protected with it. Changing it would make every saved secret undecryptable.
+    /// DPAPI optional entropy (fixed 12 bytes). It must never change: every password and stream key already saved
+    /// in settings.json is protected with exactly these bytes, and a different value would make them undecryptable.
     /// </summary>
-    internal static readonly byte[] Entropy = "SP-2026 Lite"u8.ToArray();
+    internal static readonly byte[] Entropy =
+        [0x53, 0x50, 0x2D, 0x32, 0x30, 0x32, 0x36, 0x20, 0x4C, 0x69, 0x74, 0x65];
 
     static readonly JsonSerializerOptions JsonOptions = new()
     {

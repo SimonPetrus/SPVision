@@ -5,7 +5,7 @@
 > SDK yoluyla akıyor (CPU ~%8.7, 32 çekirdeğin yüzdesi). Bu belge artık uygulamanın nasıl kurulduğunu anlatan
 > tarihsel bir referanstır; yeni iş vermez. Sıradaki iş (paketleme) için bkz. [CLAUDE_REHBERI.md](CLAUDE_REHBERI.md).
 
-Bu belge, SPVision'da (o zamanki adıyla SP-2026 Lite) eksik kalan tek parçayı tamamlayacak C# geliştiricisi içindi. Uygulamanın geri
+Bu belge, SPVision'da eksik kalan tek parçayı tamamlayacak C# geliştiricisi içindi. Uygulamanın geri
 kalanı çalışıyor ve testleri geçiyor; yalnızca Hikvision'ın **akış şifreleme (stream encryption)** açık olduğu
 kameralarda görüntü açan katman eksikti.
 

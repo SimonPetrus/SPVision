@@ -1,9 +1,6 @@
 # SPVision — Proje Durumu
 
-Son güncelleme: 21.10.2026 (gerçek cihaz testi geçti; uygulama SPVision olarak yeniden adlandırıldı; sıradaki iş paketleme)
-
-> Uygulamanın eski adı **SP-2026 Lite** idi (proje `SP2026Lite`). Aşağıdaki tarihli notlar o dönemden
-> kalmadır; ad dışında hiçbir şey değişmedi.
+Son güncelleme: 21.10.2026 (gerçek cihaz testi geçti; sıradaki iş paketleme)
 
 Bu belge, projeye kim devam ederse etsin (yeni bir sohbet ya da bir geliştirici) her şeyi baştan anlatmaya
 gerek kalmasın diye tutuluyor. Ayrıntılı ve en güncel rehber: [CLAUDE_REHBERI.md](CLAUDE_REHBERI.md).
@@ -29,7 +26,7 @@ sorup hatırlayan bir izleme uygulaması. **Kayıt cihazında hiçbir güvenlik 
 
 - **Tersine mühendislik:** Eski uygulamanın mimarisi ve CPU yükünün kaynağı → [reversing/BULGULAR.md](reversing/BULGULAR.md)
 - **Core kütüphanesi** (`src/SPVision.Core`): ISAPI istemcisi (cihaz bilgisi, kamera listesi, kayıt arama,
-  anlık görüntü, akış şifreleme durumu + doğrulama kodunu okuma), RTSP adresleri, DPAPI ile şifreli ayar deposu, ızgara düzenleri (`GridLayout`), eski addan ayar geçişi (`LegacyMigration`). 41 birim testi.
+  anlık görüntü, akış şifreleme durumu + doğrulama kodunu okuma), RTSP adresleri, DPAPI ile şifreli ayar deposu, ızgara düzenleri (`GridLayout`). 41 birim testi.
 - **WPF arayüzü** (`src/SPVision`): 6/8/25/32 ızgara (6/8: büyük kare + küçükler), sürükle-bırak, çift tıkla büyüt, tam ekran,
   HD/SD/Oto kalite, otomatik yeniden bağlanma, kayıt oynatma + zaman çizelgesi, anlık görüntü, MP4 kayıt,
   cihaz ekleme/düzenleme.
@@ -77,9 +74,8 @@ Kod ve cihaz testi bitti; kalan tek iş, çift tıklayınca çalışan, kurulum 
 - Tek dosya exe yerine klasör dağıtımı (+ Inno Setup/MSIX ya da zip) tercih edilir.
 - Yayın sonrası el ile test: boş `%APPDATA%\SPVision` ile ilk açılış (cihaz ekleme), 16 kamera canlı,
   oynatma, anlık görüntü, klip.
-- Eski addan geçiş: `%APPDATA%\SPVision\settings.json` yoksa `%APPDATA%\SP-2026 Lite\settings.json` bir kez
-  kopyalanır (eski klasör silinmez). DPAPI entropisi eski değerinde (`"SP-2026 Lite"`) tutulur; böylece kayıtlı
-  şifre ve akış anahtarı çözülür. Yeni görüntü/kayıtlar `Resimler\SPVision` / `Videolar\SPVision` altına gider.
+- DPAPI entropisi sabittir (`SettingsStore.Entropy`); değiştirilirse kayıtlı şifre ve akış anahtarları çözülemez.
+  Görüntü/kayıtlar `Resimler\SPVision` / `Videolar\SPVision` altına gider.
 - SDK DLL'leri lisanslıdır: paketin içinde olabilirler (kullanım içindir) ama repoya/internete **yüklenmez**.
 
 ## Notlar

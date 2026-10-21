@@ -3,7 +3,7 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 1266/1266 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 1258/1258 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
 > (HTTPS sertifika sabitleme — §8 "HTTPS sertifika sabitleme" — ve Kameralar sekmesindeki tarih/saat biçimi — §9 "Tarih biçimi" — kod + testlerle hazır;
 > sabitleme gerçek cihaza salt okuma sondasıyla doğrulandı, uygulamada elle denenmedi; tarih biçimini cihaza ilk kez sahibi yazar.)
 > (21.10.2026'daki düzen seçici + eş zamanlı çoklu oynatma değişikliği ile cihaz düzenleyicideki HTTPS varsayılanı / HTTP'ye düşme sorusu henüz cihazda denenmedi; bkz. §4, §5.)
@@ -12,10 +12,6 @@
 > (Kayıt oynatmada kare araçları — §4 "Kare araçları, büyütme ve video indirme": çift tıkla büyütme, kare üstü araç çubuğu,
 > dijital yakınlaştırma, "Video indir" paneli — uygulamada elle denenmedi; indirme motoru cihazda salt okuma sondasıyla ölçüldü.)
 > (Ayarlar › Cihaz ayarları'ndan kayıt cihazına yazma — §9, 2. ve 3. aşama, SDK ile kamera adı ve Ağ › Portlar dahil — henüz cihazda denenmedi; okuma uç noktaları cihazda GET / SDK Get ile doğrulandı. 3. aşama (Bakım: yazılım güncelleme, fabrika ayarları) gerçek cihazda **hiç** çalıştırılmadı. İlk gerçek yazmayı sahibi uygulamadan yapar; Claude cihaza **hiçbir şey yazmaz**, deneme için bile.)
->
-> **Ad değişikliği (21.10.2026):** Uygulamanın eski adı **SP-2026 Lite** idi (proje/namespace
-> `SP2026Lite`, exe `SP-2026 Lite.exe`). Sahibinin onayıyla adı **SPVision** oldu; aşağıdaki
-> geçmiş notlarında eski ad geçiyorsa aynı uygulamadır.
 
 ---
 
@@ -35,7 +31,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
 | `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SPVision.Core.Tests/` | 1266 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
+| `tests/SPVision.Core.Tests/` | 1258 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -49,7 +45,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ```powershell
 cd SPVision
 dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1266/1266 geçer
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1258/1258 geçer
 dotnet run --project src\SPVision
 ```
 
@@ -59,12 +55,8 @@ dotnet run --project src\SPVision
   anahtarı DPAPI ile `dpapi:` önekiyle şifreli; `logs\sdk\SdkLog_1_W.log` = HCNetSDK logu,
   `logs\player.log` = Flyleaf logu). Anlık görüntüler `Resimler\SPVision`, kayıt/klipler
   `Videolar\SPVision` altına gider.
-- **Eski addan geçiş** ([`LegacyMigration`](src/SPVision.Core/LegacyMigration.cs), `App.OnStartup`):
-  `%APPDATA%\SPVision\settings.json` yoksa ve `%APPDATA%\SP-2026 Lite\settings.json` varsa
-  dosya **bir kez kopyalanır** (taşınmaz, eski klasör silinmez). Ayarlardaki görüntü/kayıt klasörü
-  hâlâ eski varsayılansa (`Resimler\SP-2026 Lite`, `Videolar\SP-2026 Lite`) yeni klasöre çevrilir;
-  eski dosyalar yerinde kalır. **DPAPI entropisi `"SP-2026 Lite"` olarak kalmalıdır**
-  (`SettingsStore.Entropy`): eski şifre/akış anahtarları onunla şifreli; değiştirirsen hepsi çözülemez.
+- **DPAPI entropisi sabittir** (`SettingsStore.Entropy`, 12 bayt; `DpapiEntropyStaysFixed` testi korur):
+  kayıtlı şifre/akış anahtarları onunla şifreli; değiştirirsen hepsi çözülemez.
 
 ## 4. Mimari: video iki yoldan akar
 
@@ -553,7 +545,6 @@ kamera listesi, kayıt arama, anlık görüntü, şifreleme durumu + doğrulama 
 kamera anahtarı yoksa cihaz anahtarını kullanır), [`SettingsStore`](src/SPVision.Core/SettingsStore.cs)
 (DPAPI şifreli JSON), [`StreamUrls`](src/SPVision.Core/StreamUrls.cs) (RTSP adresleri),
 [`AppPaths`](src/SPVision.Core/AppPaths.cs) (varsayılan klasörler),
-[`LegacyMigration`](src/SPVision.Core/LegacyMigration.cs) (eski addan tek seferlik ayar kopyası),
 [`Theme.cs`](src/SPVision.Core/Theme.cs) (`AppTheme`, `ThemeResolver`), [`PlaybackSync.cs`](src/SPVision.Core/PlaybackSync.cs)
 (`PlaybackSlots`, `RecordingJump`, `PlaybackSpeed`, `PlaybackSync`, `CalendarMonth`, `PlaybackText` — oynatmanın saf mantığı, birim testli), [`LivePages`](src/SPVision.Core/LivePages.cs) (canlı sayfalar: global yuva sırası, sayfa sayısı/dilim/sınırlama/sarma, kare eşleme), [`CameraList`](src/SPVision.Core/CameraList.cs)
 (yenilenen kamera listesinde anahtarı ve "listede göster" seçimini korur), [`DeviceKind`](src/SPVision.Core/DeviceKind.cs)
@@ -586,7 +577,7 @@ Cihaz ayarları (§9): [`IsapiWritePolicy`](src/SPVision.Core/IsapiWritePolicy.c
 - **16 kamera aynı anda SDK yoluyla akıyor**, log temiz (`Stream Head Data Callback` 16×),
   **CPU ~%8.7** (32 çekirdeğin yüzdesi; eski iVMS 4 kamerada tek çekirdeğin %107'siydi).
 - Şifresiz Flyleaf yolu daha önce test edildi: 16 kamera HD'de tek çekirdek ~%52.
-- Derleme 0 hata/0 uyarı, 41/41 test (o gün 32/32 idi; geçiş testleriyle 41). Kalan tek iş: **paketleme (yayınlama)**.
+- Derleme 0 hata/0 uyarı, 41/41 test. Kalan tek iş: **paketleme (yayınlama)**.
 
 ## 7. Senin (Claude'un) yapacağın iş: paketleme
 
@@ -614,9 +605,7 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
    klasör yapısı **korunmalıdır** (SDK runtime'da `HCNetSDKCom\*.dll` arar) — bu yüzden
    **klasör dağıtımı + Inno Setup/MSIX zip tercih edilir**.
 4. Yayın sonrası el ile test: boş `%APPDATA%\SPVision` ile ilk açılış (cihaz ekleme
-   sihirbazı), 16 kamera canlı, oynatma, anlık görüntü, klip. Ayrıca eski
-   `%APPDATA%\SP-2026 Lite\settings.json` varken ilk açılışta ayarların ve şifrelerin geldiğini
-   doğrula.
+   sihirbazı), 16 kamera canlı, oynatma, anlık görüntü, klip.
 
 ## 8. Sık karşılaşılacak tuzaklar (öğrenilmiş dersler)
 

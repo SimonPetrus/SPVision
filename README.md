@@ -4,8 +4,6 @@ Hikvision kayıt cihazları (NVR/DVR) ve kameralar için hafif bir izleme istemc
 yerine, onu tersine mühendislikle inceledikten sonra sıfırdan yazıldı (bkz. [reversing/BULGULAR.md](reversing/BULGULAR.md)).
 
 > Ayrıntılı rehber (mimari, dosya haritası, doğrulanmış durum, sıradaki iş): [CLAUDE_REHBERI.md](CLAUDE_REHBERI.md)
->
-> Uygulamanın eski adı **SP-2026 Lite** idi; 21.10.2026'da **SPVision** olarak yeniden adlandırıldı.
 
 ## Neden?
 
@@ -61,12 +59,6 @@ dotnet run --project src\SPVision
 ```
 
 Ayarlar ve loglar: `%APPDATA%\SPVision\` · Görüntüler: `Resimler\SPVision` · Kayıtlar: `Videolar\SPVision`
-
-**Eski addan geçiş:** İlk açılışta `%APPDATA%\SPVision\settings.json` yoksa ve eski
-`%APPDATA%\SP-2026 Lite\settings.json` varsa, ayar dosyası bir kez yeni klasöre **kopyalanır** (eski klasör
-silinmez; kayıtlı şifreler ve akış anahtarları çözülmeye devam eder). Eski görüntü/kayıtlar
-`Resimler\SP-2026 Lite` ve `Videolar\SP-2026 Lite` altında kalır; yenileri yeni klasörlere yazılır.
-
 ## Proje yapısı
 
 | Klasör | İçerik |

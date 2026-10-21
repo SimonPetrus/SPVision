@@ -1,3 +1,5 @@
+using System.Security.Cryptography;
+using System.Text;
 using SPVision.Core;
 
 namespace SPVision.Core.Tests;
@@ -79,5 +81,16 @@ public class StreamUrlsAndSettingsTests
         {
             File.Delete(path);
         }
+    }
+
+    [Fact]
+    public void DpapiEntropyStaysFixed()
+    {
+        // Secrets already saved in settings.json were protected with exactly these bytes.
+        byte[] fixedEntropy = [0x53, 0x50, 0x2D, 0x32, 0x30, 0x32, 0x36, 0x20, 0x4C, 0x69, 0x74, 0x65];
+        var blob = ProtectedData.Protect(Encoding.UTF8.GetBytes("secret"), fixedEntropy, DataProtectionScope.CurrentUser);
+
+        Assert.Equal(fixedEntropy, SettingsStore.Entropy);
+        Assert.Equal("secret", SettingsStore.Unprotect("dpapi:" + Convert.ToBase64String(blob)));
     }
 }
