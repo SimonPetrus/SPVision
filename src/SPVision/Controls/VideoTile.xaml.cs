@@ -119,6 +119,14 @@ public partial class VideoTile : UserControl
     /// <summary>The stream runs through the Hikvision SDK (encrypted); otherwise through Flyleaf/FFmpeg.</summary>
     public bool UsesSdk => Camera is not null && HikModeActive;
 
+    /// <summary>
+    /// Decoder of the running stream as its player reports it: true GPU, false CPU, null not known yet (opening). The
+    /// status bar writes "GPU çözme" only from this (it used to claim it for every tile).
+    /// </summary>
+    public bool? GpuDecoding => Camera is null ? null
+        : HikModeActive ? _hikPlayer?.HardwareDecoding
+        : _player?.Status == Status.Playing ? _player.VideoDecoder?.VideoAccelerated : null;
+
     /// <summary>Height of the video area alone (tile minus header strip and borders), in DIPs.</summary>
     public double VideoHeight => Math.Max(0, ActualHeight - VerticalChrome - HeaderRow.Height.Value);
 
@@ -492,10 +500,7 @@ public partial class VideoTile : UserControl
             }
             _retryCount = 0;
             _preferHik = true;
-            if (!App.Settings.ShowMotionBoxes)
-            {
-                ApplyMotionBoxes(false); // again now that the RealPlay handle is known
-            }
+            // Motion boxes were applied to the port when it opened (RealPlay has no SDK renderer to switch any more).
             SetState(TileState.Playing);
             if (_pendingRecordFile is not null)
             {

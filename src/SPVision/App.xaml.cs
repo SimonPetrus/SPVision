@@ -53,7 +53,9 @@ public partial class App : Application
         var logDir = Path.Combine(Path.GetDirectoryName(Store.Path)!, "logs");
         Directory.CreateDirectory(logDir);
 
-        HikSdk.Init(Path.Combine(logDir, "sdk")); // HCNetSDK for encrypted streams; no-op on failure
+        // HCNetSDK for encrypted streams; no-op on failure. Log: errors only unless settings.json raises SdkLogLevel.
+        HikSdk.Init(Path.Combine(logDir, "sdk"), SdkLog.Level(Settings.SdkLogLevel));
+        HikDecode.PreferHardware = Settings.HardwareDecoding;
 
         Engine.Start(new EngineConfig
         {

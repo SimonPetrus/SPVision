@@ -43,6 +43,7 @@ public sealed class HikPlaybackPlayer : IDisposable
     volatile bool _paused;
     int _appliedSteps;          // speed steps applied to the current handle (0 = normal)
     volatile bool _showMotionBoxes = true;
+    volatile int _decoder;      // 0 unknown, 1 GPU, 2 CPU (engine of the display port, set when it opens)
     volatile bool _started;
     volatile bool _disposed;
 
@@ -95,6 +96,9 @@ public sealed class HikPlaybackPlayer : IDisposable
     public bool RequestedPaused { get; set; }
     public bool IsDisposed => _disposed;
 
+    /// <summary>The display port decodes on the GPU (true) or the CPU (false); null before the stream opens.</summary>
+    public bool? HardwareDecoding => _decoder switch { 1 => true, 2 => false, _ => null };
+
     /// <summary>Opens playback for an absolute time range; hWnd is the window our PlayCtrl port draws into (only it).</summary>
     public void Start(int userId, int channel, DateTime begin, DateTime end, IntPtr hWnd, string? streamKey)
     {
@@ -110,7 +114,7 @@ public sealed class HikPlaybackPlayer : IDisposable
             _caughtUp = false;
             _callback = OnPlayData;
             streamKeyPending = string.IsNullOrEmpty(streamKey) ? null : streamKey;
-            windowHandlePending = hWnd.ToInt32();
+            windowHandlePending = hWnd;
 
             var vod = new HikNative.VodPara
             {
@@ -168,6 +172,7 @@ public sealed class HikPlaybackPlayer : IDisposable
             _playHandle = -1; // first: a data callback waiting for room in our port gives up (StopPlayBack waits for it)
             _paused = false;
             _started = false;
+            _decoder = 0;
             _catchUpMode = CatchUpNone;
             _caughtUp = false;
             _zoomApplied = false; // the next open is a new port
@@ -506,10 +511,11 @@ public sealed class HikPlaybackPlayer : IDisposable
                 if (!string.IsNullOrEmpty(streamKeyPending))
                     HikNative.PlayM4_SetSecretKey(port, HikNative.AesKeyType, streamKeyPending, HikNative.AesKeyBits);
 
-                HikNative.PlayM4_SetDecodeEngineEx(port, HikNative.HardDecodeEngine); // GPU decode
                 HikNative.PlayM4_SetStreamOpenMode(port, HikNative.StreamFile); // file/kill mode for VOD
                 if (!HikNative.PlayM4_OpenStream(port, buffer, size, 10 * 1024 * 1024))
                     throw HikException.LastError("PlayCtrl akışı açamadı");
+                // GPU decode: only accepted between OpenStream and Play (before OpenStream: order error, CPU decode).
+                _decoder = HikDecode.TryHardware(port) ? 1 : 2;
                 var header = new byte[size];
                 Marshal.Copy(buffer, header, 0, (int)size);
                 Volatile.Write(ref _header, header);
@@ -520,8 +526,7 @@ public sealed class HikPlaybackPlayer : IDisposable
                     HikRender.SetMotionBoxes(port, -1, false); // drawn by default; only switch off
                 }
 
-                int hwndValue = windowHandlePending;
-                if (!HikNative.PlayM4_Play(port, (IntPtr)hwndValue))
+                if (!HikNative.PlayM4_Play(port, windowHandlePending))
                     throw HikException.LastError("PlayCtrl oynatmayı başlatamadı");
 
                 _started = true;
@@ -565,7 +570,7 @@ public sealed class HikPlaybackPlayer : IDisposable
 
     // Start parameters needed inside the callback; set right before PlayBackByTime_V40.
     string? streamKeyPending;
-    int windowHandlePending;
+    IntPtr windowHandlePending;
 
     /// <summary>
     /// Stops the playback and finalizes a clip still running (waits for its MP4: 5 s by default,

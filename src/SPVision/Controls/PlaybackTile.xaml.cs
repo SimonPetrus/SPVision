@@ -104,6 +104,11 @@ public partial class PlaybackTile : UserControl
     /// <summary>SDK path (the video window is hidden, not collapsed, while a fresh open catches up to the requested time).</summary>
     public bool UsesSdk => Camera is not null && HikHost.Visibility != Visibility.Collapsed;
 
+    /// <summary>Decoder of the running stream as its player reports it: true GPU, false CPU, null not known yet.</summary>
+    public bool? GpuDecoding => Camera is null ? null
+        : UsesSdk ? _hikPlayer?.HardwareDecoding
+        : _player?.Status == Status.Playing ? _player.VideoDecoder?.VideoAccelerated : null;
+
     public bool IsClipping => _flyleafClipping || _hikClipping;
 
     /// <summary>A picture is on screen: snapshot and clip can start (the SDK path after its hidden catch-up).</summary>

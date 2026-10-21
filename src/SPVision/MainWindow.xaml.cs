@@ -612,7 +612,7 @@ public partial class MainWindow : Window
     // ---- Status bar ----
 
     /// <summary>What the status bar needs of one tile, live or playback.</summary>
-    readonly record struct TileInfo(Device Device, CameraRef Source, TileState State, bool UsesSdk, bool IsReconnecting);
+    readonly record struct TileInfo(Device Device, CameraRef Source, TileState State, bool UsesSdk, bool IsReconnecting, bool? Gpu);
 
     /// <summary>
     /// Connection, cameras on screen and video path of the shown view. Settings shows only the connection (of the live
@@ -626,9 +626,9 @@ public partial class MainWindow : Window
         VideoPathText.Visibility = viewItems;
         var tiles = playback
             ? Playback.VisibleTiles.Where(t => t.Device is not null)
-                .Select(t => new TileInfo(t.Device!, t.Source!, t.State, t.UsesSdk, false)).ToList()
+                .Select(t => new TileInfo(t.Device!, t.Source!, t.State, t.UsesSdk, false, t.GpuDecoding)).ToList()
             : Live.VisibleTiles.Where(t => t.Device is not null)
-                .Select(t => new TileInfo(t.Device!, t.Source!, t.State, t.UsesSdk, t.IsReconnecting)).ToList();
+                .Select(t => new TileInfo(t.Device!, t.Source!, t.State, t.UsesSdk, t.IsReconnecting, t.GpuDecoding)).ToList();
 
         // Connection: the device of the selected tile (or the first one) and how its streams are doing.
         var device = (playback ? null : Live.SelectedDevice) ?? tiles.FirstOrDefault().Device ?? App.Settings.Devices.FirstOrDefault();
@@ -660,14 +660,8 @@ public partial class MainWindow : Window
         ReconnectPanel.Visibility = reconnecting > 0 && viewItems == Visibility.Visible ? Visibility.Visible : Visibility.Collapsed;
         ReconnectText.Text = $"{reconnecting} kamera yeniden bağlanıyor";
 
-        // Video path actually in use. Both paths decode on the GPU (PlayCtrl decode engine / D3D11VA).
-        var sdk = tiles.Count(t => t.UsesSdk);
-        var ffmpeg = tiles.Count - sdk;
-        VideoPathText.Text =
-            sdk > 0 && ffmpeg > 0 ? $"Şifreli akış · SDK ({sdk}) + Şifresiz · FFmpeg ({ffmpeg}) · GPU çözme" :
-            sdk > 0 ? "Şifreli akış · SDK · GPU çözme" :
-            ffmpeg > 0 ? "Şifresiz akış · FFmpeg · GPU çözme" :
-            "";
+        // Video path actually in use, and the decoder each player reports (GPU only when confirmed).
+        VideoPathText.Text = Core.VideoPathText.Describe(tiles.Select(t => new Core.VideoPathText.Tile(t.UsesSdk, t.Gpu)));
         VideoPathText.ToolTip = string.IsNullOrEmpty(VideoPathText.Text) ? null : VideoPathText.Text;
     }
 

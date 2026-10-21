@@ -17,8 +17,12 @@ public static class HikSdk
     /// </summary>
     public static event Action<uint, int, int>? ExceptionRaised;
 
-    /// <summary>Idempotent. A failure (e.g. missing DLLs) never throws — the FFmpeg path keeps working.</summary>
-    public static void Init(string? sdkLogDirectory = null)
+    /// <summary>
+    /// Idempotent. A failure (e.g. missing DLLs) never throws — the FFmpeg path keeps working. <paramref name="logLevel"/>:
+    /// NET_DVR_SetLogToFile level (0 off, 1 errors — the default since 21.10.2026, 2 + debug, 3 all; 3 used to be written
+    /// all the time).
+    /// </summary>
+    public static void Init(string? sdkLogDirectory = null, uint logLevel = 1)
     {
         if (Available) return;
         try
@@ -32,10 +36,10 @@ public static class HikSdk
             _exceptionCallback = OnException; // keep the delegate alive for the SDK's lifetime
             HikNative.NET_DVR_SetExceptionCallBack_V30(0, IntPtr.Zero, _exceptionCallback, IntPtr.Zero);
 
-            if (sdkLogDirectory is not null)
+            if (sdkLogDirectory is not null && logLevel > 0)
             {
                 System.IO.Directory.CreateDirectory(sdkLogDirectory);
-                HikNative.NET_DVR_SetLogToFile(3, sdkLogDirectory, true);
+                HikNative.NET_DVR_SetLogToFile(Math.Min(logLevel, 3u), sdkLogDirectory, true);
             }
         }
         catch

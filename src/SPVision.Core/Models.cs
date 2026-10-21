@@ -129,6 +129,27 @@ public sealed class AppSettings
 
     /// <summary>In-app updater state (no secrets): last successful check and a remembered mandatory update.</summary>
     public UpdateState? Update { get; set; }
+
+    /// <summary>
+    /// HCNetSDK log written to <c>logs\sdk</c> (<see cref="SdkLog"/>): 0 off, 1 errors only (default), 2 + debug, 3 everything.
+    /// Level 3 (the old default) writes several lines per stream event; raise it in settings.json only to diagnose.
+    /// </summary>
+    public int SdkLogLevel { get; set; } = SdkLog.DefaultLevel;
+
+    /// <summary>
+    /// SDK video decodes on the GPU (PlayCtrl hardware decoder) when the driver allows it; false = always the CPU
+    /// (fallback if a graphics driver misbehaves; no UI yet, settings.json only).
+    /// </summary>
+    public bool HardwareDecoding { get; set; } = true;
+}
+
+/// <summary>HCNetSDK log level rule (NET_DVR_SetLogToFile: 0 off, 1 errors, 2 errors + debug, 3 all).</summary>
+public static class SdkLog
+{
+    public const int DefaultLevel = 1;
+
+    /// <summary>The level passed to the SDK: the setting, kept within 0–3.</summary>
+    public static uint Level(int setting) => (uint)Math.Clamp(setting, 0, 3);
 }
 
 /// <summary>

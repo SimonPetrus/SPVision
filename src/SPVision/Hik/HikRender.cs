@@ -7,8 +7,9 @@ namespace SPVision.Hik;
 static class HikRender
 {
     /// <summary>
-    /// port: our PlayCtrl port. realHandle: the NET_DVR_RealPlay_V40 handle, or -1 for playback. The live
-    /// preview also passes the window to RealPlay, so the SDK's own renderer gets the same switch.
+    /// port: our PlayCtrl port. realHandle: a NET_DVR_RealPlay_V40 handle whose SDK renderer should get the same switch, or
+    /// -1. Since the single-renderer rule neither live view nor playback gives the SDK a window (no SDK renderer), so both
+    /// pass -1.
     /// </summary>
     public static void SetMotionBoxes(int port, int realHandle, bool show)
     {

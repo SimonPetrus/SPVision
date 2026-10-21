@@ -315,7 +315,12 @@ public static class HikNative
     [DllImport(PlayCtrl)] public static extern uint PlayM4_GetSourceBufferRemain(int port);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_SetDisplayBuf(int port, uint frames);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_SetSecretKey(int port, int keyType, string key, int keyLen);
+    // Not in this SDK's plaympeg4.h; exported by PlayCtrl.dll and declared in the official C# demo (9-AppsDemo PlayCtrl.cs,
+    // SOFT_DECODE_ENGINE 0 / HARD_DECODE_ENGINE 1). Measured (probe, PlayCtrl 7.4.0.274): SetDecodeEngineEx works only AFTER
+    // PlayM4_OpenStream and before PlayM4_Play — called before OpenStream it fails with PLAYM4_ORDER_ERROR (2) and the port
+    // stays on software decoding. GetDecodeEngine returns the engine in effect (0 / 1). Use HikDecode, not these directly.
     [DllImport(PlayCtrl)] public static extern bool PlayM4_SetDecodeEngineEx(int port, uint engine);
+    [DllImport(PlayCtrl)] public static extern uint PlayM4_GetDecodeEngine(int port);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_Play(int port, IntPtr wnd);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_Stop(int port);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_Pause(int port, uint pause);

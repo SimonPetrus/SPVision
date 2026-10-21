@@ -5,9 +5,14 @@ namespace SPVision.Hik;
 
 /// <summary>
 /// One SDK live view: NET_DVR_RealPlay_V40 data callback fed into PlayCtrl
-/// (GetPort → SetSecretKey → SetDecodeEngineEx → OpenStream → Play on an HWND),
+/// (GetPort → SetSecretKey → OpenStream → hardware decoder → Play on an HWND),
 /// following the official 2-Preview-NVRCsharpDemo / ClientDemo patterns.
 /// Callbacks arrive on SDK threads; UI code must dispatch.
+/// <para>
+/// Single renderer (21.10.2026): RealPlay gets <b>no</b> window. With <c>hPlayWnd</c> set the SDK opened its own PlayCtrl
+/// port and decoded + drew every stream a second time into the same window (probe: <c>NET_DVR_GetRealPlayerIndex</c> ≥ 0 on
+/// all 22 tiles; 22 sub streams: 1.1 GB private, 234 threads → 0.8 GB, 191 threads without it). Only our port draws.
+/// </para>
 /// <para>
 /// Locking rule: the data callback never takes <see cref="_lock"/>. The SDK holds its own stream lock while it
 /// calls <see cref="OnRealData"/>, and calls such as NET_DVR_SaveRealData_V30 / NET_DVR_StopRealPlay wait for
@@ -28,6 +33,7 @@ public sealed class HikLivePlayer : IDisposable
     HikFrameRecorder? _recorder; // MP4 recording in progress; read lock-free by the data callback
     Task<RecordingResult>? _lastRecording; // finalization of the recording a Stop ended (Dispose waits for it)
     volatile bool _showMotionBoxes = true;
+    volatile int _decoder;      // 0 unknown, 1 GPU, 2 CPU (engine of the display port, set when it opens)
     volatile bool _started;
     volatile bool _disposed;
 
@@ -54,6 +60,12 @@ public sealed class HikLivePlayer : IDisposable
     public bool IsSaving => Volatile.Read(ref _recorder) is not null;
     public bool IsDisposed => _disposed;
 
+    /// <summary>The display port decodes on the GPU (true) or the CPU (false); null before the stream opens.</summary>
+    public bool? HardwareDecoding => _decoder switch { 1 => true, 2 => false, _ => null };
+
+    /// <summary>PlayCtrl display buffer of a live port in frames (the SDK demo's 15 only adds memory and latency).</summary>
+    const uint DisplayFrames = 6;
+
     /// <summary>userId: HCNetSDK login id; channel: ISAPI channel id (1-based); hWnd: window PlayCtrl draws into.</summary>
     public void Start(int userId, int channel, StreamQuality quality, IntPtr hWnd, string? streamKey)
     {
@@ -65,14 +77,14 @@ public sealed class HikLivePlayer : IDisposable
             _started = false;
             _callback = OnRealData;
             streamKeyPending = string.IsNullOrEmpty(streamKey) ? null : streamKey;
-            windowHandlePending = hWnd.ToInt32();
+            windowHandlePending = hWnd;
 
             var preview = new HikNative.PreviewInfo
             {
                 Channel = channel,
                 StreamType = quality == StreamQuality.Main ? 0u : 1u, // 0 = main, 1 = sub
                 LinkMode = 0,       // TCP
-                PlayWnd = hWnd,     // also let the SDK know the window (used by PlayM4_Play)
+                PlayWnd = IntPtr.Zero, // no SDK renderer: only our PlayCtrl port draws into hWnd (single renderer)
                 Blocked = 0,
                 PassbackRecord = 0,
                 PreviewMode = 0,    // normal preview
@@ -99,6 +111,7 @@ public sealed class HikLivePlayer : IDisposable
             int handle = _realHandle;
             _realHandle = -1;
             _started = false;
+            _decoder = 0;
             // A recording ends with its stream (reconnect, quality switch, dispose): finalized, never cut off.
             if (StopRecorder() is { } finishing)
             {
@@ -130,7 +143,7 @@ public sealed class HikLivePlayer : IDisposable
             int port = Volatile.Read(ref _port);
             if (!_disposed && port >= 0)
             {
-                HikRender.SetMotionBoxes(port, _realHandle, show);
+                HikRender.SetMotionBoxes(port, -1, show); // the SDK draws nothing itself (no window)
             }
         }
     }
@@ -212,24 +225,23 @@ public sealed class HikLivePlayer : IDisposable
                 if (!string.IsNullOrEmpty(streamKeyPending))
                     HikNative.PlayM4_SetSecretKey(port, HikNative.AesKeyType, streamKeyPending, HikNative.AesKeyBits);
 
-                HikNative.PlayM4_SetDecodeEngineEx(port, HikNative.HardDecodeEngine); // GPU decode
                 HikNative.PlayM4_SetStreamOpenMode(port, HikNative.StreamRealtime);
                 if (!HikNative.PlayM4_OpenStream(port, buffer, size, 2 * 1024 * 1024))
                     throw HikException.LastError("PlayCtrl akışı açamadı");
+                // GPU decode: only accepted between OpenStream and Play (before OpenStream: order error, CPU decode).
+                _decoder = HikDecode.TryHardware(port) ? 1 : 2;
                 var header = new byte[size];
                 Marshal.Copy(buffer, header, 0, (int)size);
                 Volatile.Write(ref _header, header);
-                HikNative.PlayM4_SetDisplayBuf(port, 15);
+                HikNative.PlayM4_SetDisplayBuf(port, DisplayFrames);
                 HikNative.PlayM4_SetOverlayMode(port, false, 0);
                 if (!ShowMotionBoxes)
                 {
                     // PlayCtrl draws them by default; only switch off (keeps today's behaviour when shown).
-                    // handle = this RealPlay handle (the field may not be set yet while RealPlay_V40 returns).
-                    HikRender.SetMotionBoxes(port, handle, false);
+                    HikRender.SetMotionBoxes(port, -1, false);
                 }
 
-                int hwndValue = windowHandlePending;
-                if (!HikNative.PlayM4_Play(port, (IntPtr)hwndValue))
+                if (!HikNative.PlayM4_Play(port, windowHandlePending))
                     throw HikException.LastError("PlayCtrl oynatmayı başlatamadı");
                 _started = true;
                 Started?.Invoke();
@@ -263,7 +275,7 @@ public sealed class HikLivePlayer : IDisposable
 
     // Start parameters needed inside the callback; set right before RealPlay_V40.
     string? streamKeyPending;
-    int windowHandlePending;
+    IntPtr windowHandlePending;
 
     /// <summary>
     /// Stops the stream and finalizes a recording still running (waits for its MP4: 5 s by default,
