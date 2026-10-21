@@ -176,6 +176,14 @@
         <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
     </Style>
 
+    <!-- Borderless 23×23 icon button of the 28 px status bar (page arrows): 2 px above and below inside the bar,
+         a 15 px glyph sits 4 px from every edge. Needs ToolTip + AutomationProperties.Name. -->
+    <Style x:Key="StatusIconButton" TargetType="Button" BasedOn="{StaticResource GhostIconButton}">
+        <Setter Property="Width" Value="23" />
+        <Setter Property="Height" Value="23" />
+        <Setter Property="Foreground" Value="{DynamicResource IconFg}" />
+    </Style>
+
     <!-- ===== Toggle buttons ===== -->
     <Style TargetType="ToggleButton">
         <Setter Property="Foreground" Value="{DynamicResource TextFg}" />

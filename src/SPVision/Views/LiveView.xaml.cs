@@ -11,12 +11,16 @@ namespace SPVision.Views;
 
 public partial class LiveView : UserControl
 {
+    /// <summary>All tiles in position order: the first <c>_layout.TileCount</c> are on screen, the rest are collapsed and empty.</summary>
     readonly List<VideoTile> _tiles = [];
     readonly DispatcherTimer _qualityTimer = new() { Interval = TimeSpan.FromMilliseconds(600) };
     GridLayout _layout = GridLayout.Default;
+
+    /// <summary>Global camera order over all pages; the tiles show <see cref="LivePages.CurrentPage"/>.</summary>
+    readonly LivePages _pages = new(GridLayout.Default.TileCount);
     VideoTile? _selected;
     VideoTile? _maximized;
-    bool _batchUpdate; // many tiles change at once: save the layout once at the end
+    bool _batchUpdate; // tiles are being set from the page: no single-tile handling, save once at the end
     bool _stateChangePending;
 
     public LiveView()
@@ -27,13 +31,13 @@ public partial class LiveView : UserControl
             var tile = new VideoTile { Visibility = Visibility.Collapsed };
             tile.Activated += Select;
             tile.DoubleClicked += ToggleMaximize;
-            tile.CameraDropped += (t, source) => ShowCamera(t, source);
+            tile.CameraDropped += DropCamera;
             tile.TileDropped += SwapTiles;
-            tile.Changed += _ =>
+            tile.Changed += t =>
             {
                 if (!_batchUpdate)
                 {
-                    SaveLayout();
+                    TileClosed(t);
                 }
                 RaiseStateChanged();
             };
@@ -42,7 +46,7 @@ public partial class LiveView : UserControl
             tile.StopAllRequested += StopAll;
             tile.OpenFoldersRequested += OpenFolders;
             _tiles.Add(tile);
-            // Always children: layout changes and maximize only move/hide them. Removing a tile from the tree
+            // Always children: layout changes, paging and maximize only move/hide them. Removing a tile from the tree
             // unloads it, which releases its stream and video window — restoring it then had to reopen the
             // stream and wait for the next keyframe (black tiles after un-maximizing).
             TileGrid.Children.Add(tile);
@@ -59,13 +63,19 @@ public partial class LiveView : UserControl
     public event Action<string>? Message;
 
     /// <summary>
-    /// Layout, quality, selection or any tile state changed. Coalesced: raised once per dispatcher
+    /// Layout, page, quality, selection or any tile state changed. Coalesced: raised once per dispatcher
     /// pass, so the top bar, camera list and status bar refresh cheaply.
     /// </summary>
     public event Action? StateChanged;
 
     /// <summary>Current layout (any of <see cref="GridLayout.All"/>).</summary>
     public GridLayout Layout => _layout;
+
+    /// <summary>Zero-based page shown.</summary>
+    public int Page => _pages.Page;
+
+    /// <summary>Pages of the current layout (at least 1).</summary>
+    public int PageCount => _pages.PageCount;
 
     /// <summary>null = automatic per tile size, otherwise forced for every tile.</summary>
     public StreamQuality? GlobalQuality => App.Settings.LiveQuality;
@@ -74,10 +84,10 @@ public partial class LiveView : UserControl
 
     public Device? SelectedDevice => _selected?.Device;
 
-    /// <summary>Tiles of the current layout (empty ones included).</summary>
+    /// <summary>Tiles of the current page (empty ones included).</summary>
     public IReadOnlyList<VideoTile> VisibleTiles => _tiles.Take(_layout.TileCount).ToList();
 
-    /// <summary>1-based tile number showing the camera, or null when it is not on screen.</summary>
+    /// <summary>1-based tile number showing the camera on the current page, or null when it is not on screen.</summary>
     public int? TileNumberOf(CameraRef source)
     {
         for (var i = 0; i < _layout.TileCount; i++)
@@ -90,43 +100,49 @@ public partial class LiveView : UserControl
         return null;
     }
 
-    /// <summary>Tile showing the camera in the current layout, if any.</summary>
+    /// <summary>Tile showing the camera on the current page, if any.</summary>
     public VideoTile? TileOf(CameraRef source) => _tiles.Take(_layout.TileCount).FirstOrDefault(t => t.Source == source);
 
-    /// <summary>Puts a camera into the selected tile, or the first empty one.</summary>
+    /// <summary>
+    /// Sidebar double-click. A camera that is on a page already is shown there (its page opens, its tile is
+    /// selected); a camera without a slot (its tile was closed) goes into the selected tile if that is empty,
+    /// else the first empty tile, else the selected one.
+    /// </summary>
     public void ShowCamera(CameraRef source)
     {
-        var target = _selected is not null && _selected.Camera is null
+        var slot = _pages.IndexOf(source);
+        if (slot >= 0)
+        {
+            var page = LivePages.PageContaining(slot, _layout.TileCount);
+            var position = slot - page * _layout.TileCount;
+            if (page != _pages.Page || (_maximized is not null && _tiles.IndexOf(_maximized) != position))
+            {
+                RestoreMaximized();
+                _pages.GoTo(page);
+                Sync();
+            }
+            Select(_tiles[position]);
+            return;
+        }
+        var target = _selected is not null && _selected.Camera is null && _tiles.IndexOf(_selected) < _layout.TileCount
             ? _selected
             : _tiles.Take(_layout.TileCount).FirstOrDefault(t => t.Camera is null) ?? _selected ?? _tiles[0];
-        ShowCamera(target, source);
-        Select(target);
+        DropCamera(target, source);
     }
 
-    /// <summary>Opens every camera of a device into the grid, growing the layout if needed.</summary>
+    /// <summary>Device row double-click: its cameras first, in channel order, from the first page (the layout stays).</summary>
     public void ShowDevice(Device device)
     {
         // Cameras hidden in Settings are left out, like in the sidebar list.
-        var cameras = device.ListedCameras().Where(c => c.Online).Take(GridLayout.MaxTiles).ToList();
+        var cameras = device.ListedCameras().Where(c => c.Online).Select(c => new CameraRef(device.Id, c.Channel)).ToList();
         if (cameras.Count == 0)
         {
             return;
         }
-        SetLayout(GridLayout.Fitting(Math.Max(cameras.Count, _layout.TileCount)));
-        Batch(() =>
-        {
-            for (var i = 0; i < _tiles.Count; i++)
-            {
-                if (i < cameras.Count)
-                {
-                    _tiles[i].Show(device, cameras[i]);
-                }
-                else if (i < _layout.TileCount)
-                {
-                    _tiles[i].Clear();
-                }
-            }
-        });
+        RestoreMaximized();
+        _pages.Reset(cameras, ListedCameras());
+        Sync();
+        Select(_tiles[0]);
     }
 
     public void StopAll()
@@ -137,43 +153,57 @@ public partial class LiveView : UserControl
         }
     }
 
-    /// <summary>Re-resolves devices after edits (password/key changes) and reconnects affected tiles.</summary>
-    public void ReloadDevice(Device device)
+    /// <summary>Previous/next page (status bar arrows, PageUp/PageDown), wrapping around. A maximized tile is restored first.</summary>
+    public void StepPage(int delta)
     {
-        foreach (var tile in _tiles.Where(t => t.Device?.Id == device.Id))
+        if (_pages.PageCount <= 1)
         {
-            var camera = device.Cameras.FirstOrDefault(c => c.Channel == tile.Camera!.Channel);
-            if (camera is null)
-            {
-                tile.Clear();
-            }
-            else
-            {
-                tile.Show(device, camera);
-            }
+            return;
         }
+        RestoreMaximized();
+        _pages.Step(delta);
+        Sync();
     }
 
-    /// <summary>Camera list of a device was refreshed in place: clear tiles whose camera is gone, rename the rest.</summary>
+    /// <summary>Re-resolves devices after edits (password/key changes, camera list) and reconnects affected tiles.</summary>
+    public void ReloadDevice(Device device)
+    {
+        Batch(() =>
+        {
+            foreach (var tile in _tiles.Take(_layout.TileCount).Where(t => t.Device?.Id == device.Id))
+            {
+                // Cameras that are gone or hidden now are handled by the order update below.
+                if (device.Cameras.FirstOrDefault(c => c.Channel == tile.Camera!.Channel) is { Hidden: false } camera)
+                {
+                    tile.Show(device, camera);
+                }
+            }
+        });
+        UpdateCameraOrder();
+    }
+
+    /// <summary>Camera list of a device was refreshed in place: rename the tiles that keep their camera, update the order.</summary>
     public void RefreshDeviceCameras(Device device)
     {
-        foreach (var tile in _tiles.Where(t => t.Device?.Id == device.Id))
+        Batch(() =>
         {
-            var camera = device.Cameras.FirstOrDefault(c => c.Channel == tile.Camera!.Channel);
-            if (camera is null)
+            foreach (var tile in _tiles.Take(_layout.TileCount).Where(t => t.Device?.Id == device.Id))
             {
-                tile.Clear();
+                if (device.Cameras.FirstOrDefault(c => c.Channel == tile.Camera!.Channel) is not { Hidden: false } camera)
+                {
+                    continue;
+                }
+                if (!ReferenceEquals(camera, tile.Camera) || !ReferenceEquals(device, tile.Device))
+                {
+                    tile.Show(device, camera);
+                }
+                else
+                {
+                    tile.RefreshCameraInfo();
+                }
             }
-            else if (!ReferenceEquals(camera, tile.Camera) || !ReferenceEquals(device, tile.Device))
-            {
-                tile.Show(device, camera);
-            }
-            else
-            {
-                tile.RefreshCameraInfo();
-            }
-        }
-        RaiseStateChanged();
+        });
+        UpdateCameraOrder();
     }
 
     /// <summary>Shows or hides the recorder's motion boxes on every SDK tile.</summary>
@@ -185,12 +215,11 @@ public partial class LiveView : UserControl
         }
     }
 
+    /// <summary>The device is already gone from the settings: its cameras leave the order.</summary>
     public void RemoveDevice(Guid deviceId)
     {
-        foreach (var tile in _tiles.Where(t => t.Device?.Id == deviceId))
-        {
-            tile.Clear();
-        }
+        Debug.Assert(App.Settings.Devices.All(d => d.Id != deviceId));
+        UpdateCameraOrder(); // its tiles show other cameras or become empty, releasing their streams
     }
 
     /// <summary>Top bar: layout picker.</summary>
@@ -199,39 +228,111 @@ public partial class LiveView : UserControl
     /// <summary>Top bar: Oto/HD/SD segmented group.</summary>
     public void SelectQuality(StreamQuality? quality) => SetGlobalQuality(quality);
 
-    void ShowCamera(VideoTile tile, CameraRef source)
+    /// <summary>Every camera of the sidebar list (not hidden in Settings), in list order: what the pages are made of.</summary>
+    static List<CameraRef> ListedCameras() =>
+        [.. App.Settings.Devices.SelectMany(d => d.ListedCameras().Select(c => new CameraRef(d.Id, c.Channel)))];
+
+    /// <summary>Cameras were added, removed or hidden: the order follows the list, the tiles follow the order.</summary>
+    void UpdateCameraOrder()
     {
-        var device = App.Settings.Devices.FirstOrDefault(d => d.Id == source.DeviceId);
-        var camera = device?.Cameras.FirstOrDefault(c => c.Channel == source.Channel);
-        if (device is null || camera is null)
+        _pages.Reconcile(ListedCameras());
+        Sync();
+    }
+
+    /// <summary>A camera from the sidebar was dropped onto a tile (or put there by a double-click).</summary>
+    void DropCamera(VideoTile tile, CameraRef source)
+    {
+        var position = _tiles.IndexOf(tile);
+        if (position < 0 || position >= _layout.TileCount || Resolve(source) is null)
         {
             return;
         }
-        tile.Show(device, camera);
-        _qualityTimer.Start();
+        _pages.Place(position, source);
+        Sync();
+        Select(_tiles[position]);
     }
 
     /// <summary>Dragging a tile onto another swaps their cameras; onto an empty tile it moves the camera.</summary>
     void SwapTiles(VideoTile from, VideoTile to)
     {
-        if (from == to || from.Source is not { } moved)
+        var a = _tiles.IndexOf(from);
+        var b = _tiles.IndexOf(to);
+        if (a == b || from.Source is null || a >= _layout.TileCount || b >= _layout.TileCount)
         {
             return;
         }
-        var replaced = to.Source;
+        _pages.Swap(a, b);
+        Sync(); // both tiles only move: no reconnect
+        Select(_tiles[b]);
+    }
+
+    /// <summary>"Kareyi kapat" in a tile's menu: its slot becomes empty.</summary>
+    void TileClosed(VideoTile tile)
+    {
+        var position = _tiles.IndexOf(tile);
+        if (position < 0 || position >= _layout.TileCount || tile.Source is not null)
+        {
+            return;
+        }
+        _pages.Clear(position);
+        Sync(); // the last page may be gone now
+    }
+
+    static (Device Device, Camera Camera)? Resolve(CameraRef source)
+    {
+        var device = App.Settings.Devices.FirstOrDefault(d => d.Id == source.DeviceId);
+        var camera = device?.Cameras.FirstOrDefault(c => c.Channel == source.Channel);
+        return device is null || camera is null ? null : (device, camera);
+    }
+
+    /// <summary>
+    /// Brings the tiles in line with the current page. A tile that already shows a camera of the page moves to
+    /// that camera's position (no reconnect); only tiles whose camera changes open a new stream, and tiles of
+    /// cameras that left the screen release theirs. Saves the view once at the end.
+    /// </summary>
+    void Sync()
+    {
+        var wanted = _pages.CurrentPage;
+        var maximizedAt = _maximized is null ? -1 : _tiles.IndexOf(_maximized);
+        var order = LivePages.AssignTiles(_tiles.Select(t => t.Source).ToList(), wanted);
+        var reordered = order.Select(i => _tiles[i]).ToList();
+        _tiles.Clear();
+        _tiles.AddRange(reordered);
         Batch(() =>
         {
-            if (replaced is null)
+            for (var i = 0; i < _tiles.Count; i++)
             {
-                from.Clear();
+                var tile = _tiles[i];
+                var camera = i < wanted.Count ? wanted[i] : null;
+                if (tile.Source == camera)
+                {
+                    continue;
+                }
+                if (camera is not null && Resolve(camera) is { } found)
+                {
+                    tile.Show(found.Device, found.Camera);
+                }
+                else if (tile.Camera is not null)
+                {
+                    tile.Clear(); // also tiles beyond the layout: they release their streams (Flyleaf and SDK alike)
+                }
             }
-            else
-            {
-                ShowCamera(from, replaced);
-            }
-            ShowCamera(to, moved);
         });
-        Select(to);
+        if (maximizedAt >= 0)
+        {
+            _maximized = _tiles[maximizedAt];
+            ShowMaximized();
+        }
+        else
+        {
+            ArrangeTiles();
+        }
+        if (_selected is null || _tiles.IndexOf(_selected) >= _layout.TileCount)
+        {
+            Select(_tiles[0]);
+        }
+        _qualityTimer.Start();
+        RaiseStateChanged();
     }
 
     /// <summary>Runs a change that touches many tiles and saves the layout once afterwards.</summary>
@@ -264,16 +365,8 @@ public partial class LiveView : UserControl
     {
         if (_maximized is null)
         {
-            // The other tiles stay in the grid, only hidden: their streams and video windows (SDK HWND, Flyleaf
-            // surface) keep running, so restoring shows their live picture at once — no reopen, no keyframe wait.
-            // A hidden tile also hides its video window, so nothing covers the maximized one (airspace).
             _maximized = tile;
-            foreach (var other in _tiles.Take(_layout.TileCount))
-            {
-                other.Visibility = other == tile ? Visibility.Visible : Visibility.Hidden;
-            }
-            tile.IsCompact = false;
-            Place(tile, new GridCell(0, 0, _layout.Rows, _layout.Columns));
+            ShowMaximized();
         }
         else
         {
@@ -283,31 +376,40 @@ public partial class LiveView : UserControl
         _qualityTimer.Start();
     }
 
+    /// <summary>
+    /// The other tiles stay in the grid, only hidden: their streams and video windows (SDK HWND, Flyleaf
+    /// surface) keep running, so restoring shows their live picture at once — no reopen, no keyframe wait.
+    /// A hidden tile also hides its video window, so nothing covers the maximized one (airspace).
+    /// </summary>
+    void ShowMaximized()
+    {
+        for (var i = 0; i < _tiles.Count; i++)
+        {
+            var other = _tiles[i];
+            other.Visibility = other == _maximized ? Visibility.Visible
+                : i < _layout.TileCount ? Visibility.Hidden
+                : Visibility.Collapsed; // Sync may have moved a tile out of the layout
+        }
+        _maximized!.IsCompact = false;
+        Place(_maximized, new GridCell(0, 0, _layout.Rows, _layout.Columns));
+    }
+
+    /// <summary>Back to the grid before the page changes.</summary>
+    void RestoreMaximized()
+    {
+        if (_maximized is not null)
+        {
+            ToggleMaximize(_maximized);
+        }
+    }
+
     void SetLayout(GridLayout layout)
     {
         _layout = layout;
         _maximized = null;
-        // Tiles that drop out of the layout release their streams (Flyleaf and SDK alike).
-        _batchUpdate = true;
-        try
-        {
-            for (var i = layout.TileCount; i < _tiles.Count; i++)
-            {
-                _tiles[i].Clear();
-            }
-        }
-        finally
-        {
-            _batchUpdate = false;
-        }
-        ArrangeTiles();
-        if (_selected is null || _tiles.IndexOf(_selected) >= layout.TileCount)
-        {
-            Select(_tiles[0]);
-        }
-        _qualityTimer.Start();
-        SaveLayout();
-        RaiseStateChanged();
+        // The first camera of the page stays on screen: the new page is the one that contains it.
+        _pages.SetPageSize(layout.TileCount);
+        Sync();
     }
 
     void ArrangeTiles()
@@ -336,7 +438,7 @@ public partial class LiveView : UserControl
             }
             else
             {
-                tile.Visibility = Visibility.Collapsed; // already cleared by SetLayout
+                tile.Visibility = Visibility.Collapsed; // already cleared by Sync
             }
         }
     }
@@ -377,27 +479,19 @@ public partial class LiveView : UserControl
         _qualityTimer.Start();
     }
 
+    /// <summary>
+    /// Saved order and page, brought up to date with the camera list (new or unhidden cameras join, closed tiles
+    /// are filled again). "Açılışta son görünümü geri yükle" off: default layout, list order, first page.
+    /// </summary>
     void RestoreLayout()
     {
         SetGlobalQuality(App.Settings.LiveQuality);
-        // "Açılışta son görünümü geri yükle" off: start with the default layout and empty tiles.
         var view = App.Settings.RestoreLastView ? App.Settings.LastView : null;
         // A saved 32 opens as 36; settings from the 1/4/9/16 era keep their old mapping (GridLayout.ForSavedView).
-        SetLayout(GridLayout.ForSavedView(view));
-        if (view is null)
-        {
-            return;
-        }
-        Batch(() =>
-        {
-            for (var i = 0; i < Math.Min(view.Tiles.Count, _layout.TileCount); i++)
-            {
-                if (view.Tiles[i] is { } source)
-                {
-                    ShowCamera(_tiles[i], source);
-                }
-            }
-        });
+        _layout = GridLayout.ForSavedView(view);
+        _maximized = null;
+        _pages.Load(view?.Tiles ?? [], ListedCameras(), view?.Page ?? 0, _layout.TileCount);
+        Sync();
     }
 
     void SaveLayout()
@@ -410,7 +504,8 @@ public partial class LiveView : UserControl
         {
             Name = "Son görünüm",
             Layout = _layout.TileCount,
-            Tiles = _tiles.Take(_layout.TileCount).Select(t => t.Source).ToList(),
+            Tiles = [.. _pages.Slots],
+            Page = _pages.Page,
         };
         App.SaveSettings();
     }

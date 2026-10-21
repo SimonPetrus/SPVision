@@ -330,10 +330,12 @@ public partial class MainWindow : Window
         {
             HikSession.Find(device.Id)?.Dispose();
         }
+        // Checked first: ReloadDevice already puts newly listed cameras on the pages.
+        var wallWasEmpty = Live.VisibleTiles.All(t => t.Camera is null);
         DevicesChanged();
         Live.ReloadDevice(device);
         Playback.ReloadDevice(device);
-        if (App.Settings.Devices.Count == 1 && Live.VisibleTiles.All(t => t.Camera is null))
+        if (App.Settings.Devices.Count == 1 && wallWasEmpty)
         {
             ShowLive(device); // first device (e.g. first run): show its cameras right away
         }
@@ -401,6 +403,7 @@ public partial class MainWindow : Window
 
         UpdateCameraRows();
         UpdateStatusBar();
+        UpdatePageControl();
     }
 
     void PlaybackStateChanged()
@@ -480,6 +483,18 @@ public partial class MainWindow : Window
         VideoPathText.ToolTip = string.IsNullOrEmpty(VideoPathText.Text) ? null : VideoPathText.Text;
     }
 
+    /// <summary>Status bar centre: "‹ Sayfa 1 / 3 ›" of the live view; hidden with a single page and outside the live view.</summary>
+    void UpdatePageControl()
+    {
+        var pages = Live.PageCount;
+        PagePanel.Visibility = _section == MainSection.Live && pages > 1 ? Visibility.Visible : Visibility.Collapsed;
+        PageText.Text = string.Format(Turkish, "Sayfa {0} / {1}", Live.Page + 1, pages);
+    }
+
+    void PreviousPage_Click(object sender, RoutedEventArgs e) => Live.StepPage(-1);
+
+    void NextPage_Click(object sender, RoutedEventArgs e) => Live.StepPage(1);
+
     /// <summary>This process's CPU share of the whole machine, sampled every 2 s, plus the clock.</summary>
     void UpdateClockAndCpu()
     {
@@ -551,6 +566,7 @@ public partial class MainWindow : Window
             SettingsPanel.Close();
         }
         UpdateStatusBar();
+        UpdatePageControl();
     }
 
     void ToggleFullScreen()
@@ -581,6 +597,22 @@ public partial class MainWindow : Window
             ToggleFullScreen();
             e.Handled = true;
         }
+    }
+
+    /// <summary>
+    /// PageUp/PageDown page the live view (with wrap-around, like the status bar arrows). Preview, so a focused
+    /// list or button does not take the keys first; never while typing in a text box.
+    /// </summary>
+    void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key is not (Key.PageUp or Key.PageDown) || Keyboard.Modifiers != ModifierKeys.None ||
+            _section != MainSection.Live || Live.PageCount <= 1 ||
+            Keyboard.FocusedElement is TextBoxBase or PasswordBox)
+        {
+            return;
+        }
+        Live.StepPage(e.Key == Key.PageDown ? 1 : -1);
+        e.Handled = true;
     }
 
     // ---- Helpers ----

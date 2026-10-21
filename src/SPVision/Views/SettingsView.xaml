@@ -236,7 +236,7 @@
                                     </Grid.ColumnDefinitions>
                                     <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
                                         <TextBlock Text="Açılışta son görünümü geri yükle" Style="{StaticResource RowLabel}" />
-                                        <TextBlock Style="{StaticResource RowHelp}" Text="Izgara düzeni ve karelerdeki kameralar kapatırken nasılsa öyle açılır." />
+                                        <TextBlock Style="{StaticResource RowHelp}" Text="Izgara düzeni, kamera sırası ve canlı izlemedeki sayfa kapatırken nasılsa öyle açılır." />
                                     </StackPanel>
                                     <CheckBox x:Name="RestoreSwitch" Grid.Column="1" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
                                               Click="RestoreSwitch_Click" AutomationProperties.Name="Açılışta son görünümü geri yükle" />

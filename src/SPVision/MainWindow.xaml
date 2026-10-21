@@ -6,7 +6,7 @@
         Title="SPVision" Width="1440" Height="900" MinWidth="1100" MinHeight="600"
         WindowStartupLocation="CenterScreen" Background="{DynamicResource WindowBg}" Foreground="{DynamicResource TextFg}"
         FontFamily="{StaticResource UiFont}" FontSize="{StaticResource FontSizeBase}"
-        KeyDown="Window_KeyDown">
+        KeyDown="Window_KeyDown" PreviewKeyDown="Window_PreviewKeyDown">
     <DockPanel>
         <!-- ===== Top bar, 52 px: wordmark · tabs · (live) layout picker, quality, actions / (playback) layout picker · settings (gear = third view) ===== -->
         <Border x:Name="Header" DockPanel.Dock="Top" Height="52" Background="{DynamicResource BarBg}"
@@ -77,7 +77,8 @@
             </Grid>
         </Border>
 
-        <!-- ===== Status bar, 28 px ===== -->
+        <!-- ===== Status bar, 28 px. Three columns (* / Auto / *): the live view's page control sits exactly in the middle of
+             the window whatever the status texts on the left and right are (they trim instead of pushing it). ===== -->
         <Border x:Name="StatusBar" DockPanel.Dock="Bottom" Height="28" Background="{DynamicResource BarBg}"
                 BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" Padding="12,0"
                 TextElement.FontSize="{StaticResource FontSizeStatus}" TextElement.Foreground="{DynamicResource TextSecondary}">
@@ -85,8 +86,7 @@
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
                 <DockPanel VerticalAlignment="Center" ClipToBounds="True">
                     <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
@@ -100,11 +100,29 @@
                     </StackPanel>
                     <TextBlock x:Name="VideoPathText" Margin="18,0,0,0" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" />
                 </DockPanel>
-                <TextBlock x:Name="MessageText" Grid.Column="1" MaxWidth="460" Margin="18,0,0,0" VerticalAlignment="Center"
-                           Foreground="{DynamicResource TextFg}" TextTrimming="CharacterEllipsis" Visibility="Collapsed" />
-                <TextBlock x:Name="CpuText" Grid.Column="2" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}"
-                           ToolTip="Bu uygulamanın işlemci kullanımı (tüm çekirdeklerin yüzdesi)" />
-                <TextBlock x:Name="ClockText" Grid.Column="3" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}" />
+                <!-- Live view only, from 2 pages on: ‹ Sayfa 1 / 3 ›. Two equal 23×23 buttons around a fixed 88 px text
+                     (fits "Sayfa 10 / 10"), so the arrows never move when the numbers change. -->
+                <StackPanel x:Name="PagePanel" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="18,0"
+                            Visibility="Collapsed" AutomationProperties.Name="Sayfa">
+                    <Button x:Name="PreviousPageButton" Style="{StaticResource StatusIconButton}" Click="PreviousPage_Click"
+                            ToolTip="Önceki sayfa (PageUp)" AutomationProperties.Name="Önceki sayfa">
+                        <c:GlyphIcon Data="{StaticResource IconChevronLeft}" Size="15" />
+                    </Button>
+                    <TextBlock x:Name="PageText" Width="88" TextAlignment="Center" VerticalAlignment="Center"
+                               Foreground="{DynamicResource TextFg}" />
+                    <Button x:Name="NextPageButton" Style="{StaticResource StatusIconButton}" Click="NextPage_Click"
+                            ToolTip="Sonraki sayfa (PageDown)" AutomationProperties.Name="Sonraki sayfa">
+                        <c:GlyphIcon Data="{StaticResource IconChevronRight}" Size="15" />
+                    </Button>
+                </StackPanel>
+                <!-- Clock and CPU always show; a long message trims in the space left of them. -->
+                <DockPanel Grid.Column="2" VerticalAlignment="Center" ClipToBounds="True">
+                    <TextBlock x:Name="ClockText" DockPanel.Dock="Right" Margin="18,0,0,0" Foreground="{DynamicResource TextSecondary}" />
+                    <TextBlock x:Name="CpuText" DockPanel.Dock="Right" Margin="18,0,0,0" Foreground="{DynamicResource TextSecondary}"
+                               ToolTip="Bu uygulamanın işlemci kullanımı (tüm çekirdeklerin yüzdesi)" />
+                    <TextBlock x:Name="MessageText" MaxWidth="460" Margin="18,0,0,0" HorizontalAlignment="Right"
+                               Foreground="{DynamicResource TextFg}" TextTrimming="CharacterEllipsis" Visibility="Collapsed" />
+                </DockPanel>
             </Grid>
         </Border>
 

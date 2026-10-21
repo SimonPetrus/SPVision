@@ -147,6 +147,10 @@ public partial class VideoTile : UserControl
 
     public void Show(Device device, Camera camera)
     {
+        if (Device?.Id != device.Id || Camera?.Channel != camera.Channel)
+        {
+            StopRecording(); // the MP4 belongs to the camera that leaves this tile (page change, drop)
+        }
         Device = device;
         Camera = camera;
         var forced = App.Settings.LiveQuality;

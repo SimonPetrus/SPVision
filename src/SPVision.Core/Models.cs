@@ -74,7 +74,15 @@ public sealed class SavedView
     /// <summary>Legacy (1/4/9/16 grids): column count of a square grid. Only read to migrate old settings.</summary>
     public int? Columns { get; set; }
 
+    /// <summary>
+    /// Live view: the global camera order (<see cref="LivePages.Slots"/>), page p of a layout with N tiles shows
+    /// Tiles[p*N .. p*N+N-1]; null = empty tile. Views saved before paging held only the tiles of one layout,
+    /// which is the start of the same order.
+    /// </summary>
     public List<CameraRef?> Tiles { get; set; } = [];
+
+    /// <summary>Live view: zero-based page shown when the view was saved (clamped on restore).</summary>
+    public int Page { get; set; }
 }
 
 public sealed record CameraRef(Guid DeviceId, int Channel);
@@ -104,7 +112,7 @@ public sealed class AppSettings
     /// <summary>Draw the recorder's motion / intelligent-analysis boxes on SDK video (PlayCtrl private data).</summary>
     public bool ShowMotionBoxes { get; set; } = true;
 
-    /// <summary>Restore the grid layout and its cameras on startup.</summary>
+    /// <summary>Restore the grid layout, camera order and page on startup.</summary>
     public bool RestoreLastView { get; set; } = true;
 
     /// <summary>Open the main window in full screen (F11).</summary>
