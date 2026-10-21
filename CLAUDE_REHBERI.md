@@ -434,6 +434,20 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
     edilir, `ResponseStatus` kontrol edilir, yeniden okunup doğrulanır; istekler tek tek gider, ilk hatada durulur. Ayrıntı §9.
   - 2. ve 3. aşama izin listesini genişletir (yeniden başlatma, biçimlendirme, ağ, kullanıcılar…); yasak kelime listesi kalır.
   - Başka hiçbir yerde ISAPI PUT/POST/DELETE ekleme (kayıt arama `POST ContentMgmt/search` salt okuma isteğidir, istisnadır).
+- **Güvenlik (21.10.2026, `IsapiSecurityTests`):** bunları gevşetme.
+  - **Yalnız Digest:** `IsapiClient` kimlik bilgisini yalnız `Digest` için kaydeder, `PreAuthenticate` kapalı. Eskiden `Basic` de
+    vardı: 401 + `WWW-Authenticate: Basic` döndüren biri (LAN'da araya giren) yönetici şifresini açık metin alırdı. Yalnız Basic
+    isteyen cihaz: 401 + "Cihaz yalnızca … Basic kimlik doğrulamasını istedi; şifre gönderilmedi (Digest gerekir)."
+  - **Yönlendirme izlenmez:** `AllowAutoRedirect = false`; her 3xx `IsapiException` ("… yönlendirdi …; yönlendirme izlenmez").
+    Yoksa 307/308 bir PUT'u gövdesi ve Digest yanıtıyla başka yola (izin listesinin dışına) taşırdı; 3xx gövdesi `ResponseStatus`
+    olarak da okunmaz.
+  - **Boyut sınırı:** her yanıt en çok 16 MB (`HttpClient.MaxResponseContentBufferSize`, anlık görüntü), XML en çok 4 M karakter
+    (`IsapiXml.MaxLength`); aşan yanıt "Cihazın yanıtı beklenenden çok büyük; okunmadı." (bağlantı hatası sayılmaz).
+  - **Güvenli XML:** cihazdan gelen her XML yalnız `IsapiXml.Parse` ile okunur (DTD yasak, `XmlResolver` yok, boyut sınırı;
+    normal belgede `XDocument.Parse` ile aynı sonuç). Cihaz verisine `XDocument.Parse` / `XElement.Parse` kullanma.
+  - **Şifre ekrana/loga yazılmaz:** Flyleaf/FFmpeg hatası RTSP adresini (içinde `kullanıcı:şifre@`) içerebilir. Karelerin `Shorten`'ı
+    önce `StreamUrls.RedactCredentials` uygular (her URL'deki `kullanıcı:şifre@` → `***@`), sonra kısaltır. Yeni hata metni/log
+    yolunda da aynısını yap. `PlayM4_GetJPEG`'in döndürdüğü boyut tampondan büyükse anlık görüntü başarısız sayılır.
 - **Canlıda kare büyütme (çift tık) kareleri ağaçtan çıkarmaz.** `LiveView`'daki 36 `VideoTile` hep `TileGrid`
   çocuğudur (oynatmadaki gibi); düzen ya da sayfa değişince yalnız taşınır/gizlenir (`_tiles` listesinin sırası = konum). Büyütmede diğer kareler `Visibility.Hidden`
   olur: akışları, SDK HWND'leri (`HikVideoHost`) ve Flyleaf yüzeyleri çalışmaya devam eder, gizli kare video

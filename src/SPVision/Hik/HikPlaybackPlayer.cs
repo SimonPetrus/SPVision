@@ -322,7 +322,7 @@ public sealed class HikPlaybackPlayer : IDisposable
             try
             {
                 uint size = 0;
-                if (!HikNative.PlayM4_GetJPEG(port, buffer, maxJpeg, ref size) || size == 0)
+                if (!HikNative.PlayM4_GetJPEG(port, buffer, maxJpeg, ref size) || size == 0 || size > maxJpeg)
                     return null;
                 var data = new byte[size];
                 Marshal.Copy(buffer, data, 0, (int)size);
