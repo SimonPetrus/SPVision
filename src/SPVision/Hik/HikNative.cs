@@ -321,11 +321,28 @@ public static class HikNative
     [DllImport(PlayCtrl)] public static extern bool PlayM4_Pause(int port, uint pause);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_Fast(int port);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_Slow(int port);
+    [DllImport(PlayCtrl)] public static extern bool PlayM4_OneByOne(int port); // step one frame (downloads: decode on demand)
     [DllImport(PlayCtrl)] public static extern bool PlayM4_GetPictureSize(int port, ref int width, ref int height);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_GetJPEG(int port, IntPtr jpeg, uint bufSize, ref uint jpegSize);
     [DllImport(PlayCtrl)] public static extern bool PlayM4_SetOverlayMode(int port, bool overlay, uint colorKey);
     // PLAYM4_API BOOL __stdcall PlayM4_RefreshPlay(LONG nPort): draws the current picture again (e.g. paused, window re-shown).
     [DllImport(PlayCtrl)] public static extern bool PlayM4_RefreshPlay(int port);
+
+    /// <summary>plaympeg4.h RECT (all LONG): a source rectangle of the picture in pixels.</summary>
+    [StructLayout(LayoutKind.Sequential)]
+    public struct Rect
+    {
+        public int Left;
+        public int Top;
+        public int Right;
+        public int Bottom;
+    }
+
+    // PLAYM4_API BOOL __stdcall PlayM4_SetDisplayRegion(LONG nPort, DWORD nRegionNum, RECT* pSrcRect, HWND hDestWnd, BOOL bEnable):
+    // region 0 = the play window; with a source rectangle it shows only that part of the picture (digital zoom, display only);
+    // NULL + FALSE shows the whole picture again.
+    [DllImport(PlayCtrl)] public static extern bool PlayM4_SetDisplayRegion(int port, uint region, ref Rect source, IntPtr window, bool enable);
+    [DllImport(PlayCtrl)] public static extern bool PlayM4_SetDisplayRegion(int port, uint region, IntPtr source, IntPtr window, bool enable);
 
     // PLAYM4_API BOOL __stdcall PlayM4_RenderPrivateData(LONG nPort, int nIntelType, BOOL bTrue);
     // LONG and BOOL are 32-bit on Windows x64 (int / 4-byte bool); display-only, per port.

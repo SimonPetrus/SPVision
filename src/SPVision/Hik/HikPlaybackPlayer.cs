@@ -170,6 +170,7 @@ public sealed class HikPlaybackPlayer : IDisposable
             _started = false;
             _catchUpMode = CatchUpNone;
             _caughtUp = false;
+            _zoomApplied = false; // the next open is a new port
             // A clip ends with its stream (seek, park, dispose): finalized, never cut off.
             if (StopRecorder() is { } finishing)
             {
@@ -423,6 +424,44 @@ public sealed class HikPlaybackPlayer : IDisposable
             finally
             {
                 Marshal.FreeHGlobal(buffer);
+            }
+        }
+    }
+
+    /// <summary>Digital zoom wanted on the window (display only); <see cref="ApplyZoom"/> shows it.</summary>
+    public DigitalZoom Zoom { get; set; } = DigitalZoom.None;
+
+    bool _zoomApplied; // a source rectangle is set on the current port
+
+    /// <summary>
+    /// Shows <see cref="Zoom"/>: our port (the window's only renderer) displays only that part of the picture
+    /// (PlayM4_SetDisplayRegion, region 0 = the play window), or the whole picture again. Local PlayCtrl calls; takes the
+    /// control lock, so off the UI thread. Every open is a new port: call it again once the picture is shown.
+    /// </summary>
+    public void ApplyZoom()
+    {
+        lock (_lock)
+        {
+            int port = Volatile.Read(ref _port);
+            if (_disposed || _playHandle < 0 || port < 0)
+            {
+                _zoomApplied = false;
+                return;
+            }
+            int width = 0, height = 0;
+            if (Zoom.IsZoomed && HikNative.PlayM4_GetPictureSize(port, ref width, ref height) && Zoom.Region(width, height) is { } region)
+            {
+                var rect = new HikNative.Rect { Left = region.Left, Top = region.Top, Right = region.Right, Bottom = region.Bottom };
+                _zoomApplied = HikNative.PlayM4_SetDisplayRegion(port, 0, ref rect, (IntPtr)windowHandlePending, true);
+            }
+            else if (_zoomApplied)
+            {
+                HikNative.PlayM4_SetDisplayRegion(port, 0, IntPtr.Zero, (IntPtr)windowHandlePending, false);
+                _zoomApplied = false;
+            }
+            if (_paused)
+            {
+                HikNative.PlayM4_RefreshPlay(port); // a paused picture is drawn again with the new region
             }
         }
     }

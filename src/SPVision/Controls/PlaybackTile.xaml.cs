@@ -55,10 +55,21 @@ public partial class PlaybackTile : UserControl
         Unloaded += (_, _) => DisposePlayers(waitForSdk: true);
         Host.SurfaceCreated += (_, _) => HookSurface(Host.Surface);
         HookSurface(Host.Surface);
+        // The SDK window is transparent to hit testing: wheel, drag and release over the video arrive here.
+        MouseWheel += Tile_MouseWheel;
+        MouseMove += Tile_MouseMove;
+        MouseLeftButtonUp += Tile_MouseLeftButtonUp;
+        LostMouseCapture += (_, _) => _panFrom = null;
     }
 
     /// <summary>The tile was clicked (it should take the focus).</summary>
     public event Action<PlaybackTile>? Activated;
+
+    /// <summary>The tile was double-clicked (the view maximizes / restores it).</summary>
+    public event Action<PlaybackTile>? DoubleClicked;
+
+    /// <summary>The video area (below the header): the hover tool bar sits along its bottom edge.</summary>
+    public FrameworkElement VideoSurface => VideoArea;
 
     /// <summary>State, path or clip flag changed (header, list and status bar follow it).</summary>
     public event Action<PlaybackTile>? StateChanged;
@@ -94,6 +105,16 @@ public partial class PlaybackTile : UserControl
     public bool UsesSdk => Camera is not null && HikHost.Visibility != Visibility.Collapsed;
 
     public bool IsClipping => _flyleafClipping || _hikClipping;
+
+    /// <summary>A picture is on screen: snapshot and clip can start (the SDK path after its hidden catch-up).</summary>
+    public bool HasPicture =>
+        _player is { Status: Status.Playing or Status.Paused } ||
+        (_hikPlayer?.IsStarted == true && _timeVerified && HikHost.Visibility == Visibility.Visible); // lock-free (polled)
+
+    /// <summary>Digital zoom works on the SDK path (PlayCtrl draws a part of the picture); Flyleaf tiles have none.</summary>
+    public bool CanZoom => UsesSdk && _hikPlayer is { IsStarted: true } && _timeVerified;
+
+    public bool IsZoomed => _zoom.IsZoomed;
 
     /// <summary>How the view is bringing this tile back in step without reopening it (SDK path only).</summary>
     public SyncNudge Nudge { get; private set; }
@@ -172,6 +193,7 @@ public partial class PlaybackTile : UserControl
         SearchError = null;
         IsParked = false;
         _preferHik = false;
+        _zoom = DigitalZoom.None; // a new camera starts with the whole picture
         EmptyFrame.Visibility = Visibility.Collapsed;
         Frame.Visibility = Visibility.Visible;
         CameraName.Text = camera.Name;
@@ -213,6 +235,7 @@ public partial class PlaybackTile : UserControl
         SearchDone = false;
         SearchError = null;
         IsParked = false;
+        _zoom = DigitalZoom.None;
         ShowEmpty();
     }
 
@@ -476,6 +499,7 @@ public partial class PlaybackTile : UserControl
         }
         var player = _hikPlayer;
         player.ShowMotionBoxes = App.Settings.ShowMotionBoxes;
+        player.Zoom = _zoom; // shown again once the picture is (OnCatchUpDone): every open is a new port
         player.RequestedSpeedSteps = PlaybackSpeed.Steps(_speedIndex);
         player.RequestedPaused = _paused;
 
@@ -686,6 +710,10 @@ public partial class PlaybackTile : UserControl
             if (!IsStale(player, generation))
             {
                 player.RefreshDisplay();
+                if (player.Zoom.IsZoomed)
+                {
+                    player.ApplyZoom();
+                }
             }
         });
         if (_state != TileState.Failed)
@@ -1143,9 +1171,111 @@ public partial class PlaybackTile : UserControl
         surface.MouseLeftButtonDown += Surface_MouseLeftButtonDown;
     }
 
-    void Tile_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => Activate();
+    void Tile_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        Activate();
+        if (e.ClickCount == 2)
+        {
+            _panFrom = null;
+            RaiseDoubleClick();
+        }
+        else if (_zoom.IsZoomed && CanZoom && CaptureMouse())
+        {
+            _panFrom = e.GetPosition(VideoArea); // drag moves the zoomed picture
+        }
+    }
 
-    void Surface_MouseLeftButtonDown(object sender, MouseButtonEventArgs e) => Activate();
+    void Surface_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        Activate();
+        if (e.ClickCount == 2)
+        {
+            RaiseDoubleClick();
+        }
+    }
+
+    /// <summary>Deferred: the grid is re-arranged outside the mouse event (and outside Flyleaf's surface window event).</summary>
+    void RaiseDoubleClick()
+    {
+        if (Camera is not null)
+        {
+            Dispatcher.BeginInvoke(() => DoubleClicked?.Invoke(this));
+        }
+    }
+
+    // ---- Digital zoom (SDK path, display only) ----
+
+    DigitalZoom _zoom = DigitalZoom.None;
+    Point? _panFrom;
+    int _zoomQueued;
+
+    /// <summary>Tool bar "Yakınlaştır": 2× on the centre, or the whole picture again. Wheel zooms, drag moves while zoomed.</summary>
+    public void ToggleZoom()
+    {
+        if (!_zoom.IsZoomed && !CanZoom)
+        {
+            return;
+        }
+        SetZoom(_zoom.Toggle());
+    }
+
+    void SetZoom(DigitalZoom zoom)
+    {
+        if (zoom == _zoom)
+        {
+            return;
+        }
+        _zoom = zoom;
+        if (_hikPlayer is { } player)
+        {
+            player.Zoom = zoom;
+            // Coalesced: a fast wheel or drag queues one apply at a time (it reads the latest zoom when it runs).
+            if (Interlocked.Exchange(ref _zoomQueued, 1) == 0)
+            {
+                QueueSdk(() =>
+                {
+                    Interlocked.Exchange(ref _zoomQueued, 0);
+                    if (!player.IsDisposed)
+                    {
+                        player.ApplyZoom();
+                    }
+                });
+            }
+        }
+        StateChanged?.Invoke(this);
+    }
+
+    void Tile_MouseWheel(object sender, MouseWheelEventArgs e)
+    {
+        if (!_zoom.IsZoomed || !CanZoom || VideoArea.ActualWidth < 1 || VideoArea.ActualHeight < 1)
+        {
+            return; // the wheel zooms only once "Yakınlaştır" is on
+        }
+        var at = e.GetPosition(VideoArea);
+        var factor = e.Delta > 0 ? DigitalZoom.WheelStep : 1 / DigitalZoom.WheelStep;
+        SetZoom(_zoom.ZoomAt(factor, at.X / VideoArea.ActualWidth, at.Y / VideoArea.ActualHeight));
+        e.Handled = true;
+    }
+
+    void Tile_MouseMove(object sender, MouseEventArgs e)
+    {
+        if (_panFrom is not { } from || e.LeftButton != MouseButtonState.Pressed || VideoArea.ActualWidth < 1)
+        {
+            return;
+        }
+        var now = e.GetPosition(VideoArea);
+        _panFrom = now;
+        SetZoom(_zoom.PanBy((now.X - from.X) / VideoArea.ActualWidth, (now.Y - from.Y) / VideoArea.ActualHeight));
+    }
+
+    void Tile_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_panFrom is not null)
+        {
+            _panFrom = null;
+            ReleaseMouseCapture();
+        }
+    }
 
     void Activate()
     {

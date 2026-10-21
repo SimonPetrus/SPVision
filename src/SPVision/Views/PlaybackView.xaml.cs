@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Globalization;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
@@ -89,6 +90,7 @@ public partial class PlaybackView : UserControl
         {
             var tile = new PlaybackTile { Visibility = Visibility.Collapsed };
             tile.Activated += t => FocusTile(_tiles.IndexOf(t));
+            tile.DoubleClicked += ToggleMaximize;
             tile.StateChanged += _ => UpdateUi(); // header, clip button, status bar
             tile.Notice += (_, text) => Message?.Invoke(text);
             _tiles.Add(tile);
@@ -113,6 +115,14 @@ public partial class PlaybackView : UserControl
         GoToPopup.Opened += (_, _) => OpenGoTo();
         _tick.Tick += (_, _) => Tick();
         _messageTimer.Tick += (_, _) => ShowMessage(null);
+        _hoverTimer.Tick += (_, _) => HoverTick();
+        TileBar.SnapshotRequested += tile => _ = SnapshotAsync(tile);
+        TileBar.ClipRequested += ToggleClip;
+        TileBar.ZoomRequested += tile => tile.ToggleZoom();
+        TileBar.DownloadRequested += OpenDownload;
+        DownloadPanel.CloseRequested += CloseDownload;
+        DownloadPanel.Message += text => Message?.Invoke(text);
+        Loaded += (_, _) => HookWindow();
 
         // Layout of the last session now (the top bar picker shows it); its cameras when the view is first shown,
         // so nothing is searched on the recorder before the user opens Kayıt Oynatma.
@@ -164,6 +174,7 @@ public partial class PlaybackView : UserControl
     {
         _active = true;
         _tick.Start();
+        _hoverTimer.Start();
         RestoreCameras();
         // Stopped before the view was left: it stays stopped (the tiles were stopped with the view); Play restarts.
         if (Transport == TransportState.Stopped)
@@ -197,6 +208,8 @@ public partial class PlaybackView : UserControl
         }
         _active = false;
         _tick.Stop();
+        _hoverTimer.Stop();
+        HideTileBar();
         GoToPopup.IsOpen = false;
         foreach (var tile in ActiveTiles)
         {
@@ -213,9 +226,12 @@ public partial class PlaybackView : UserControl
     {
         _active = false;
         _tick.Stop();
+        _hoverTimer.Stop();
+        HideTileBar();
         _dayCts.Cancel();
         CancelMarkLoaders(_ => true);
-        return Task.WhenAll(_tiles.Select(tile => tile.ReleaseAsync()).ToList());
+        // Running downloads stop too (their partial files are deleted); they use playback sessions of their own.
+        return Task.WhenAll(_tiles.Select(tile => tile.ReleaseAsync()).Append(DownloadPanel.ShutdownAsync()).ToList());
     }
 
     /// <summary>Top bar: layout picker (up to 16 tiles).</summary>
@@ -226,6 +242,7 @@ public partial class PlaybackView : UserControl
             return;
         }
         _layout = layout;
+        _maximized = null;
         _slots.Resize(layout.TileCount);
         ArrangeTiles();
         SyncTilesToSlots();
@@ -361,7 +378,15 @@ public partial class PlaybackView : UserControl
                 tile.Clear();
             }
         }
+        if (_maximized is { Camera: null })
+        {
+            RestoreMaximized(); // its camera was removed
+        }
         UpdateRows();
+        if (DownloadPanel.Visibility == Visibility.Visible)
+        {
+            DownloadPanel.RefreshCameras(PlaybackCameras());
+        }
     }
 
     void ShowCamera(PlaybackTile tile, Device device, Camera camera)
@@ -1378,6 +1403,248 @@ public partial class PlaybackView : UserControl
     void TimeBox_GotKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => ((TextBox)sender).SelectAll();
 
     void Digits_PreviewTextInput(object sender, TextCompositionEventArgs e) => e.Handled = !e.Text.All(char.IsAsciiDigit);
+
+    // ---- Maximize (double-click), like the live view ----
+
+    PlaybackTile? _maximized;
+
+    /// <summary>
+    /// Double-click: the tile fills the grid; again (or Esc) restores it. The other tiles stay in the grid, only hidden: their
+    /// streams and video windows keep running and keep in step (the sync loop does not look at visibility), so the grid is
+    /// back at once. Recordings always play from the main stream, so nothing switches quality.
+    /// </summary>
+    void ToggleMaximize(PlaybackTile tile)
+    {
+        if (_maximized is not null)
+        {
+            RestoreMaximized();
+            return;
+        }
+        if (tile.Camera is null || _tiles.IndexOf(tile) >= _layout.TileCount)
+        {
+            return;
+        }
+        _maximized = tile;
+        for (var i = 0; i < _tiles.Count; i++)
+        {
+            var other = _tiles[i];
+            other.Visibility = other == tile ? Visibility.Visible
+                : i < _layout.TileCount ? Visibility.Hidden // hides its video window too: nothing covers the big one
+                : Visibility.Collapsed;
+        }
+        tile.IsCompact = false;
+        Grid.SetRow(tile, 0);
+        Grid.SetColumn(tile, 0);
+        Grid.SetRowSpan(tile, _layout.Rows);
+        Grid.SetColumnSpan(tile, _layout.Columns);
+        HideTileBar(); // placed again on the next hover tick
+    }
+
+    void RestoreMaximized()
+    {
+        if (_maximized is null)
+        {
+            return;
+        }
+        _maximized = null;
+        ArrangeTiles();
+        HideTileBar();
+    }
+
+    Window? _window;
+
+    /// <summary>Esc restores a maximized tile; moving or minimizing the window hides the hover bar until the next tick.</summary>
+    void HookWindow()
+    {
+        if (Window.GetWindow(this) is not { } window || ReferenceEquals(window, _window))
+        {
+            return;
+        }
+        _window = window;
+        window.AddHandler(KeyDownEvent, new KeyEventHandler(Window_KeyDown));
+        window.LocationChanged += (_, _) => HideTileBar();
+        window.StateChanged += (_, _) => HideTileBar();
+    }
+
+    void Window_KeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape && _maximized is not null && _active && IsVisible && Keyboard.Modifiers == ModifierKeys.None)
+        {
+            RestoreMaximized();
+            e.Handled = true;
+        }
+    }
+
+    // ---- Hover tool bar ----
+
+    readonly DispatcherTimer _hoverTimer = new() { Interval = TimeSpan.FromMilliseconds(100) };
+    PlaybackTile? _barTile;
+    DateTime _barHovered;
+    (Point Origin, Size Size) _barPlace;
+
+    /// <summary>
+    /// Every 100 ms while the view is shown: the cursor (GetCursorPos — the video HWNDs take the mouse messages) over a
+    /// tile's video area shows the bar there; it lingers <see cref="Core.TileToolBar.HideDelay"/> after the mouse left. It
+    /// hides at once when the window is minimized or not in the foreground (another app on top), or the view is hidden.
+    /// </summary>
+    void HoverTick()
+    {
+        if (!_active || !IsVisible || _window is not { WindowState: not WindowState.Minimized } window || !IsForeground(window))
+        {
+            HideTileBar();
+            return;
+        }
+        var hovered = HoveredTile(window);
+        var now = DateTime.UtcNow;
+        if (hovered is not null)
+        {
+            _barHovered = now;
+        }
+        var shown = _barTile is null ? (int?)null : _tiles.IndexOf(_barTile);
+        var owner = Core.TileToolBar.Owner(hovered is null ? null : _tiles.IndexOf(hovered), shown, _barHovered, now);
+        if (owner is not { } index || _tiles[index] is not { Camera: not null, IsVisible: true } tile)
+        {
+            HideTileBar();
+            return;
+        }
+        ShowTileBar(tile);
+    }
+
+    PlaybackTile? HoveredTile(Window window)
+    {
+        if (!GetCursorPos(out var cursor))
+        {
+            return null;
+        }
+        var screen = new Point(cursor.X, cursor.Y);
+        if (TileBarPopup.IsOpen && _barTile is not null && Contains(TileBar, screen))
+        {
+            return _barTile; // over the bar itself
+        }
+        // Only when our window is the one under the cursor (not another app's window on top of a tile).
+        var root = GetAncestor(WindowFromPoint(cursor), GaRoot);
+        if (root != new System.Windows.Interop.WindowInteropHelper(window).Handle && root != PopupHandle())
+        {
+            return null;
+        }
+        return _tiles.Take(_layout.TileCount).FirstOrDefault(t => t.Camera is not null && t.IsVisible && Contains(t.VideoSurface, screen));
+    }
+
+    static bool Contains(FrameworkElement element, Point screen)
+    {
+        if (!element.IsVisible || element.ActualWidth <= 0 || PresentationSource.FromVisual(element) is null)
+        {
+            return false;
+        }
+        var a = element.PointToScreen(new Point(0, 0));
+        var b = element.PointToScreen(new Point(element.ActualWidth, element.ActualHeight));
+        return Core.TileToolBar.Contains((a.X, a.Y, b.X - a.X, b.Y - a.Y), screen.X, screen.Y);
+    }
+
+    void ShowTileBar(PlaybackTile tile)
+    {
+        var surface = tile.VideoSurface;
+        if (Core.TileToolBar.Place(0, 0, surface.ActualWidth, surface.ActualHeight, 1, 4) is not { } place)
+        {
+            HideTileBar(); // too small for the buttons
+            return;
+        }
+        TileBar.Update(tile, DownloadPanel.Visibility == Visibility.Visible && DownloadPanel.Target == tile.Source);
+        TileBar.Width = place.Width;
+        var where = (surface.PointToScreen(new Point(0, 0)), new Size(surface.ActualWidth, surface.ActualHeight));
+        if (!ReferenceEquals(TileBarPopup.PlacementTarget, surface))
+        {
+            TileBarPopup.PlacementTarget = surface;
+        }
+        TileBarPopup.HorizontalOffset = place.X;
+        TileBarPopup.VerticalOffset = place.Y;
+        _barTile = tile;
+        if (!TileBarPopup.IsOpen)
+        {
+            TileBarPopup.IsOpen = true;
+        }
+        else if (where != _barPlace)
+        {
+            // A Popup does not follow its target: nudge it so WPF places it again (layout change, panel, maximize).
+            TileBarPopup.HorizontalOffset = place.X + 1;
+            TileBarPopup.HorizontalOffset = place.X;
+        }
+        _barPlace = where;
+    }
+
+    void HideTileBar()
+    {
+        if (TileBarPopup.IsOpen)
+        {
+            TileBarPopup.IsOpen = false;
+        }
+        _barTile = null;
+        _barPlace = default;
+    }
+
+    IntPtr PopupHandle() =>
+        TileBarPopup.IsOpen && PresentationSource.FromVisual(TileBar) is System.Windows.Interop.HwndSource source ? source.Handle : IntPtr.Zero;
+
+    bool IsForeground(Window window)
+    {
+        var foreground = GetForegroundWindow();
+        return foreground != IntPtr.Zero &&
+            (foreground == new System.Windows.Interop.WindowInteropHelper(window).Handle || foreground == PopupHandle());
+    }
+
+    const uint GaRoot = 2;
+
+    [StructLayout(LayoutKind.Sequential)]
+    struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    static extern bool GetCursorPos(out NativePoint point);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr WindowFromPoint(NativePoint point);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetAncestor(IntPtr hwnd, uint flags);
+
+    [DllImport("user32.dll")]
+    static extern IntPtr GetForegroundWindow();
+
+    // ---- Tool bar actions (on the bar's tile) ----
+
+    async Task SnapshotAsync(PlaybackTile tile)
+    {
+        var path = await tile.TakeSnapshotAsync();
+        Message?.Invoke(path is null ? "Anlık görüntü alınamadı." : $"Kaydedildi: {path}");
+    }
+
+    void ToggleClip(PlaybackTile tile)
+    {
+        Message?.Invoke(tile.ToggleClip());
+        UpdateUi();
+    }
+
+    // ---- "Video indir" panel ----
+
+    /// <summary>Cameras of the playback tiles, in tile order (the panel's list).</summary>
+    List<(Device Device, Camera Camera)> PlaybackCameras() => ActiveTiles.Select(t => (t.Device!, t.Camera!)).ToList();
+
+    void OpenDownload(PlaybackTile tile)
+    {
+        var time = tile.CurrentTime ?? (_hasTime ? Master : null);
+        DownloadPanel.Open(PlaybackCameras(), tile.Source, time, _day);
+        DownloadPanel.Visibility = Visibility.Visible;
+        HideTileBar();
+    }
+
+    void CloseDownload()
+    {
+        DownloadPanel.Visibility = Visibility.Collapsed; // a running download goes on; the status bar reports it
+        HideTileBar();
+    }
 
     // ---- Texts ----
 

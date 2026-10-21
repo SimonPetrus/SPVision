@@ -17,8 +17,11 @@ public sealed record Mp4Info(bool IsValid, TimeSpan Duration, long VideoSamples,
 /// </summary>
 public static class Mp4Inspector
 {
-    /// <summary>Largest moov read into memory (a 24 h recording's tables stay far below this).</summary>
-    const long MaxMoovSize = 64 * 1024 * 1024;
+    /// <summary>
+    /// Largest moov read into memory. Its sample tables grow ~30 MB per recorded day at 25 fps (sizes + variable
+    /// durations), so multi-day downloads ("İndir") need room; a 64 MB limit rejected files of a few days.
+    /// </summary>
+    const long MaxMoovSize = 768L * 1024 * 1024;
 
     public static Mp4Info Inspect(string path)
     {

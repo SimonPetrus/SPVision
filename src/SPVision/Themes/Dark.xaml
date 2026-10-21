@@ -100,4 +100,12 @@
     <SolidColorBrush x:Key="OnDanger" Color="#FFFFFF" />
     <!-- In-app update banner of the main window (accent-tinted, under the top bar) -->
     <SolidColorBrush x:Key="InfoSoftBg" Color="#1C2A38" />
+    <!-- Kayıt oynatma › Video indir: date range band and checked camera rows -->
+    <SolidColorBrush x:Key="RangeBg" Color="#1F4A66" />
+    <!-- Tool bar over a playback tile (hover): on the always dark wall in both themes -->
+    <SolidColorBrush x:Key="TileBarBg" Color="#D9202020" />
+    <SolidColorBrush x:Key="TileBarFg" Color="#FFFFFF" />
+    <SolidColorBrush x:Key="TileBarHoverBg" Color="#33FFFFFF" />
+    <SolidColorBrush x:Key="TileBarActiveBg" Color="#594CC2FF" />
+    <SolidColorBrush x:Key="TileBarRecord" Color="#FF6B5E" />
 </ResourceDictionary>
