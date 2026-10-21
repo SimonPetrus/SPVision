@@ -614,7 +614,7 @@ public partial class VideoTile : UserControl
         HookSurface(Host.Surface);
         if (_wantPlaying && Camera is not null)
         {
-            Reconnect(); // tile came back into the layout (e.g. after maximize)
+            Reconnect(); // re-added after an unload; the live view itself keeps its tiles in the tree (maximize only hides them)
         }
     }
 

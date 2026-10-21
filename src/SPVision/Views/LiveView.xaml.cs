@@ -24,7 +24,7 @@ public partial class LiveView : UserControl
         InitializeComponent();
         for (var i = 0; i < GridLayout.MaxTiles; i++)
         {
-            var tile = new VideoTile();
+            var tile = new VideoTile { Visibility = Visibility.Collapsed };
             tile.Activated += Select;
             tile.DoubleClicked += ToggleMaximize;
             tile.CameraDropped += (t, source) => ShowCamera(t, source);
@@ -42,6 +42,10 @@ public partial class LiveView : UserControl
             tile.StopAllRequested += StopAll;
             tile.OpenFoldersRequested += OpenFolders;
             _tiles.Add(tile);
+            // Always children: layout changes and maximize only move/hide them. Removing a tile from the tree
+            // unloads it, which releases its stream and video window — restoring it then had to reopen the
+            // stream and wait for the next keyframe (black tiles after un-maximizing).
+            TileGrid.Children.Add(tile);
         }
         _qualityTimer.Tick += (_, _) =>
         {
@@ -260,10 +264,16 @@ public partial class LiveView : UserControl
     {
         if (_maximized is null)
         {
+            // The other tiles stay in the grid, only hidden: their streams and video windows (SDK HWND, Flyleaf
+            // surface) keep running, so restoring shows their live picture at once — no reopen, no keyframe wait.
+            // A hidden tile also hides its video window, so nothing covers the maximized one (airspace).
             _maximized = tile;
-            ResetGrid(1, 1);
+            foreach (var other in _tiles.Take(_layout.TileCount))
+            {
+                other.Visibility = other == tile ? Visibility.Visible : Visibility.Hidden;
+            }
             tile.IsCompact = false;
-            Place(tile, new GridCell(0, 0));
+            Place(tile, new GridCell(0, 0, _layout.Rows, _layout.Columns));
         }
         else
         {
@@ -302,55 +312,61 @@ public partial class LiveView : UserControl
 
     void ArrangeTiles()
     {
-        ResetGrid(_layout.Columns, _layout.Rows);
-        // From 16 tiles on they are small: slimmer 22 px header strip; fewer tiles use 26 px. One height per layout,
-        // so the headers of neighbouring tiles always line up.
-        var compact = _layout.TileCount >= 16;
-        for (var i = 0; i < _layout.TileCount; i++)
-        {
-            _tiles[i].IsCompact = compact;
-            Place(_tiles[i], _layout.Cells[i]);
-        }
-    }
-
-    void ResetGrid(int columns, int rows)
-    {
-        TileGrid.Children.Clear();
         TileGrid.ColumnDefinitions.Clear();
         TileGrid.RowDefinitions.Clear();
-        for (var i = 0; i < columns; i++)
+        for (var i = 0; i < _layout.Columns; i++)
         {
             TileGrid.ColumnDefinitions.Add(new ColumnDefinition());
         }
-        for (var i = 0; i < rows; i++)
+        for (var i = 0; i < _layout.Rows; i++)
         {
             TileGrid.RowDefinitions.Add(new RowDefinition());
         }
+        // From 16 tiles on they are small: slimmer 22 px header strip; fewer tiles use 26 px. One height per layout,
+        // so the headers of neighbouring tiles always line up.
+        var compact = _layout.TileCount >= 16;
+        for (var i = 0; i < _tiles.Count; i++)
+        {
+            var tile = _tiles[i];
+            if (i < _layout.TileCount)
+            {
+                tile.IsCompact = compact;
+                Place(tile, _layout.Cells[i]);
+                tile.Visibility = Visibility.Visible;
+            }
+            else
+            {
+                tile.Visibility = Visibility.Collapsed; // already cleared by SetLayout
+            }
+        }
     }
 
-    void Place(VideoTile tile, GridCell cell)
+    static void Place(VideoTile tile, GridCell cell)
     {
         Grid.SetRow(tile, cell.Row);
         Grid.SetColumn(tile, cell.Column);
         Grid.SetRowSpan(tile, cell.RowSpan);
         Grid.SetColumnSpan(tile, cell.ColumnSpan);
-        TileGrid.Children.Add(tile);
     }
 
     /// <summary>
     /// Small tiles use the sub stream, large ones the main stream — decided per tile from the height of
     /// its video area (the header strip is not video), so the big tiles of the "büyük kareli" layouts can get HD
     /// while its neighbours stay SD. The old client always pulled main streams, which is what kept a CPU
-    /// core busy.
+    /// core busy. While a tile is maximized only that one is re-evaluated: the hidden ones keep the stream they
+    /// had, so restoring the grid shows them at once (a quality switch reopens the stream).
     /// </summary>
     void UpdateAutoQuality()
     {
         var dpi = VisualTreeHelper.GetDpi(this).DpiScaleY;
         foreach (var tile in _tiles.Take(_layout.TileCount))
         {
-            var visible = _maximized is null || _maximized == tile;
+            if (_maximized is not null && _maximized != tile)
+            {
+                continue;
+            }
             var pixels = tile.VideoHeight * dpi;
-            var quality = visible && pixels >= App.Settings.MainStreamMinTileHeight ? StreamQuality.Main : StreamQuality.Sub;
+            var quality = pixels >= App.Settings.MainStreamMinTileHeight ? StreamQuality.Main : StreamQuality.Sub;
             tile.SetAutoQuality(quality);
         }
     }
