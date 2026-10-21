@@ -813,7 +813,7 @@ SPVision (C:\Program Files\SPVision)        Cloudflare Worker "spvision-update" 
 | `installer/SPVision.iss` | Inno Setup 6: `{autopf}\SPVision`, sabit `AppId` (**değiştirmeyin**), `PrivilegesRequired=admin`, `CloseApplications=yes`, `RestartApplications=no`, Türkçe, masaüstü simgesi isteğe bağlı, kaldırmada HKCU Run değeri silinir; `Permissions: users-modify` YOK |
 | `tools/release/UpdateSigner/` | .NET aracı (`Updates/*.cs`'i bağlantıyla derler → biçim ve açık anahtar uygulamayla birebir; `SPVision.slnx`'te): `keygen`, `manifest`, `sign`, `verify` |
 | `tools/release/new-signing-key.ps1` | Bir kerelik anahtar çifti (aşağıda). **Claude çalıştırmaz** |
-| `tools/release/release.ps1` | Yerel yayın (önerilen yol, aşağıda) |
+| `tools/release/release.ps1` | Yerel yayın (yedek yol; asıl yol GitHub CI, aşağıda) |
 | `.github/workflows/release.yml` | İsteğe bağlı CI yolu (varsayılan kapalı; aşağıda) |
 | `release-notes/vX.Y.Z.md` | Her sürümün Türkçe notları + ön bilgi (`v1.0.0.md` hazır) |
 | `tools/update-proxy/` | Worker: `src/index.js`, `wrangler.toml` (hesap kimliği yok), `README.md` (adım adım), `test/` |
@@ -891,13 +891,16 @@ sır yok, her kullanımda imza yeniden doğrulanır — settings.json'u düzenle
 6. Kontrol: `curl.exe <Worker>/manifest.json` yeni sürümü göstermeli (≤ 60 sn); bir bilgisayarda Ayarlar › Güncellemeler › Denetle.
    Geri çekmek: GitHub'da sürümü silmek ya da taslağa almak yeter (Worker bir öncekini verir; o arada kuranlar yeni sürümde kalır).
 
-### Neden yerel yayın (CI değil) varsayılan
+### Yayını GitHub derler (CI) — sahibin kararı (21.10.2026)
 
-Lisanslı Hikvision SDK'sı (ve FFmpeg) depoda yok; §7'ye göre SDK "repoya/internete yüklenmez" (paketin içinde dağıtılması hariç).
-Yerel betik SDK'yı ve **gizli imza anahtarını bilgisayardan hiç çıkarmaz**, CI secret'ı gerekmez, Inno Setup kurulu makinede
-çalışır. `.github/workflows/release.yml` yine de hazırdır ama **depo değişkeni `SPVISION_CI_RELEASE=true` olmadan hiçbir iş
-çalışmaz** (etiket gönderilince işler "skipped"). Açılırsa: SDK `deps-sdk` adlı **ön sürümdeki** `deps-hiksdk.zip`'ten indirilir
-(SDK'nın özel GitHub'a yüklenmesi = sahibinin lisans kararı), FFmpeg `get-ffmpeg.ps1` ile; işler en dar yetkiyle: `build`
+Sahip derlemenin GitHub'da yapılmasını seçti; yukarıdaki yerel adımlar (4–5) **yedek yoldur**. CI yolunda sürüm şöyle çıkar:
+sürüm numarası + `release-notes/vX.Y.Z.md` (kısa Türkçe maddeler; uzun açıklama yalnız büyük değişiklikte) → commit + push →
+sahibe "yayınlayayım mı?" → "evet" → `git tag vX.Y.Z` + `git push origin vX.Y.Z` → iş akışı derler, imzalar, yayınlar.
+Lisanslı SDK ve FFmpeg git geçmişine **girmez**: özel deponun `deps-sdk` **ön sürümünde** ek dosya olarak durur
+(`deps-hiksdk.zip`, `deps-ffmpeg.zip` — yerelde denenmiş tam aynı DLL'ler; FFmpeg "latest" indirilmez). Gizli imza anahtarı
+`UPDATE_SIGNING_KEY` secret'ındadır (yerel yedek kopyası sahipte). Bir kez: `deps-sdk` ön sürümü + iki zip,
+`UPDATE_SIGNING_KEY` secret'ı, depo değişkeni `SPVISION_CI_RELEASE=true` (değişken yokken işler "skipped").
+İşler en dar yetkiyle: `build`
 (Windows, okur: sürüm denetimi, test, publish, Inno — choco ile), `sign` (Ubuntu, okur; `UPDATE_SIGNING_KEY`'i yalnız bu iş görür,
 uygulamanın açık anahtarıyla doğrular), `publish` (Ubuntu, `contents: write`, depo kodu çalıştırmaz, `gh release create
 --verify-tag`). İkisini birden kullanmayın (aynı etiketi iki kez yayınlamaya çalışır).

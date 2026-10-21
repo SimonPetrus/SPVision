@@ -1,7 +1,6 @@
-# SPVision sürümü — CI yolu (İSTEĞE BAĞLI, varsayılan KAPALI).
+# SPVision sürümü — CI yolu. Sahibin kararı (21.10.2026): sürümleri GitHub derler; tools/release/release.ps1 yedek yoldur.
 #
-# Önerilen yol YERELDİR: tools/release/release.ps1 (CLAUDE_REHBERI.md › "Uygulama güncelleme"). Lisanslı Hikvision SDK'sı
-# ve imza anahtarı o zaman sahibinin bilgisayarından hiç çıkmaz. Bu iş akışı yalnız depo DEĞİŞKENİ
+# Bu iş akışı yalnız depo DEĞİŞKENİ
 # SPVISION_CI_RELEASE = true ise çalışır (Settings › Secrets and variables › Actions › Variables); değilken etiket
 # gönderilince işler "skipped" olur ve yerel betikle çakışmaz (ikisini birden açmayın: aynı etiketi iki kez yayınlamaya çalışır).
 #
@@ -12,7 +11,10 @@
 #        gh release create deps-sdk deps-hiksdk.zip --prerelease --title "CI bağımlılığı (yayın değil)" --notes "Lisanslı SDK, paylaşmayın."
 #      Bu, SDK DLL'lerini GitHub'a (özel depo) yüklemek demektir — lisans kararı sahibinindir; istemiyorsanız yerel yolu kullanın.
 #      Ön sürümler "en son sürüm" sayılmaz; güncelleme vekili (tools/update-proxy) bu dosyayı asla vermez.
-#   3. FFmpeg herkese açık LGPL derlemesidir; CI tools/get-ffmpeg.ps1 ile indirir.
+#   3. FFmpeg de aynı ön sürümden, yerelde denenmiş TAM AYNI DLL'lerle gelir (BtbN "latest" her derlemede değişebilir ve
+#      FlyleafLib/kayıt kodu belirli ABI'ye bağlı; sabitlenmemiş indirme ayrıca tedarik zinciri riski):
+#        Compress-Archive -Path ffmpeg\*.dll -DestinationPath deps-ffmpeg.zip
+#        gh release upload deps-sdk deps-ffmpeg.zip
 #
 # Yetkiler en dar: derleme ve imzalama işleri yalnız OKUR; sürüme yazma yetkisi yalnız "publish" işindedir ve o iş depo kodunu
 # hiç çalıştırmaz (checkout yok). İmza anahtarı yalnız "sign" işine verilir (yazma yetkisi olmayan iş).
@@ -65,7 +67,7 @@ jobs:
           if ((Get-Content -Raw src/SPVision/Updates/UpdateService.cs) -match 'UpdateProxyBaseUrl = "[^"]*<') { Write-Error "UpdateProxyBaseUrl yer tutucu."; exit 1 }
           "VERSION=$version" >> $env:GITHUB_ENV
 
-      - name: Bağımlılıklar (Hikvision SDK — özel ön sürüm "deps-sdk"; FFmpeg — herkese açık)
+      - name: Bağımlılıklar (Hikvision SDK + sabit FFmpeg — özel ön sürüm "deps-sdk")
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -77,7 +79,12 @@ jobs:
           Expand-Archive "$env:RUNNER_TEMP/deps-hiksdk.zip" -DestinationPath $lib -Force
           Remove-Item "$env:RUNNER_TEMP/deps-hiksdk.zip"
           if (-not (Test-Path "$lib/HCNetSDK.dll")) { Write-Error "deps-hiksdk.zip içinde HCNetSDK.dll yok."; exit 1 }
-          ./tools/get-ffmpeg.ps1
+          gh release download deps-sdk --repo $env:GITHUB_REPOSITORY --pattern deps-ffmpeg.zip --dir $env:RUNNER_TEMP
+          if ($LASTEXITCODE -ne 0) { Write-Error "deps-sdk ön sürümünde deps-ffmpeg.zip yok (bu dosyanın başındaki 3. adım)."; exit 1 }
+          New-Item -ItemType Directory -Force ffmpeg | Out-Null
+          Expand-Archive "$env:RUNNER_TEMP/deps-ffmpeg.zip" -DestinationPath ffmpeg -Force
+          Remove-Item "$env:RUNNER_TEMP/deps-ffmpeg.zip"
+          if (-not (Test-Path "ffmpeg/avcodec-63.dll")) { Write-Error "deps-ffmpeg.zip içinde avcodec-63.dll yok."; exit 1 }
 
       - name: Testler
         run: dotnet test tests/SPVision.Core.Tests/SPVision.Core.Tests.csproj -c Release --nologo
