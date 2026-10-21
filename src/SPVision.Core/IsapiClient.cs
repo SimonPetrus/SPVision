@@ -1,12 +1,15 @@
 using System.Globalization;
 using System.Net;
 using System.Net.Http.Headers;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 using System.Xml.Linq;
 
 namespace SPVision.Core;
 
-public sealed class IsapiException(string message, HttpStatusCode? status = null, bool connectionFailed = false) : Exception(message)
+/// <summary>An ISAPI request failed. <see cref="CertificateChangedException"/> is the HTTPS certificate pin refusing a device.</summary>
+public class IsapiException(string message, HttpStatusCode? status = null, bool connectionFailed = false) : Exception(message)
 {
     public HttpStatusCode? Status { get; } = status;
 
@@ -25,7 +28,22 @@ public sealed partial class IsapiClient : IDisposable
 
     readonly HttpClient _http;
 
-    public IsapiClient(Device device, TimeSpan? timeout = null)
+    /// <summary>HTTPS only: the device whose certificate pin is checked, and who decides on a changed certificate.</summary>
+    readonly Device? _pinned;
+    readonly CertificateTrust? _trust;
+
+    /// <summary>Certificate seen while the device had no pin yet (stored after the first answer).</summary>
+    CertificatePin? _firstUse;
+
+    /// <summary>Certificate refused by <see cref="ValidateCertificate"/> (not the pinned key).</summary>
+    CertificatePin? _mismatch;
+
+    public IsapiClient(Device device, TimeSpan? timeout = null) : this(device, timeout, CertificateTrust.Shared)
+    {
+    }
+
+    /// <summary>Tests: a private <see cref="CertificateTrust"/> instead of the app's.</summary>
+    internal IsapiClient(Device device, TimeSpan? timeout, CertificateTrust trust)
     {
         var scheme = device.UseHttps ? "https" : "http";
         var baseUri = new Uri($"{scheme}://{device.Host}:{device.HttpPort}/");
@@ -41,8 +59,11 @@ public sealed partial class IsapiClient : IDisposable
         };
         if (device.UseHttps)
         {
-            // Recorders ship self-signed certificates; they are only reached on the local network.
-            handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+            // Recorders ship self-signed certificates (no CA, no host name to check), so the certificate is pinned
+            // instead: trust on first use, then only the same public key (CertificateTrust, §8).
+            _pinned = device;
+            _trust = trust;
+            handler.SslOptions.RemoteCertificateValidationCallback = ValidateCertificate;
         }
         _http = CreateHttp(handler, baseUri, timeout ?? TimeSpan.FromSeconds(10));
     }
@@ -56,6 +77,12 @@ public sealed partial class IsapiClient : IDisposable
 
     /// <summary>The device has answered at least one request (any status) through this client.</summary>
     public bool Answered { get; private set; }
+
+    /// <summary>
+    /// HTTPS: a request failed because the device's certificate is not the pinned one and was not trusted
+    /// (<see cref="CertificateChangedException"/>). Lets pages that turn read errors into "okunamadı" say why.
+    /// </summary>
+    public bool CertificateRefused { get; private set; }
 
     public async Task<DeviceDetails> GetDeviceInfoAsync(CancellationToken ct = default) =>
         ParseDeviceInfo(await GetXmlAsync("ISAPI/System/deviceInfo", ct));
@@ -255,11 +282,87 @@ public sealed partial class IsapiClient : IDisposable
     }
 
     /// <summary>
+    /// TLS handshake of an HTTPS device: the certificate must carry the pinned public key. Without a pin it is accepted
+    /// and remembered (stored after the device answers). A refused certificate fails the handshake, so not a byte of
+    /// HTTP — no Digest answer either — is sent. Chain and name errors are expected (self-signed) and not used.
+    /// </summary>
+    bool ValidateCertificate(object sender, X509Certificate? certificate, X509Chain? chain, SslPolicyErrors errors)
+    {
+        if (certificate is null || _pinned is null)
+        {
+            return false;
+        }
+        var presented = CertificatePin.From(certificate, DateTimeOffset.Now);
+        if (_pinned.Certificate is not { } pin)
+        {
+            Volatile.Write(ref _firstUse, presented);
+            return true;
+        }
+        if (pin.SameKey(presented))
+        {
+            return true;
+        }
+        Volatile.Write(ref _mismatch, presented);
+        return false;
+    }
+
+    /// <summary>
     /// One request, body buffered (at most <see cref="MaxResponseLength"/>). Transport failures, an over-long answer
     /// and any redirect (never followed: see the handler) throw <see cref="IsapiException"/>; other statuses are
-    /// the caller's.
+    /// the caller's. HTTPS: a certificate that is not the pinned one throws <see cref="CertificateChangedException"/>
+    /// unless the user trusts it (<see cref="CertificateTrust.ResolveMismatchAsync"/>, one question for all requests),
+    /// in which case the request is sent once more.
     /// </summary>
     async Task<HttpResponseMessage> SendRawAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        if (_pinned is null || _trust is null)
+        {
+            return await SendOnceAsync(request, ct);
+        }
+        using var retry = await CloneAsync(request, ct); // a sent HttpRequestMessage cannot be sent again
+        try
+        {
+            return await SendOnceAsync(request, ct);
+        }
+        catch (CertificateChangedException e)
+        {
+            if (!await _trust.ResolveMismatchAsync(_pinned, e.Presented).WaitAsync(ct))
+            {
+                CertificateRefused = true;
+                throw;
+            }
+            try
+            {
+                return await SendOnceAsync(retry, ct);
+            }
+            catch (CertificateChangedException)
+            {
+                CertificateRefused = true; // yet another key: no second question for the same request
+                throw;
+            }
+        }
+    }
+
+    static async Task<HttpRequestMessage> CloneAsync(HttpRequestMessage request, CancellationToken ct)
+    {
+        var copy = new HttpRequestMessage(request.Method, request.RequestUri);
+        if (request.Content is { } content)
+        {
+            var body = new ByteArrayContent(await content.ReadAsByteArrayAsync(ct));
+            foreach (var header in content.Headers)
+            {
+                body.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+            copy.Content = body;
+        }
+        foreach (var header in request.Headers)
+        {
+            copy.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+        return copy;
+    }
+
+    async Task<HttpResponseMessage> SendOnceAsync(HttpRequestMessage request, CancellationToken ct)
     {
         HttpResponseMessage response;
         try
@@ -270,6 +373,13 @@ public sealed partial class IsapiClient : IDisposable
         {
             Answered = true;
             throw new IsapiException(TooLargeMessage);
+        }
+        catch (HttpRequestException e) when (_pinned is not null && e.HttpRequestError == HttpRequestError.SecureConnectionError &&
+                                             Volatile.Read(ref _mismatch) is { } presented &&
+                                             !(_pinned.Certificate?.SameKey(presented) ?? false))
+        {
+            // The handshake refused the certificate: nothing was sent. Not a connection failure (no "HTTP ile dene").
+            throw new CertificateChangedException(_pinned, _pinned.Certificate, presented);
         }
         catch (HttpRequestException e)
         {
@@ -282,6 +392,13 @@ public sealed partial class IsapiClient : IDisposable
             throw new IsapiException("Cihaz zaman aşımına uğradı.", connectionFailed: true);
         }
         Answered = true;
+        if (_pinned is not null && _trust is not null && Volatile.Read(ref _firstUse) is { } first && !_trust.PinFirstUse(_pinned, first) &&
+            _pinned.Certificate is { } pin && !pin.SameKey(first))
+        {
+            // Another request pinned a different key while this one ran unpinned: do not use this answer.
+            response.Dispose();
+            throw new CertificateChangedException(_pinned, pin, first);
+        }
         if ((int)response.StatusCode is >= 300 and < 400)
         {
             var status = response.StatusCode;

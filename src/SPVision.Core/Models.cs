@@ -34,6 +34,12 @@ public sealed class Device
     /// <summary>IP channel capacity reported by the SDK login (e.g. 32); null until known.</summary>
     public int? ChannelCount { get; set; }
 
+    /// <summary>
+    /// The HTTPS certificate trusted for ISAPI (trust on first use, <see cref="CertificateTrust"/>); null = not pinned yet
+    /// (the next HTTPS connection stores it). Not secret. HCNetSDK (port 8000) and RTSP do not use it.
+    /// </summary>
+    public CertificatePin? Certificate { get; set; }
+
     public List<Camera> Cameras { get; set; } = [];
 
     public string? StreamKeyFor(Camera camera) =>

@@ -296,6 +296,8 @@ public class IsapiSecurityTests
 /// <summary>
 /// Minimal HTTP/1.1 server on 127.0.0.1 (never the network) so that the real <see cref="SocketsHttpHandler"/>
 /// settings of <see cref="IsapiClient"/> are exercised. Records each request and answers it with a raw response.
+/// With a certificate it speaks HTTPS (TLS server with that certificate); <see cref="Handshakes"/> counts the TLS
+/// handshakes that completed (a client that refuses the certificate never gets to send a request).
 /// </summary>
 sealed class LoopbackServer : IDisposable
 {
@@ -305,13 +307,18 @@ sealed class LoopbackServer : IDisposable
     readonly CancellationTokenSource _stop = new();
     readonly Func<Request, string> _answer;
     readonly List<Request> _requests = [];
+    readonly System.Security.Cryptography.X509Certificates.X509Certificate2? _certificate;
+    int _handshakes;
 
-    public LoopbackServer(Func<Request, string> answer)
+    public LoopbackServer(Func<Request, string> answer, System.Security.Cryptography.X509Certificates.X509Certificate2? certificate = null)
     {
         _answer = answer;
+        _certificate = certificate;
         _listener.Start();
         _ = AcceptAsync();
     }
+
+    public int Handshakes => Volatile.Read(ref _handshakes);
 
     public int Port => ((IPEndPoint)_listener.LocalEndpoint).Port;
 
@@ -353,7 +360,14 @@ sealed class LoopbackServer : IDisposable
         {
             try
             {
-                var stream = client.GetStream();
+                Stream stream = client.GetStream();
+                if (_certificate is not null)
+                {
+                    var tls = new System.Net.Security.SslStream(stream, leaveInnerStreamOpen: false);
+                    await tls.AuthenticateAsServerAsync(new System.Net.Security.SslServerAuthenticationOptions { ServerCertificate = _certificate }, _stop.Token);
+                    Interlocked.Increment(ref _handshakes);
+                    stream = tls;
+                }
                 // Latin-1: one char per byte, so Content-Length counts work on the reader.
                 using var reader = new StreamReader(stream, Encoding.Latin1, false, 4096, leaveOpen: true);
                 while (await reader.ReadLineAsync(_stop.Token) is { } line)
@@ -384,7 +398,8 @@ sealed class LoopbackServer : IDisposable
                     await stream.WriteAsync(Encoding.UTF8.GetBytes(_answer(request)), _stop.Token);
                 }
             }
-            catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException)
+            catch (Exception e) when (e is IOException or OperationCanceledException or ObjectDisposedException
+                                           or System.Security.Authentication.AuthenticationException or System.ComponentModel.Win32Exception)
             {
             }
         }

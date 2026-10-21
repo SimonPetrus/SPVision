@@ -449,16 +449,121 @@ public sealed record RecordSettings(bool? Enabled, RecordPreset? Preset, int? Pr
 
 // ---------------------------------------------------------------- Kameralar
 
-public sealed record OverlaySettings(bool? DateTime, bool? ChannelName)
+/// <summary>
+/// OSD of one camera (<c>ContentMgmt/InputProxy/channels/{n}/video/overlays</c>): date/time and name on/off, and the date/time
+/// look (<c>DateTimeOverlay/dateStyle</c>, <c>timeStyle</c>, <c>displayWeek</c>). Null part = not in the device's document.
+/// </summary>
+public sealed record OverlaySettings(bool? DateTime, bool? ChannelName, string? DateStyle = null, string? TimeStyle = null, bool? DisplayWeek = null)
 {
     public const string DateTimePath = "DateTimeOverlay/enabled";
     public const string ChannelNamePath = "channelNameOverlay/enabled";
+    public const string DateStylePath = "DateTimeOverlay/dateStyle";
+    public const string TimeStylePath = "DateTimeOverlay/timeStyle";
+    public const string DisplayWeekPath = "DateTimeOverlay/displayWeek";
 
     public static OverlaySettings? Parse(XDocument doc)
     {
         var root = doc.Root!;
-        var settings = new OverlaySettings(IsapiXml.GetBool(root, DateTimePath), IsapiXml.GetBool(root, ChannelNamePath));
-        return settings is { DateTime: null, ChannelName: null } ? null : settings;
+        var settings = new OverlaySettings(IsapiXml.GetBool(root, DateTimePath), IsapiXml.GetBool(root, ChannelNamePath),
+            NonEmpty(IsapiXml.Get(root, DateStylePath)), NonEmpty(IsapiXml.Get(root, TimeStylePath)), IsapiXml.GetBool(root, DisplayWeekPath));
+        return settings is { DateTime: null, ChannelName: null, DateStyle: null, TimeStyle: null, DisplayWeek: null } ? null : settings;
+    }
+
+    static string? NonEmpty(string? value) => string.IsNullOrEmpty(value) ? null : value;
+}
+
+/// <summary>
+/// Date / time styles the device offers (the <c>opt</c> lists of <c>…/video/overlays/capabilities</c>), each containing the
+/// current value. Without capabilities only the current value is offered: SPVision never guesses a style the device
+/// may refuse.
+/// </summary>
+public sealed record OverlayOptions(IReadOnlyList<string> DateStyles, IReadOnlyList<string> TimeStyles)
+{
+    public static OverlayOptions Parse(XDocument? caps, OverlaySettings current)
+    {
+        var root = caps?.Root;
+        return new OverlayOptions(
+            With(root is null ? [] : IsapiXml.Options(root, OverlaySettings.DateStylePath), current.DateStyle),
+            With(root is null ? [] : IsapiXml.Options(root, OverlaySettings.TimeStylePath), current.TimeStyle));
+    }
+
+    static List<string> With(List<string> options, string? current)
+    {
+        var list = options.Distinct(StringComparer.Ordinal).ToList();
+        if (current is not null && !list.Contains(current, StringComparer.Ordinal))
+        {
+            list.Add(current);
+        }
+        return list;
+    }
+}
+
+/// <summary>Turkish names of the OSD date / time styles.</summary>
+public static class OverlayText
+{
+    /// <summary>Drop-down text with an example of <paramref name="sample"/>: "22-10-2026 (gün-ay-yıl)".</summary>
+    public static string DateStyle(string style, DateTime sample)
+    {
+        if (Parts(style) is not { } parts)
+        {
+            return style;
+        }
+        if (parts.Chinese)
+        {
+            return $"Çince karakterli ({parts.Order})";
+        }
+        var example = parts.Pattern
+            .Replace("YYYY", sample.Year.ToString("0000", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("MM", sample.Month.ToString("00", CultureInfo.InvariantCulture), StringComparison.Ordinal)
+            .Replace("DD", sample.Day.ToString("00", CultureInfo.InvariantCulture), StringComparison.Ordinal);
+        return $"{example} ({parts.Order})";
+    }
+
+    /// <summary>Confirmation text (no date): "gün-ay-yıl (DD-MM-YYYY)".</summary>
+    public static string DateStyleShort(string? style)
+    {
+        if (style is null)
+        {
+            return RecorderText.Unreadable;
+        }
+        if (Parts(style) is not { } parts)
+        {
+            return style;
+        }
+        var prefix = parts.Chinese ? "Çince, " : "";
+        return $"{prefix}{parts.Order} ({style})";
+    }
+
+    public static string TimeStyle(string? style) => style switch
+    {
+        null => RecorderText.Unreadable,
+        _ when style.Equals("24hour", StringComparison.OrdinalIgnoreCase) => "24 saat",
+        _ when style.Equals("12hour", StringComparison.OrdinalIgnoreCase) => "12 saat (ÖÖ/ÖS)",
+        _ => style,
+    };
+
+    /// <summary>"DD-MM-YYYY" / "CHR-YYYY/MM/DD": the pattern, the day-month-year order in Turkish and the Chinese flag; null if unknown.</summary>
+    static (string Pattern, string Order, bool Chinese)? Parts(string style)
+    {
+        var chinese = style.StartsWith("CHR-", StringComparison.Ordinal);
+        var pattern = chinese ? style[4..] : style;
+        var tokens = new List<(int Index, string Name)>();
+        foreach (var (token, name) in new[] { ("YYYY", "yıl"), ("MM", "ay"), ("DD", "gün") })
+        {
+            var index = pattern.IndexOf(token, StringComparison.Ordinal);
+            if (index < 0 || pattern.IndexOf(token, index + token.Length, StringComparison.Ordinal) >= 0)
+            {
+                return null;
+            }
+            tokens.Add((index, name));
+        }
+        var rest = pattern.Replace("YYYY", "", StringComparison.Ordinal).Replace("MM", "", StringComparison.Ordinal).Replace("DD", "", StringComparison.Ordinal);
+        if (rest.Any(c => c is not ('-' or '/' or '.' or ' ')))
+        {
+            return null;
+        }
+        var separator = chinese ? "/" : "-";
+        return (pattern, string.Join(separator, tokens.OrderBy(t => t.Index).Select(t => t.Name)), chinese);
     }
 }
 
@@ -685,6 +790,17 @@ public static class RecorderPlan
             var edits = new List<ConfigEdit>();
             AddBool(edits, "Ekranda tarih / saat", OverlaySettings.DateTimePath, o.DateTime, n.DateTime);
             AddBool(edits, "Ekranda kamera adı", OverlaySettings.ChannelNamePath, o.ChannelName, n.ChannelName);
+            if (o.DateStyle is { } oldDate && n.DateStyle is { } newDate && !string.Equals(oldDate, newDate, StringComparison.Ordinal))
+            {
+                edits.Add(new SetValueEdit("Tarih biçimi", OverlaySettings.DateStylePath, newDate,
+                    OverlayText.DateStyleShort(oldDate), OverlayText.DateStyleShort(newDate)));
+            }
+            if (o.TimeStyle is { } oldTime && n.TimeStyle is { } newTime && !string.Equals(oldTime, newTime, StringComparison.Ordinal))
+            {
+                edits.Add(new SetValueEdit("Saat biçimi", OverlaySettings.TimeStylePath, newTime,
+                    OverlayText.TimeStyle(oldTime), OverlayText.TimeStyle(newTime)));
+            }
+            AddBool(edits, "Haftanın günü", OverlaySettings.DisplayWeekPath, o.DisplayWeek, n.DisplayWeek);
             Add(writes, IsapiPaths.Overlays(channel), target, edits);
         }
 

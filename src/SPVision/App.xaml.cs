@@ -49,6 +49,7 @@ public partial class App : Application
         }
 
         ThemeManager.Initialize(); // light/dark from the setting (or Windows), before the first window
+        Views.CertificateTrustUi.Register(); // HTTPS certificate pins: "sertifika değişti" question + saving (§8)
 
         var logDir = Path.Combine(Path.GetDirectoryName(Store.Path)!, "logs");
         Directory.CreateDirectory(logDir);
