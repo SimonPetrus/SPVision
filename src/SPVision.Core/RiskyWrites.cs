@@ -8,7 +8,7 @@ namespace SPVision.Core;
 /// so what was confirmed is what is sent). <see cref="Changes"/> are the lines the confirmation shows; they never contain
 /// a password. Turn it into a <see cref="ConfirmedRiskyWrite"/> with <see cref="ConfirmedRiskyWrite.Confirm"/>.
 /// </summary>
-public sealed class RiskyWriteRequest
+public sealed partial class RiskyWriteRequest
 {
     internal RiskyWriteRequest(RiskyOperation operation, string method, string path, XDocument? body, string title, string warning,
         IReadOnlyList<string> changes, string accept, string? requiredWord = null)
@@ -63,7 +63,7 @@ public interface IRiskyConfirmation
 /// <see cref="IsapiClient.SendRiskyAsync"/> accepts. Created only by <see cref="Confirm"/> (which checks the typed word),
 /// bound to that one request, usable once, and only for <see cref="Lifetime"/>.
 /// </summary>
-public sealed class ConfirmedRiskyWrite
+public sealed partial class ConfirmedRiskyWrite
 {
     public static readonly TimeSpan Lifetime = TimeSpan.FromMinutes(2);
 

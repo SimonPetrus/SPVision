@@ -42,6 +42,10 @@ public sealed partial class IsapiClient : IConfigTransport, IRiskyTransport
     {
         ArgumentNullException.ThrowIfNull(confirmed);
         var risky = confirmed.Consume();
+        if (string.Equals(risky.Method, MaintenancePolicy.SdkMethod, StringComparison.Ordinal))
+        {
+            throw new IsapiWriteDeniedException("Bu işlem ISAPI ile gönderilmez."); // firmware: FirmwareJob + SDK only
+        }
         IsapiWritePolicy.EnsureRiskyAllowed(risky.Operation, risky.Method, risky.Path);
         if (risky.Operation is RiskyOperation.AddUser or RiskyOperation.ChangePassword &&
             !string.Equals(_http.BaseAddress?.Scheme, Uri.UriSchemeHttps, StringComparison.OrdinalIgnoreCase))

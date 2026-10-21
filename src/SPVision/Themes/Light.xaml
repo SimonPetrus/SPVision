@@ -95,4 +95,7 @@
     <!-- Recorder settings badges (soft backgrounds behind Online / WarningText text) -->
     <SolidColorBrush x:Key="OnlineSoftBg" Color="#DFF6DD" />
     <SolidColorBrush x:Key="WarningSoftBg" Color="#FFF4CE" />
+    <!-- Danger band and filled danger button of Bakım › Fabrika ayarları (phase 3) -->
+    <SolidColorBrush x:Key="DangerSoftBg" Color="#FDE7E9" />
+    <SolidColorBrush x:Key="OnDanger" Color="#FFFFFF" />
 </ResourceDictionary>
