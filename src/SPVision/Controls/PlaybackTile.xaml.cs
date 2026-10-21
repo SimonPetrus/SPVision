@@ -1188,6 +1188,7 @@ public partial class PlaybackTile : UserControl
         else if (_zoom.IsZoomed && CanZoom && IsOverVideo(e) && CaptureMouse())
         {
             _panFrom = CursorPixels(); // drag moves the zoomed picture
+            Mouse.OverrideCursor = Cursors.SizeAll;
         }
     }
 
@@ -1243,9 +1244,9 @@ public partial class PlaybackTile : UserControl
         }
         var viewChanged = zoom.View != _zoom.View;
         _zoom = zoom;
-        // Cross while the mode is on, the move cursor once there is something to drag (WPF sets it: the video window is
-        // transparent to hit testing, so WM_SETCURSOR asks the main window).
-        VideoArea.Cursor = !zoom.Mode ? null : zoom.IsZoomed ? Cursors.SizeAll : Cursors.Cross;
+        // Magnifier while the mode is on (the owner's choice); the move cursor only while dragging (WPF sets it: the video
+        // window is transparent to hit testing, so WM_SETCURSOR asks the main window).
+        VideoArea.Cursor = zoom.Mode ? ZoomCursor.Magnifier : null;
         if (viewChanged && _hikPlayer is { } player)
         {
             player.Zoom = zoom.View;
@@ -1340,6 +1341,13 @@ public partial class PlaybackTile : UserControl
             _panFrom = null;
             ReleaseMouseCapture();
         }
+        Mouse.OverrideCursor = null;
+    }
+
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        Mouse.OverrideCursor = null; // a drag ended without a button-up (Alt+Tab, another capture)
     }
 
     void Activate()
