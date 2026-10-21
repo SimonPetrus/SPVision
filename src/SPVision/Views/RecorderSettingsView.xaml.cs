@@ -39,17 +39,17 @@ public partial class RecorderSettingsView : UserControl
         Maintenance,
     }
 
-    static readonly (Tab Tab, string Text, string Later)[] Tabs =
+    static readonly (Tab Tab, string Text)[] Tabs =
     [
-        (Tab.Overview, "Genel bakış", ""),
-        (Tab.Cameras, "Kameralar", ""),
-        (Tab.Motion, "Hareket", ""),
-        (Tab.Record, "Kayıt", ""),
-        (Tab.Events, "Olaylar", "Görüntü kaybı ve kurcalama gibi durumlarda cihazın tepkisi."),
-        (Tab.Network, "Ağ", "Kayıt cihazının ağ adresi ve portları."),
-        (Tab.Users, "Kullanıcılar", "Cihaza bağlanabilecek hesaplar ve yetkileri."),
-        (Tab.System, "Sistem", ""),
-        (Tab.Maintenance, "Bakım", "Kayıt cihazı ve kamera yazılımları, fabrika ayarları."),
+        (Tab.Overview, "Genel bakış"),
+        (Tab.Cameras, "Kameralar"),
+        (Tab.Motion, "Hareket"),
+        (Tab.Record, "Kayıt"),
+        (Tab.Events, "Olaylar"),
+        (Tab.Network, "Ağ"),
+        (Tab.Users, "Kullanıcılar"),
+        (Tab.System, "Sistem"),
+        (Tab.Maintenance, "Bakım"),
     ];
 
     const double ControlWidth = 240;
@@ -73,6 +73,9 @@ public partial class RecorderSettingsView : UserControl
         public required Camera Camera { get; init; }
         public bool Loaded { get; set; }
         public Read<OverlaySettings>? Overlay { get; set; }
+
+        /// <summary>Date / time styles of the overlays capabilities (each list holds the current value).</summary>
+        public OverlayOptions? OverlayOptions { get; set; }
         public Read<ImageColor>? Color { get; set; }
         public Read<StreamSettings>? Main { get; set; }
         public Read<StreamSettings>? Sub { get; set; }
@@ -173,7 +176,7 @@ public partial class RecorderSettingsView : UserControl
     {
         InitializeComponent();
         DeviceCombo.ItemTemplate = DeviceItemTemplate();
-        foreach (var (tab, text, _) in Tabs)
+        foreach (var (tab, text) in Tabs)
         {
             var button = new ClickToggleButton { Content = text };
             button.SetResourceReference(StyleProperty, "RecorderTab");
@@ -389,11 +392,6 @@ public partial class RecorderSettingsView : UserControl
             case Tab.Maintenance:
                 RenderMaintenance();
                 break;
-            default:
-                var later = Tabs.First(t => t.Tab == _tab);
-                TabContent.Children.Add(NoticeCard("Bu bölüm bir sonraki aşamada eklenecek.",
-                    later.Later + " Şimdilik cihazın web arayüzünü kullanın."));
-                break;
         }
     }
 
@@ -600,7 +598,7 @@ public partial class RecorderSettingsView : UserControl
         return true;
     }
 
-    /// <summary>One centered card for an empty or later tab; <paramref name="retry"/> adds "Yeniden dene".</summary>
+    /// <summary>One centered card for an empty, loading or failed tab; <paramref name="retry"/> adds "Yeniden dene".</summary>
     Border NoticeCard(string title, string text, Action? retry = null)
     {
         var panel = new StackPanel { HorizontalAlignment = HorizontalAlignment.Center, MaxWidth = 420 };
@@ -831,6 +829,11 @@ public partial class RecorderSettingsView : UserControl
             if (!cts.IsCancellationRequested && device == _device)
             {
                 SetChoiceState(isapi.Answered ? "Online" : "Offline");
+                if (isapi.CertificateRefused)
+                {
+                    // The parts only say "okunamadı": tell why (the HTTPS certificate pin, §8).
+                    Message?.Invoke($"{device.Name}: kayıt cihazının güvenlik sertifikası değişti. {CertificateText.NotVerified}.");
+                }
             }
         }
         catch (OperationCanceledException)
@@ -1083,14 +1086,31 @@ public partial class RecorderSettingsView : UserControl
                 $"Yalnızca gösterilir: {slot.NameReason ?? RecorderText.Unreadable}.",
                 CameraNameText(slot)));
 
-        UIElement OverlaySwitch(Func<OverlaySettings, bool?> pick, Func<OverlaySettings, bool, OverlaySettings> set, string name) =>
+        // Read, but the element is not in this camera's document: the camera does not offer it.
+        var overlayMissing = slot.Overlay?.Value is not null ? RecorderText.Unsupported : Reason(slot.Overlay);
+        UIElement OverlaySwitch(Func<OverlaySettings, bool?> pick, Func<OverlaySettings, bool, OverlaySettings> set, string name, string id) =>
             draft.Overlay is { } o && pick(o) is { } on
-                ? Switch(on, name, v => slot.Draft = slot.Draft with { Overlay = set(slot.Draft.Overlay!, v) })
-                : MutedText(Reason(slot.Overlay));
+                ? Automation(Switch(on, name, v => slot.Draft = slot.Draft with { Overlay = set(slot.Draft.Overlay!, v) }), id)
+                : MutedText(overlayMissing);
+        UIElement OverlayCombo(Func<OverlaySettings, string?> pick, Func<OverlayOptions, IReadOnlyList<string>> options,
+            Func<string, string> text, Func<OverlaySettings, string, OverlaySettings> set, string name, string id) =>
+            draft.Overlay is { } o && pick(o) is { } current && slot.OverlayOptions is { } choices
+                ? Automation(Combo(options(choices).Select(v => (v, text(v))), current, ControlWidth, name,
+                    v => slot.Draft = slot.Draft with { Overlay = set(slot.Draft.Overlay!, v) }), id)
+                : MutedText(overlayMissing);
         panel.Children.Add(Row("Ekranda tarih / saat", "Görüntünün üstüne cihazın yazdığı tarih ve saat (OSD).",
-            OverlaySwitch(o => o.DateTime, (o, v) => o with { DateTime = v }, "Ekranda tarih / saat")));
+            OverlaySwitch(o => o.DateTime, (o, v) => o with { DateTime = v }, "Ekranda tarih / saat", "OverlayDateTime")));
+        var today = DateTime.Today;
+        panel.Children.Add(Row("Tarih biçimi", "Ekrandaki tarihin sırası; yalnızca cihazın sunduğu biçimler.",
+            OverlayCombo(o => o.DateStyle, c => c.DateStyles, v => OverlayText.DateStyle(v, today), (o, v) => o with { DateStyle = v },
+                "Tarih biçimi", "OverlayDateStyle")));
+        panel.Children.Add(Row("Saat biçimi", "Ekrandaki saat 24 saatlik ya da 12 saatlik (ÖÖ/ÖS).",
+            OverlayCombo(o => o.TimeStyle, c => c.TimeStyles, OverlayText.TimeStyle, (o, v) => o with { TimeStyle = v },
+                "Saat biçimi", "OverlayTimeStyle")));
+        panel.Children.Add(Row("Haftanın günü", "Tarihin yanında haftanın günü de yazılır.",
+            OverlaySwitch(o => o.DisplayWeek, (o, v) => o with { DisplayWeek = v }, "Haftanın günü", "OverlayDisplayWeek")));
         panel.Children.Add(Row("Ekranda kamera adı", "Görüntünün üstüne cihazın yazdığı kamera adı (OSD).",
-            OverlaySwitch(o => o.ChannelName, (o, v) => o with { ChannelName = v }, "Ekranda kamera adı")));
+            OverlaySwitch(o => o.ChannelName, (o, v) => o with { ChannelName = v }, "Ekranda kamera adı", "OverlayChannelName")));
 
         panel.Children.Add(Row("Parlaklık · Kontrast · Doygunluk",
             draft.Color is { } range ? $"Kameranın görüntü ayarları ({range.Range.Min}–{range.Range.Max})." : "Kameranın görüntü ayarları.",
@@ -1102,6 +1122,12 @@ public partial class RecorderSettingsView : UserControl
             StreamControls(slot, StreamQuality.Sub), last: true));
 
         host.Child = Card(panel);
+    }
+
+    static T Automation<T>(T element, string id) where T : UIElement
+    {
+        AutomationProperties.SetAutomationId(element, id);
+        return element;
     }
 
     static TextBlock CameraNameText(CameraSlot slot)
@@ -1292,6 +1318,10 @@ public partial class RecorderSettingsView : UserControl
             var ct = cts.Token;
             var channel = slot.Camera.Channel;
             slot.Overlay = await RecorderReader.TryAsync(isapi, IsapiPaths.Overlays(channel), OverlaySettings.Parse, ct);
+            if (slot.Overlay.Value is { } overlay && (overlay.DateStyle is not null || overlay.TimeStyle is not null))
+            {
+                slot.OverlayOptions = OverlayOptions.Parse(await RecorderReader.TryCapabilitiesAsync(isapi, IsapiPaths.OverlaysCapabilities(channel), ct), overlay);
+            }
             var imageCaps = await RecorderReader.TryCapabilitiesAsync(isapi, IsapiPaths.ImageCapabilities(channel), ct);
             slot.Color = await RecorderReader.TryAsync(isapi, IsapiPaths.Image(channel), d => ImageColor.Parse(d, imageCaps), ct);
             slot.Main = await RecorderReader.TryAsync(isapi, IsapiPaths.Stream(channel, StreamQuality.Main), StreamSettings.Parse, ct);

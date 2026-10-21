@@ -22,6 +22,13 @@ public partial class DeviceEditor : UserControl
     DeviceDetails? _details;
     bool _busy;
 
+    /// <summary>
+    /// HTTPS certificate pin of the draft: starts as the saved one; a test read may store (first use) or replace it
+    /// (trusted in the "sertifika değişti" dialog). Kaydet keeps it when it changed (<see cref="_pinChanged"/>).
+    /// </summary>
+    CertificatePin? _pin;
+    bool _pinChanged;
+
     /// <summary>device: the saved device to edit, or a fresh one (isNew) that is added on Kaydet.</summary>
     public DeviceEditor(Device device, bool isNew)
     {
@@ -42,6 +49,8 @@ public partial class DeviceEditor : UserControl
         HttpsBox.Checked += Https_Changed;
         HttpsBox.Unchecked += Https_Changed;
         UpdatePlaceholders();
+        _pin = _device.Certificate;
+        UpdateCertificate();
 
         // A new device has nothing to remove; keep the slot so the right-hand buttons do not move.
         RemoveButton.Visibility = _isNew ? Visibility.Hidden : Visibility.Visible;
@@ -67,7 +76,44 @@ public partial class DeviceEditor : UserControl
     void Secret_Changed(object sender, RoutedEventArgs e) => UpdatePlaceholders();
 
     /// <summary>"HTTPS kullan" changed: a standard port follows it (80 ↔ 443); a custom port stays.</summary>
-    void Https_Changed(object sender, RoutedEventArgs e) => HttpPortBox.Text = HttpsPort.Follow(HttpPortBox.Text, HttpsBox.IsChecked == true);
+    void Https_Changed(object sender, RoutedEventArgs e)
+    {
+        HttpPortBox.Text = HttpsPort.Follow(HttpPortBox.Text, HttpsBox.IsChecked == true);
+        UpdateCertificate();
+    }
+
+    /// <summary>"Sertifika parmak izi: AB:CD:… (ilk bağlantıda kaydedildi)"; full details in the tool tip.</summary>
+    void UpdateCertificate()
+    {
+        var text = CertificateText.EditorLine(HttpsBox.IsChecked == true, _pin);
+        CertificateLine.Text = text;
+        CertificateLine.ToolTip = _pin is { } pin ? CertificateText.Details(pin) : text;
+        System.Windows.Automation.AutomationProperties.SetName(CertificateLine, text);
+        ResetCertificateButton.IsEnabled = !_busy && _pin is not null;
+    }
+
+    /// <summary>
+    /// "Sertifikayı sıfırla" (short confirmation): forgets the pin at once (saved device included, settings saved), so the
+    /// next HTTPS connection stores the device's current certificate again.
+    /// </summary>
+    void ResetCertificate_Click(object sender, RoutedEventArgs e)
+    {
+        if (_busy || _pin is null || !ConfirmDialog.Show(Window.GetWindow(this),
+                "Kayıtlı sertifika parmak izi unutulsun mu? Bir sonraki HTTPS bağlantısında cihazın o anki sertifikası yeniden kaydedilir. " +
+                "Bunu yalnızca cihazın sertifikasının neden değiştiğini biliyorsanız yapın.", "Sıfırla", "Vazgeç"))
+        {
+            return;
+        }
+        _pin = null;
+        _pinChanged = true;
+        if (!_isNew)
+        {
+            CertificateTrust.Shared.Reset(_device); // saved through CertificateTrustUi
+        }
+        CertificateTrust.Shared.ForgetDeclined(_device.Id);
+        UpdateCertificate();
+        ShowResult("Sertifika parmak izi silindi; bir sonraki bağlantıda yeniden kaydedilir.");
+    }
 
     void UpdatePlaceholders()
     {
@@ -102,6 +148,7 @@ public partial class DeviceEditor : UserControl
             // Empty box = keep what is stored (the stored value is never put into the box).
             Password = PasswordBox.Password.Length > 0 ? PasswordBox.Password : _device.Password,
             StreamKey = StreamKeyBox.Password.Length > 0 ? StreamKeyBox.Password : _device.StreamKey,
+            Certificate = _pin,
         };
     }
 
@@ -118,6 +165,18 @@ public partial class DeviceEditor : UserControl
     {
         _busy = busy;
         TestButton.IsEnabled = FetchKeyButton.IsEnabled = RefreshButton.IsEnabled = SaveButton.IsEnabled = RemoveButton.IsEnabled = !busy;
+        ResetCertificateButton.IsEnabled = !busy && _pin is not null;
+    }
+
+    /// <summary>After a read: the draft's pin as the client left it (stored on first use or replaced after the question).</summary>
+    void TakePin(Device form)
+    {
+        if (!ReferenceEquals(form.Certificate, _pin))
+        {
+            _pin = form.Certificate;
+            _pinChanged = true;
+        }
+        UpdateCertificate();
     }
 
     // ---- Device reads (ISAPI GET only) ----
@@ -125,6 +184,8 @@ public partial class DeviceEditor : UserControl
     /// <summary>
     /// Runs one device read with the form values. When HTTPS was on and the device could not be reached at all
     /// (TCP/TLS, not a 401 or other answer), asks before switching the form to HTTP and retries once; never silently.
+    /// A changed certificate is not such a failure (<see cref="CertificateChangedException"/>): it is asked about in the
+    /// certificate dialog, even if it was declined before (the user asks again here).
     /// </summary>
     async Task ReadDeviceAsync(string progress, Func<IsapiClient, Task> read)
     {
@@ -132,6 +193,7 @@ public partial class DeviceEditor : UserControl
         {
             return;
         }
+        CertificateTrust.Shared.ForgetDeclined(form.Id);
         SetBusy(true);
         ShowResult(progress);
         IsapiClient? isapi = null;
@@ -169,6 +231,7 @@ public partial class DeviceEditor : UserControl
         finally
         {
             isapi?.Dispose();
+            TakePin(form);
             SetBusy(false);
         }
     }
@@ -248,6 +311,10 @@ public partial class DeviceEditor : UserControl
         _device.UserName = form.UserName;
         _device.Password = form.Password;
         _device.StreamKey = form.StreamKey;
+        if (_isNew || _pinChanged)
+        {
+            _device.Certificate = _pin; // pinned (or reset) while editing; otherwise the saved pin stays as it is now
+        }
         if (_details is not null)
         {
             _device.Model = _details.Model;

@@ -3,7 +3,9 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 1226/1226 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 1266/1266 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> (HTTPS sertifika sabitleme — §8 "HTTPS sertifika sabitleme" — ve Kameralar sekmesindeki tarih/saat biçimi — §9 "Tarih biçimi" — kod + testlerle hazır;
+> sabitleme gerçek cihaza salt okuma sondasıyla doğrulandı, uygulamada elle denenmedi; tarih biçimini cihaza ilk kez sahibi yazar.)
 > (21.10.2026'daki düzen seçici + eş zamanlı çoklu oynatma değişikliği ile cihaz düzenleyicideki HTTPS varsayılanı / HTTP'ye düşme sorusu henüz cihazda denenmedi; bkz. §4, §5.)
 > (Canlı izlemede sayfalar — §4 "Canlı izlemede sayfalar" — da henüz cihazda denenmedi.)
 > (Uygulama içi güncelleme — §11 — kod + testlerle hazır; anahtar, Worker ve ilk sürüm sahibinin bir kerelik adımlarını bekliyor, gerçek yayınla denenmedi.)
@@ -33,7 +35,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
 | `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SPVision.Core.Tests/` | 1226 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
+| `tests/SPVision.Core.Tests/` | 1266 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -47,7 +49,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ```powershell
 cd SPVision
 dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1226/1226 geçer
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1266/1266 geçer
 dotnet run --project src\SPVision
 ```
 
@@ -520,7 +522,8 @@ dotnet run --project src\SPVision
 | `Views/RecorderSettingsView.Maintenance.cs` | Cihaz ayarları 3. aşama, **Bakım** sekmesi (§9 "3. aşama"): kayıt cihazı bilgisi + "Web arayüzünü aç", kayıt cihazı yazılımı (Denetle / Dosyadan yükle… / Güncelle…), kamera yazılımları (onay kutulu tablo, sırayla güncelleme), fabrika ayarları (Temel / Tam sıfırla…). `FirmwareBusy` sürerken sekmeler, cihaz seçici ve pencere kapatma kilitlenir (kapatmada soru) |
 | `Hik/HikFirmware.cs` | Yalnız yazılım güncellemesinin SDK çağrıları (`NET_DVR_Upgrade_V50` + `ENUM_UPGRADE_DVR`, `NET_DVR_StartRemoteConfig` + `NET_DVR_UPGRADE_IPC`); `HikNative`'den bilerek ayrı. Yalnız onaydan çıkan `FirmwareJob` kabul eder |
 | `Views/UserFormDialog.cs` | Kullanıcı ekle / şifre değiştir formu: ad, yetki (Operatör/İzleyici), şifre ×2, SPVision hesabının şifresi (onay; kayıtlı şifreyle karşılaştırılır, yanlışsa cihaza gitmez) |
-| `Views/DeviceEditor.xaml(.cs)` | Satır altı düzenleme paneli (eski DeviceDialog'un yerine): Bağlantı (iki eşit sütun; şifre/anahtar kutusu kayıtlı değeri göstermez, boş bırakılırsa değişmez), "Bağlantıyı test et", "Cihazdan oku", **HTTPS kullan** (ipucu: ayar/bilgi trafiğini şifreler, görüntü akışını etkilemez; yeni cihaz HTTPS + 443 ile açılır, kayıtlı cihaz kendi değerleriyle; işaretleyince 80→443, kaldırınca 443→80, özel port değişmez — Core `HttpsPort.Follow`; HTTPS açıkken cihaza TCP/TLS düzeyinde hiç ulaşılamazsa (`IsapiException.ConnectionFailed`, 401 vb. yanıtlar hariç) "HTTP ile dene / İptal" sorulur ([`ConfirmDialog`](src/SPVision/Views/ConfirmDialog.cs)), kabul edilirse forma HTTP (443 ise 80) yazılır ve bir kez yeniden denenir — sessiz düşürme yok), Kameralar tablosu (LİSTEDE GÖSTER anahtarı), alt satır Cihazı kaldır · Kameraları yenile · İptal · Kaydet. Taslakla çalışır; Kaydet ayarı yazar, giriş bilgisi değiştiyse SDK oturumunu kapatır ve cihazın karelerini yeniden bağlar |
+| `Views/DeviceEditor.xaml(.cs)` | Satır altı düzenleme paneli (eski DeviceDialog'un yerine): Bağlantı (iki eşit sütun; şifre/anahtar kutusu kayıtlı değeri göstermez, boş bırakılırsa değişmez), "Bağlantıyı test et", "Cihazdan oku", **HTTPS kullan** (ipucu: ayar/bilgi trafiğini şifreler, görüntü akışını etkilemez; yeni cihaz HTTPS + 443 ile açılır, kayıtlı cihaz kendi değerleriyle; işaretleyince 80→443, kaldırınca 443→80, özel port değişmez — Core `HttpsPort.Follow`; HTTPS açıkken cihaza TCP/TLS düzeyinde hiç ulaşılamazsa (`IsapiException.ConnectionFailed`, 401 vb. yanıtlar hariç) "HTTP ile dene / İptal" sorulur ([`ConfirmDialog`](src/SPVision/Views/ConfirmDialog.cs)), kabul edilirse forma HTTP (443 ise 80) yazılır ve bir kez yeniden denenir — sessiz düşürme yok), sertifika satırı (test satırıyla aynı düzen: **Sertifikayı sıfırla** 120×30 + "Sertifika parmak izi: AB:CD:… (ilk bağlantıda kaydedildi)", ipucunda tam SPKI/sertifika SHA-256, konu, geçerlilik; AutomationId `CertificateReset`, `CertificateFingerprint`; §8 "HTTPS sertifika sabitleme"), Kameralar tablosu (LİSTEDE GÖSTER anahtarı), alt satır Cihazı kaldır · Kameraları yenile · İptal · Kaydet. Taslakla çalışır; Kaydet ayarı yazar, giriş bilgisi değiştiyse SDK oturumunu kapatır ve cihazın karelerini yeniden bağlar |
+| `Views/CertificateDialog.cs` | `CertificateTrustUi` (`App.OnStartup`'ta `Register`: Core `CertificateTrust.Shared.Prompt` = soru penceresi, `PinChanged` = ayarları kaydet; düzenleyici taslağının pini aynı HTTPS adresli kayıtlı cihaza aktarılır) ve `CertificateDialog` ("Kayıt cihazının güvenlik sertifikası değişti": uyarı bandı, KAYITLI / CİHAZIN SUNDUĞU parmak izi + geçerlilik, eşit 168 px düğmeler "Bağlanma" (odak, Esc) · "Yeni sertifikaya güven"; Enter güvenmez) |
 | `Controls/RoundedClip.cs` | Yuvarlak köşeli kartın içindeki satır arka planlarını köşeden taşırmadan kırpar |
 | `Views/LiveView.xaml(.cs)` | 1–36 kareli ızgara (düzen tanımı: Core `GridLayout`; kayıtlı 32 → 36), sayfalar (Core `LivePages`, `Sync`), sürükle-bırak/kare takası, düzeni + sayfayı kaydet/geri yükle; durumu `StateChanged`/`Message` ile ana pencereye bildirir |
 | `Controls/VideoTile.xaml(.cs)` | Tek kamera karesi — **çift yol** (Flyleaf/SDK), başlık şeridi + video alanı (Popup yok), yeniden bağlanma (3/10/30 sn), kayıt + anlık görüntü |
@@ -554,8 +557,9 @@ kamera anahtarı yoksa cihaz anahtarını kullanır), [`SettingsStore`](src/SPVi
 [`Theme.cs`](src/SPVision.Core/Theme.cs) (`AppTheme`, `ThemeResolver`), [`PlaybackSync.cs`](src/SPVision.Core/PlaybackSync.cs)
 (`PlaybackSlots`, `RecordingJump`, `PlaybackSpeed`, `PlaybackSync`, `CalendarMonth`, `PlaybackText` — oynatmanın saf mantığı, birim testli), [`LivePages`](src/SPVision.Core/LivePages.cs) (canlı sayfalar: global yuva sırası, sayfa sayısı/dilim/sınırlama/sarma, kare eşleme), [`CameraList`](src/SPVision.Core/CameraList.cs)
 (yenilenen kamera listesinde anahtarı ve "listede göster" seçimini korur), [`DeviceKind`](src/SPVision.Core/DeviceKind.cs)
-("NVR · 32 kanal" metni), [`AutoStart`](src/SPVision.Core/AutoStart.cs) (Run değeri), [`AutoStreamQuality`](src/SPVision.Core/AutoStreamQuality.cs) (Oto kalite kuralı), [`VideoPathText`](src/SPVision.Core/VideoPathText.cs) (durum çubuğundaki video yolu + gerçek GPU/CPU çözme metni), [`DecoderSwitch`](src/SPVision.Core/DecoderSwitch.cs) ("Donanım hızlandırma" değişince hangi akış yeniden açılır, hangisi kaydı bekler; bildirim metni), `SdkLog` (Models.cs; SDK log seviyesi kuralı),
-[`PlaybackRestore`](src/SPVision.Core/PlaybackRestore.cs) (son oynatma düzeni + kameraları) ve [`HttpsPort`](src/SPVision.Core/HttpsPort.cs) (HTTPS kutusu ↔ 80/443 portu, HTTP'ye düşme sorusunun kuralı).
+("NVR · 32 kanal" metni), [`AutoStart`](src/SPVision.Core/AutoStart.cs) (Run değeri), [`AutoStreamQuality`](src/SPVision.Core/AutoStreamQuality.cs) (Oto kalite kuralı), [`VideoPathText`](src/SPVision.Core/VideoPathText.cs) (durum çubuğundaki video yolu + gerçek GPU/CPU çözme metni), `SdkLog` (Models.cs; SDK log seviyesi kuralı),
+[`PlaybackRestore`](src/SPVision.Core/PlaybackRestore.cs) (son oynatma düzeni + kameraları), [`HttpsPort`](src/SPVision.Core/HttpsPort.cs) (HTTPS kutusu ↔ 80/443 portu, HTTP'ye düşme sorusunun kuralı) ve
+[`CertificatePinning.cs`](src/SPVision.Core/CertificatePinning.cs) (`CertificatePin`, `CertificateFingerprint`, `CertificateText`, `CertificateChangedException`, `CertificateTrust` — HTTPS sertifika sabitleme, §8).
 Kayıt (§4 "Kayıt ve klip biçimi"): `Recording/` — `Mp4VideoWriter` (FFmpeg H.264 → MP4; Core bu yüzden `Flyleaf.FFmpeg.ABI`
 9.0.0'a ve `AllowUnsafeBlocks`'a bağlıdır), `VideoRecorder` (kuyruk + kodlayıcı iş parçacığı + doğrulama, `RecordingResult`,
 `RecordingText`, `Recordings`), `FrameClock`, `Mp4Inspector`, `RecordingDownload.cs` (`DownloadRange`, `DownloadNaming`, `DownloadParts`,
@@ -684,6 +688,26 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
     (`IsapiXml.MaxLength`); aşan yanıt "Cihazın yanıtı beklenenden çok büyük; okunmadı." (bağlantı hatası sayılmaz).
   - **Güvenli XML:** cihazdan gelen her XML yalnız `IsapiXml.Parse` ile okunur (DTD yasak, `XmlResolver` yok, boyut sınırı;
     normal belgede `XDocument.Parse` ile aynı sonuç). Cihaz verisine `XDocument.Parse` / `XElement.Parse` kullanma.
+  - **HTTPS sertifika sabitleme (22.10.2026, güvenlik incelemesi M1; `CertificatePinningTests`):** eskiden HTTPS cihazda **her** sertifika
+    kabul ediliyordu (LAN'da araya giren kendi sertifikasıyla ISAPI trafiğini okuyabilirdi). Şimdi ilk kullanımda güven (TOFU):
+    - Pin = sertifikanın **SubjectPublicKeyInfo**'sunun SHA-256'sı (`Device.Certificate.SpkiSha256`; aynı anahtarla yeniden üretilen sertifika
+      eşleşir). Gösterim için tüm sertifikanın SHA-256'sı, konu, veren, geçerlilik, kayıt zamanı ve kaynağı (`FirstUse` / `Confirmed`) da
+      saklanır. Gizli değildir: `settings.json`'da DPAPI'siz durur; boşsa yazılmaz.
+    - `IsapiClient` (yalnız `UseHttps`): TLS doğrulama geri çağrısı pinle karşılaştırır. Pin yoksa kabul eder, cihaz **ilk yanıtı verdikten
+      sonra** sessizce kaydeder (`CertificateTrust.PinFirstUse`, `PinChanged` → `CertificateTrustUi` ayarları kaydeder). Zincir/ad hataları
+      (kendinden imzalı) kullanılmaz. Farklı anahtar → el sıkışma reddedilir: **tek bir HTTP baytı, Digest yanıtı dahil, gitmez**;
+      `CertificateChangedException` (`IsapiException`'dan türer, eski/yeni pin taşır, `ConnectionFailed` **false** — düzenleyici "HTTP ile dene"
+      sormaz; sorsaydı saldırgana düşürme kapısı olurdu). Mesaj: "Kayıt cihazının güvenlik sertifikası değişti. Sertifika doğrulanmadı — bağlanılmadı."
+    - Soru (`CertificateTrust.ResolveMismatchAsync`): aynı (cihaz, yeni anahtar) için bekleyen tüm istekler **tek** soruyu bekler; farklı
+      cihazların soruları sırayla, bir seferde bir pencere. "Yeni sertifikaya güven" → pin değişir (`Confirmed`), istek gövdesiyle bir kez
+      yeniden gönderilir. "Bağlanma" → o (cihaz, anahtar) oturum boyunca sessizce reddedilir; Cihaz yönetimi'ndeki "Bağlantıyı test et"
+      (`ForgetDeclined`) yeniden sorar. Sıfırlama (`Reset`) pini siler, sonraki bağlantı yeniden kaydeder. Hataları "okunamadı"ya çeviren
+      Cihaz ayarları sayfası `IsapiClient.CertificateRefused` ile durum çubuğuna sebebi yazar ("… sertifikası değişti. Sertifika doğrulanmadı — bağlanılmadı.").
+    - Kapsam: **yalnız ISAPI (HTTPS)** — canlı/oynatma kurulumu, kayıt arama, `dailyDistribution`, Cihaz ayarları, anlık görüntü, yazılım
+      sürümü okuma. HCNetSDK (port 8000) ve RTSP bu TLS yolunu kullanmaz, pin onları korumaz. Uygulama güncelleyicisi (§11) normal genel CA
+      doğrulamasıyla ayrı çalışır, pinle ilgisi yok.
+    - Gerçek cihaz (salt okuma sondası, 22.10.2026): 443'te TLS 1.2, kendinden imzalı RSA 2048 / sha256RSA, konu = veren (`CN=<56 onaltılık>, C=CN`),
+      geçerlilik 21.10.2024 – 19.10.2034. İlk kullanım + eşleşme + yanlış pinle red (istek gitmeden) uygulamanın `IsapiClient`'ıyla doğrulandı.
   - **Şifre ekrana/loga yazılmaz:** Flyleaf/FFmpeg hatası RTSP adresini (içinde `kullanıcı:şifre@`) içerebilir. Karelerin `Shorten`'ı
     önce `StreamUrls.RedactCredentials` uygular (her URL'deki `kullanıcı:şifre@` → `***@`), sonra kısaltır. Yeni hata metni/log
     yolunda da aynısını yap. `PlayM4_GetJPEG`'in döndürdüğü boyut tampondan büyükse anlık görüntü başarısız sayılır.
@@ -705,16 +729,30 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
 
 **Sekmeler:** Genel bakış · Kameralar · Hareket · Kayıt · Sistem (1. aşama); Olaylar · Ağ · Kullanıcılar + Sistem'de yeniden başlatma /
 biçimlendirme (2. aşama, aşağıda); Bakım: yazılım güncelleme ve fabrika ayarları (3. aşama, aşağıda — yalnız tam dizge girişleri, yazılı onayla).
+Dokuz sekmenin hepsi uygulanmıştır: eski "Bu bölüm bir sonraki aşamada eklenecek." yedeği (`Render`'daki `default`) ve sekmelerin `Later` metinleri
+22.10.2026'da kaldırıldı (`Tabs` artık yalnız sekme + ad).
 Her sekme ilk gösterildiğinde okunur (GET); sayfa her açılışta cihazı yeniden okur.
 Okunamayan değer "okunamadı", cihazın sunmadığı ayar "Bu kamera desteklemiyor" yazar (403/404/405/501) — hata penceresi yok.
 
 | Sekme | Okuma (GET) | Yazma (PUT, izin listesinde) |
 |---|---|---|
 | Genel bakış | `System/deviceInfo`, `ContentMgmt/InputProxy/channels` (+`/status`, `/capabilities` → toplam kanal `id@max`), `System/time`, `ContentMgmt/Storage/hdd`, `System/Network/EZVIZ` (yalnızca `enabled` + `streamEncrypteEnabled`; doğrulama kodu bu sayfada okunmaz) | — |
-| Kameralar | `ContentMgmt/InputProxy/channels/{n}/video/overlays`, `Image/channels/{n}` (+`/capabilities`, `Color/*Level` min/max), `ContentMgmt/StreamingProxy/channels/{n}01` ve `{n}02` (+`/capabilities`) | kanal adı ISAPI ile **yazılmaz**, **SDK ile** yazılır (aşağıdaki "Kamera adı"), OSD aynı overlays yolu (`DateTimeOverlay/enabled`, `channelNameOverlay/enabled`), görüntü `Image/channels/{n}` (`Color/brightnessLevel`, `contrastLevel`, `saturationLevel`), akış `StreamingProxy/channels/{n}0{1,2}` (`Video/videoResolutionWidth`+`Height` birlikte, `maxFrameRate` = fps×100, 0 = tam kare hızı; bit hızı VBR'de `vbrUpperCap`, CBR'de `constantBitRate`; `videoCodecType`) |
+| Kameralar | `ContentMgmt/InputProxy/channels/{n}/video/overlays`, `Image/channels/{n}` (+`/capabilities`, `Color/*Level` min/max), `ContentMgmt/StreamingProxy/channels/{n}01` ve `{n}02` (+`/capabilities`) | kanal adı ISAPI ile **yazılmaz**, **SDK ile** yazılır (aşağıdaki "Kamera adı"), OSD aynı overlays yolu (`DateTimeOverlay/enabled`, `channelNameOverlay/enabled`; tarih/saat biçimi `DateTimeOverlay/dateStyle`, `timeStyle`, `displayWeek` — aşağıdaki "Tarih biçimi"), görüntü `Image/channels/{n}` (`Color/brightnessLevel`, `contrastLevel`, `saturationLevel`), akış `StreamingProxy/channels/{n}0{1,2}` (`Video/videoResolutionWidth`+`Height` birlikte, `maxFrameRate` = fps×100, 0 = tam kare hızı; bit hızı VBR'de `vbrUpperCap`, CBR'de `constantBitRate`; `videoCodecType`) |
 | Hareket | `ContentMgmt/InputProxy/channels/{n}/video/motionDetection` (+`/capabilities`: `sensitivityLevel` 0–100 adım 20) | aynı yol: `enabled`, `MotionDetectionLayout/sensitivityLevel` (Düşük 20 · Orta 60 · Yüksek 80; okurken 0–20 Düşük, 40–60 Orta, 80–100 Yüksek — `MotionSensitivity`) |
 | Kayıt | `ContentMgmt/record/tracks/{n}01` | aynı yol: açık/kapalı = `CustomExtensionList/CustomExtension/enableSchedule`; mod = `TrackSchedule/ScheduleBlockList/ScheduleBlock` içindeki 7 tam gün `ScheduleAction` (`ActionRecordingMode` CMR = Sürekli, MOTION = Yalnızca hareket; eylem yok = Kapalı); `PreRecordTimeSeconds` / `PostRecordTimeSeconds`. Bunlara uymayan program **Özel program**dır, kullanıcı açıkça bir mod seçmedikçe yazılmaz |
 | Sistem | `System/deviceInfo`, `System/time`, `System/time/ntpServers`, `ContentMgmt/Storage/hdd` | cihaz adı `System/deviceInfo` (`deviceName`); "Bilgisayarla eşitle" `System/time` (`timeMode`=manual, `localTime` = bu PC'nin saati + ofseti, `timeZone` farklıysa `CST-3:00:00` biçimi — işaret ters). NTP yalnızca gösterilir; yeniden başlatma ve disk başına biçimlendirme 2. aşamada (riskli işlem) |
+
+**Tarih biçimi (Kameralar, 22.10.2026; cihazda yazma denenmedi):** "Ekranda tarih / saat"ın altında üç satır (240 px denetim, satır yüksekliği
+diğerleriyle aynı): **Tarih biçimi** (açılır liste, yalnız cihazın sunduğu değerler: `…/video/overlays/capabilities` → `dateStyle@opt`; bu cihazda
+`YYYY-MM-DD, MM-DD-YYYY, DD-MM-YYYY, CHR-YYYY/MM/DD, CHR-MM/DD/YYYY, CHR-DD/MM/YYYY`; metin bugünün tarihiyle örnek: "22-10-2026 (gün-ay-yıl)",
+CHR = "Çince karakterli (yıl/ay/gün)"; capabilities okunamazsa yalnız mevcut değer), **Saat biçimi** (`timeStyle@opt`: "24 saat" / "12 saat (ÖÖ/ÖS)"),
+**Haftanın günü** (anahtar, `displayWeek`). AutomationId `OverlayDateTime`, `OverlayDateStyle`, `OverlayTimeStyle`, `OverlayDisplayWeek`, `OverlayChannelName`.
+Belgede öğe yoksa "Bu kamera desteklemiyor". Yazma mevcut yol: `RecorderPlan.Camera` → `ConfigWriter` (GET → yalnız bu öğeler → PUT → yeniden
+GET + doğrula) → onayda "Kamera · Tarih biçimi: gün-ay-yıl (DD-MM-YYYY) → yıl-ay-gün (YYYY-MM-DD)", "Saat biçimi: 24 saat → 12 saat (ÖÖ/ÖS)",
+"Haftanın günü: Açık → Kapalı". Yol zaten sıradan izin listesindeydi (`…/video/overlays`), yeni giriş eklenmedi; gövde denetimi (yasak öğe
+sözlüğü) bu öğeleri geçirir. Cihaz (GET, 22 kamera): hepsi `DD-MM-YYYY`, `24hour`, `displayWeek` true. Sekmede "tümüne uygula / kopyala"
+düzeni yok (her kamera ayrı; "Cihaza uygula" tüm kameralardaki değişiklikleri yazar). Testler: `OverlayStyleTests` (gerçek belgeyle ayrıştırma,
+seçenekler, metinler, plan, okuma-değiştirme-yazma gidiş-dönüş — diğer her öğe okunduğu gibi).
 
 **Kanal numaraları:** ISAPI kanal no 1–22 (InputProxy), akış/kayıt izi `kanal×100 + 1/2` (101, 102 … 2201). SDK'daki 33+ numaraları burada **kullanılmaz**.
 

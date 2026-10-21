@@ -21,6 +21,8 @@
                     <RowDefinition Height="Auto" />
                     <RowDefinition Height="12" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition Height="12" />
+                    <RowDefinition Height="Auto" />
                 </Grid.RowDefinitions>
 
                 <StackPanel>
@@ -95,6 +97,20 @@
                 <CheckBox x:Name="HttpsBox" Grid.Row="6" Grid.Column="2" Content="HTTPS kullan" VerticalAlignment="Center"
                           AutomationProperties.Name="HTTPS kullan"
                           ToolTip="Cihazla ayar ve bilgi alışverişini şifreler (görüntü akışını etkilemez). Varsayılan port 443." />
+
+                <!-- HTTPS certificate pin (trust on first use): same layout as the test row above (button, 12 px, text). -->
+                <Grid Grid.Row="8" Grid.ColumnSpan="3">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="ResetCertificateButton" Content="Sertifikayı sıfırla" Style="{StaticResource SettingsButton}"
+                            Click="ResetCertificate_Click" AutomationProperties.AutomationId="CertificateReset"
+                            AutomationProperties.Name="Sertifikayı sıfırla"
+                            ToolTip="Kayıtlı sertifika parmak izini unutur; bir sonraki HTTPS bağlantısında cihazın sertifikası yeniden kaydedilir" />
+                    <TextBlock x:Name="CertificateLine" Grid.Column="1" Margin="12,0,0,0" Style="{StaticResource CellText}"
+                               Foreground="{DynamicResource TextSecondary}" AutomationProperties.AutomationId="CertificateFingerprint" />
+                </Grid>
             </Grid>
 
             <!-- ===== Kameralar: KANAL | KAMERA ADI | DURUM | LİSTEDE GÖSTER ===== -->
