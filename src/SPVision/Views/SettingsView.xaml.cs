@@ -19,8 +19,8 @@ public enum SettingsPage
 }
 
 /// <summary>
-/// Settings view (gear in the top bar): device management (list + inline editor), app settings and a
-/// placeholder for recorder settings. Nothing here writes to a recorder; device calls are ISAPI GETs.
+/// Settings view (gear in the top bar): device management (list + inline editor), app settings and recorder
+/// settings (<see cref="RecorderSettingsView"/>, the only place that writes to a recorder, after confirmation).
 /// </summary>
 public partial class SettingsView : UserControl
 {
@@ -62,6 +62,7 @@ public partial class SettingsView : UserControl
     {
         InitializeComponent();
         BuildListHeader();
+        RecorderPage.Message += text => Message?.Invoke(text);
         NavDevices.IsChecked = true;
     }
 
@@ -99,6 +100,8 @@ public partial class SettingsView : UserControl
     public void Close()
     {
         _probeCts?.Cancel();
+        RecorderPage.Close();
+        RecorderPage.Visibility = Visibility.Collapsed; // the next Open reads the device again
         CloseEditor();
         if (_newDevice is not null)
         {
@@ -139,7 +142,17 @@ public partial class SettingsView : UserControl
     {
         DevicesPage.Visibility = page == SettingsPage.Devices ? Visibility.Visible : Visibility.Collapsed;
         AppPage.Visibility = page == SettingsPage.App ? Visibility.Visible : Visibility.Collapsed;
-        RecorderPage.Visibility = page == SettingsPage.Recorder ? Visibility.Visible : Visibility.Collapsed;
+        var recorder = page == SettingsPage.Recorder;
+        if (recorder && RecorderPage.Visibility != Visibility.Visible)
+        {
+            RecorderPage.Visibility = Visibility.Visible;
+            RecorderPage.Open(); // reads only; nothing is written on open
+        }
+        else if (!recorder && RecorderPage.Visibility == Visibility.Visible)
+        {
+            RecorderPage.Visibility = Visibility.Collapsed;
+            RecorderPage.Close();
+        }
     }
 
     // ---- Device list ----

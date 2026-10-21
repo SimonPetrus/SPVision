@@ -6,6 +6,7 @@
 > 189/189 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
 > (21.10.2026'daki düzen seçici + eş zamanlı çoklu oynatma değişikliği ile cihaz düzenleyicideki HTTPS varsayılanı / HTTP'ye düşme sorusu henüz cihazda denenmedi; bkz. §4, §5.)
 > (Canlı izlemede sayfalar — §4 "Canlı izlemede sayfalar" — da henüz cihazda denenmedi.)
+> (Ayarlar › Cihaz ayarları'ndan kayıt cihazına yazma — §9 — henüz cihazda denenmedi; okuma uç noktaları cihazda GET ile doğrulandı.)
 >
 > **Ad değişikliği (21.10.2026):** Uygulamanın eski adı **SP-2026 Lite** idi (proje/namespace
 > `SP2026Lite`, exe `SP-2026 Lite.exe`). Sahibinin onayıyla adı **SPVision** oldu; aşağıdaki
@@ -226,13 +227,15 @@ dotnet run --project src\SPVision
 |---|---|
 | `App.xaml(.cs)` | `HikSdk.Init/Shutdown`, Flyleaf `Engine.Start`, ayar yükleme; `ThemeManager.Initialize/Shutdown`, başlık çubuğunu kaydeder |
 | `Themes/Light.xaml`, `Themes/Dark.xaml` | **Tema renkleri ve fırçaları** (aynı anahtarlar). Görünümlerde ham hex kullanma. (Eski oynatma takma adları `PanelBg`, `MutedFg`… kaldırıldı.) |
-| `Themes/Controls.xaml` | Yazı boyutları, ikon geometrileri, kontrol stilleri (Button, `SettingsButton` 136×36, segment/sekme, `IconToggleButton`, `ToggleSwitch` 36×20, `NavButton`, `ListRowToggle`, `Card`, TextBox/arama, ListBox, ScrollBar, ToolTip, ContextMenu…) |
+| `Themes/Controls.xaml` | Yazı boyutları, ikon geometrileri, kontrol stilleri (Button, `SettingsButton`/`SettingsAccentButton`/`SettingsDangerButton` 120×30 · köşe 4 · yazı 12 — Ayarlar'daki tüm düğmeler ve onay pencereleri, segment/sekme, `IconToggleButton`, `ToggleSwitch` 36×20, `NavButton`, `ListRowToggle`, `Card`, TextBox/arama, ListBox, ScrollBar, ToolTip, ContextMenu…) |
 | `ThemeManager.cs` | Tema sözlüğünü çalışırken değiştirir; Sistem modunda Windows'u canlı izler; `ThemeChanged` olayı |
 | `DarkTitleBar.cs` | DWM yerel başlık çubuğu: koyu temada 1, açıkta 0; geçişte tüm pencerelere yeniden uygulanır |
 | `WindowsStartup.cs` | "Windows ile birlikte başlat": `HKCU\…\Run` altında `SPVision` = tırnaklı exe yolu |
 | `Controls/GlyphIcon.cs` | 24×24 çizgi ikonları (`Icon*` geometrileri) ön plan rengiyle çizer; emoji kullanılmaz |
 | `MainWindow.xaml(.cs)` | Üç görünüm (`MainSection`: Canlı İzleme, Kayıt Oynatma, Ayarlar). Üst çubuk (SPVision yazısı, sekmeler, düzen seçici (`LayoutPicker`; oynatmada ≤16 kareli ikinci seçici), kalite Oto/HD/SD, hareket kutuları, anlık görüntü/kayıt/tam ekran (F11), Ayarlar dişlisi = seçili durumlu ToggleButton), kenar çubuğu (arama, cihaz satırı, kamera listesi — "listede göster" kapalı kameralar hariç — + kare no, sürükle-bırak), durum çubuğu. Cihaz yoksa ilk açılışta Ayarlar › Cihaz yönetimi yeni satır açık halde gelir |
-| `Views/SettingsView.xaml(.cs)` | **Ayarlar**: sol menü (260 px, kenar çubuğuyla aynı). *Cihaz yönetimi*: cihaz listesi (DURUM, CİHAZ ADI, ADRES, TÜR, KAMERA; durum için sayfa açılınca ISAPI deviceInfo GET), satır tıklanınca / Enter / Boşluk ile altında düzenleme paneli açılır (akordeon, bir seferde bir tane). *Uygulama ayarları*: tema, hareket kutuları, varsayılan kalite, GPU (ayarı yok → devre dışı, "Yakında"), klasörler (`OpenFolderDialog`), son görünüm, Windows ile başlat, tam ekranda aç. *Cihaz ayarları*: yalnızca "yakında" kartı — cihaza yazma yok |
+| `Views/SettingsView.xaml(.cs)` | **Ayarlar**: sol menü (260 px, kenar çubuğuyla aynı). *Cihaz yönetimi*: cihaz listesi (DURUM, CİHAZ ADI, ADRES, TÜR, KAMERA; durum için sayfa açılınca ISAPI deviceInfo GET), satır tıklanınca / Enter / Boşluk ile altında düzenleme paneli açılır (akordeon, bir seferde bir tane). *Uygulama ayarları*: tema, hareket kutuları, varsayılan kalite, GPU (ayarı yok → devre dışı, "Yakında"), klasörler (`OpenFolderDialog`), son görünüm, Windows ile başlat, tam ekranda aç. *Cihaz ayarları*: [`RecorderSettingsView`](src/SPVision/Views/RecorderSettingsView.xaml.cs) (§9) |
+| `Views/RecorderSettingsView.xaml(.cs)`, `Themes/RecorderControls.xaml` | **Cihaz ayarları** sayfası (§9): cihaz seçici + "Web arayüzünü aç" (180×32), 9 eşit sekme; kartlar (başlık + açıklama · Geri al / Cihaza uygula), satırlar (etiket + yardım · 240 px denetim). Sayfanın kendi stilleri (temalı ComboBox, `SettingsToggleButton`, sekme şeridi, rozet) `RecorderControls.xaml`'da, yalnız bu sayfada birleştirilir. Rozet zeminleri `OnlineSoftBg` / `WarningSoftBg` (Light/Dark) |
+| `Views/ConfirmDialog.cs` | Adlandırılmış düğmeli tema uyumlu soru; liste aşırı yüklemesi değişiklikleri satır satır (başlıklı bölümler: UYGULANDI / UYGULANMADI) kaydırmalı kutuda gösterir; `cancel` null = tek düğme |
 | `Views/DeviceEditor.xaml(.cs)` | Satır altı düzenleme paneli (eski DeviceDialog'un yerine): Bağlantı (iki eşit sütun; şifre/anahtar kutusu kayıtlı değeri göstermez, boş bırakılırsa değişmez), "Bağlantıyı test et", "Cihazdan oku", **HTTPS kullan** (ipucu: ayar/bilgi trafiğini şifreler, görüntü akışını etkilemez; yeni cihaz HTTPS + 443 ile açılır, kayıtlı cihaz kendi değerleriyle; işaretleyince 80→443, kaldırınca 443→80, özel port değişmez — Core `HttpsPort.Follow`; HTTPS açıkken cihaza TCP/TLS düzeyinde hiç ulaşılamazsa (`IsapiException.ConnectionFailed`, 401 vb. yanıtlar hariç) "HTTP ile dene / İptal" sorulur ([`ConfirmDialog`](src/SPVision/Views/ConfirmDialog.cs)), kabul edilirse forma HTTP (443 ise 80) yazılır ve bir kez yeniden denenir — sessiz düşürme yok), Kameralar tablosu (LİSTEDE GÖSTER anahtarı), alt satır Cihazı kaldır · Kameraları yenile · İptal · Kaydet. Taslakla çalışır; Kaydet ayarı yazar, giriş bilgisi değiştiyse SDK oturumunu kapatır ve cihazın karelerini yeniden bağlar |
 | `Controls/RoundedClip.cs` | Yuvarlak köşeli kartın içindeki satır arka planlarını köşeden taşırmadan kırpar |
 | `Views/LiveView.xaml(.cs)` | 1–36 kareli ızgara (düzen tanımı: Core `GridLayout`; kayıtlı 32 → 36), sayfalar (Core `LivePages`, `Sync`), sürükle-bırak/kare takası, düzeni + sayfayı kaydet/geri yükle; durumu `StateChanged`/`Message` ile ana pencereye bildirir |
@@ -259,7 +262,12 @@ kamera anahtarı yoksa cihaz anahtarını kullanır), [`SettingsStore`](src/SPVi
 [`Theme.cs`](src/SPVision.Core/Theme.cs) (`AppTheme`, `ThemeResolver`), [`PlaybackSync.cs`](src/SPVision.Core/PlaybackSync.cs)
 (`PlaybackSlots`, `RecordingJump`, `PlaybackSpeed`, `PlaybackSync`, `CalendarMonth`, `PlaybackText` — oynatmanın saf mantığı, birim testli), [`LivePages`](src/SPVision.Core/LivePages.cs) (canlı sayfalar: global yuva sırası, sayfa sayısı/dilim/sınırlama/sarma, kare eşleme), [`CameraList`](src/SPVision.Core/CameraList.cs)
 (yenilenen kamera listesinde anahtarı ve "listede göster" seçimini korur), [`DeviceKind`](src/SPVision.Core/DeviceKind.cs)
-("NVR · 32 kanal" metni), [`AutoStart`](src/SPVision.Core/AutoStart.cs) (Run değeri) ve [`HttpsPort`](src/SPVision.Core/HttpsPort.cs) (HTTPS kutusu ↔ 80/443 portu, HTTP'ye düşme sorusunun kuralı). Yeni ayarlar:
+("NVR · 32 kanal" metni), [`AutoStart`](src/SPVision.Core/AutoStart.cs) (Run değeri) ve [`HttpsPort`](src/SPVision.Core/HttpsPort.cs) (HTTPS kutusu ↔ 80/443 portu, HTTP'ye düşme sorusunun kuralı).
+Cihaz ayarları (§9): [`IsapiWritePolicy`](src/SPVision.Core/IsapiWritePolicy.cs) (yazma izin listesi + yasak kelimeler),
+[`IsapiConfig.cs`](src/SPVision.Core/IsapiConfig.cs) (`IsapiPaths`, `IsapiResponseStatus`, `IsapiXml`, `ConfigEdit`/`SetValueEdit`,
+`ConfigWrite`, `ConfigChangeText`, `IConfigTransport`, `ConfigWriter`), [`IsapiClient.Config.cs`](src/SPVision.Core/IsapiClient.Config.cs)
+(`GetConfigAsync`, tek yazma yolu `PutConfigAsync`), [`RecorderSettings.cs`](src/SPVision.Core/RecorderSettings.cs) (ayrıştırıcılar,
+`MotionSensitivity`, `RecordSchedule` hazır modları, `TimeSyncEdit`, `HikTimeZone`, `RecorderPlan` önce→sonra yazma planı). Yeni ayarlar:
 `AppSettings.Theme` (metin olarak saklanır), `ShowMotionBoxes`, `RestoreLastView`, `StartFullScreen`; `Camera.Hidden`; `SavedView.Page`;
 `Device.DeviceType`, `Device.ChannelCount`.
 
@@ -308,8 +316,17 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
   `Task.Run` + `_openGeneration` yarış koruması kullanıyor; bu deseni bozma).
 - Kamera kanalları her yerde ISAPI numarasıyla saklanır (1-22); SDK'ya girmeden
   `SdkChannel()` ile çevrilir. Flyleaf/RTSP yolu ISAPI numarasını doğrudan kullanır.
-- Cihaz ayarları **asla değiştirilmez** (şifreleme/Hik-Connect açık kalır) — bu, sahibinin
-  kesin kuralıdır; ISAPI'de yalnızca **GET** çağrıları kullanılır.
+- **Kayıt cihazına yazma kuralı (21.10.2026'dan beri; eski "ISAPI'de yalnızca GET" kuralının yerine):**
+  - **Akış şifreleme ve Hik-Connect asla değiştirilmez** (açık kalır) — sahibinin kesin kuralı. SPVision bunları yalnızca okur.
+  - Güvenlikle ilgisiz ayarlar **yalnızca Ayarlar › Cihaz ayarları'nda, kullanıcı "Cihaza uygula" + onay** verdikten sonra yazılır;
+    sayfa/sekme açılışında, form yüklenirken hiçbir şey yazılmaz.
+  - Her yazma tek bir kapıdan geçer: `IsapiClient.PutConfigAsync` → `IsapiWritePolicy` (açık **izin listesi**; listede olmayan
+    yol ağa çıkmadan reddedilir; encrypt / EZVIZ / Hik-Connect / platform / Security / Users / Network / factoryReset / reboot /
+    format / upgrade / activate içeren yollar her durumda reddedilir — birim testli, Türkçe I sorunu yok: ordinal karşılaştırma).
+  - Okuma-değiştirme-yazma (`ConfigWriter`): güncel XML GET edilir, yalnızca değişen öğeler değiştirilir, belge bütün olarak PUT
+    edilir, `ResponseStatus` kontrol edilir, yeniden okunup doğrulanır; istekler tek tek gider, ilk hatada durulur. Ayrıntı §9.
+  - 2. ve 3. aşama izin listesini genişletir (yeniden başlatma, biçimlendirme, ağ, kullanıcılar…); yasak kelime listesi kalır.
+  - Başka hiçbir yerde ISAPI PUT/POST/DELETE ekleme (kayıt arama `POST ContentMgmt/search` salt okuma isteğidir, istisnadır).
 - **Canlıda kare büyütme (çift tık) kareleri ağaçtan çıkarmaz.** `LiveView`'daki 36 `VideoTile` hep `TileGrid`
   çocuğudur (oynatmadaki gibi); düzen ya da sayfa değişince yalnız taşınır/gizlenir (`_tiles` listesinin sırası = konum). Büyütmede diğer kareler `Visibility.Hidden`
   olur: akışları, SDK HWND'leri (`HikVideoHost`) ve Flyleaf yüzeyleri çalışmaya devam eder, gizli kare video
@@ -319,3 +336,33 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
   oynatıcıyı bırakır. Oto kalitede büyütülmüş durumdayken yalnız büyütülen kare yeniden değerlendirilir (HD'ye
   geçebilir); gizliler eski akışını korur. Büyütülen karenin HD/SD geçişi hâlâ yeniden açılıştır: o kare kısa süre
   siyah kalır (kesintisiz geçiş için ikinci oynatıcı + ikinci HWND gerekir; yapılmadı). Oynatmada büyütme yoktur.
+
+## 9. Ayarlar › Cihaz ayarları (kayıt cihazına yazma, 1. aşama — 21.10.2026)
+
+> Henüz cihazda yazma denenmedi; ilk gerçek yazmayı sahibi uygulamadan yapacak (en güvenlisi: tek kamerada hareket algılamayı kapat/aç).
+> Uç noktalar DS-8632NI-I8 (V4.61.025) üzerinde **yalnızca GET** ile bulundu; 22 kanalın hepsinde aşağıdakilerin tümü 200 döndü.
+
+**Sekmeler:** Genel bakış · Kameralar · Hareket · Kayıt · Sistem (1. aşama); Olaylar · Ağ · Kullanıcılar · Bakım görünür ama tek kart
+gösterir: "Bu bölüm bir sonraki aşamada eklenecek." Her sekme ilk gösterildiğinde okunur (GET); sayfa her açılışta cihazı yeniden okur.
+Okunamayan değer "okunamadı", cihazın sunmadığı ayar "Bu kamera desteklemiyor" yazar (403/404/405/501) — hata penceresi yok.
+
+| Sekme | Okuma (GET) | Yazma (PUT, izin listesinde) |
+|---|---|---|
+| Genel bakış | `System/deviceInfo`, `ContentMgmt/InputProxy/channels` (+`/status`, `/capabilities` → toplam kanal `id@max`), `System/time`, `ContentMgmt/Storage/hdd`, `System/Network/EZVIZ` (yalnızca `enabled` + `streamEncrypteEnabled`; doğrulama kodu bu sayfada okunmaz) | — |
+| Kameralar | `ContentMgmt/InputProxy/channels/{n}/video/overlays`, `Image/channels/{n}` (+`/capabilities`, `Color/*Level` min/max), `ContentMgmt/StreamingProxy/channels/{n}01` ve `{n}02` (+`/capabilities`) | kanal adı `ContentMgmt/InputProxy/channels/{n}` (`name`), OSD aynı overlays yolu (`DateTimeOverlay/enabled`, `channelNameOverlay/enabled`), görüntü `Image/channels/{n}` (`Color/brightnessLevel`, `contrastLevel`, `saturationLevel`), akış `StreamingProxy/channels/{n}0{1,2}` (`Video/videoResolutionWidth`+`Height` birlikte, `maxFrameRate` = fps×100, 0 = tam kare hızı; bit hızı VBR'de `vbrUpperCap`, CBR'de `constantBitRate`; `videoCodecType`) |
+| Hareket | `ContentMgmt/InputProxy/channels/{n}/video/motionDetection` (+`/capabilities`: `sensitivityLevel` 0–100 adım 20) | aynı yol: `enabled`, `MotionDetectionLayout/sensitivityLevel` (Düşük 20 · Orta 60 · Yüksek 80; okurken 0–20 Düşük, 40–60 Orta, 80–100 Yüksek — `MotionSensitivity`) |
+| Kayıt | `ContentMgmt/record/tracks/{n}01` | aynı yol: açık/kapalı = `CustomExtensionList/CustomExtension/enableSchedule`; mod = `TrackSchedule/ScheduleBlockList/ScheduleBlock` içindeki 7 tam gün `ScheduleAction` (`ActionRecordingMode` CMR = Sürekli, MOTION = Yalnızca hareket; eylem yok = Kapalı); `PreRecordTimeSeconds` / `PostRecordTimeSeconds`. Bunlara uymayan program **Özel program**dır, kullanıcı açıkça bir mod seçmedikçe yazılmaz |
+| Sistem | `System/deviceInfo`, `System/time`, `System/time/ntpServers`, `ContentMgmt/Storage/hdd` | cihaz adı `System/deviceInfo` (`deviceName`); "Bilgisayarla eşitle" `System/time` (`timeMode`=manual, `localTime` = bu PC'nin saati + ofseti, `timeZone` farklıysa `CST-3:00:00` biçimi — işaret ters). NTP ve diskler yalnızca gösterilir; yeniden başlatma / biçimlendirme devre dışı ("Bir sonraki aşamada") |
+
+**Kanal numaraları:** ISAPI kanal no 1–22 (InputProxy), akış/kayıt izi `kanal×100 + 1/2` (101, 102 … 2201). SDK'daki 33+ numaraları burada **kullanılmaz**.
+
+**Yazma akışı:** form değeri ↔ son okunan değer farkı `RecorderPlan` ile `ConfigWrite` listesine çevrilir → "Cihaza uygula" her değişikliği
+"<kamera> · <alan>: <eski> → <yeni>" satırıyla listeleyen onay ister (`ConfirmDialog` liste aşırı yüklemesi) → `ConfigWriter` her belgeyi
+sırayla GET → yalnızca değişen öğeleri değiştir (XDocument, ad alanı ve diğer öğeler korunur) → PUT → `ResponseStatus` (`statusCode` 1 = OK;
+diğerleri Türkçe açıklamayla hata, ör. "Geçersiz işlem (notSupport: cihaz bu ayarı desteklemiyor)") → yeniden GET + doğrula. İlk hatada durur;
+kartta "Uygulandı" ya da "Cihaz değeri kabul etmedi: …" yazar, hata varsa UYGULANDI / UYGULANMADI listesi gösterilir; ardından sekme cihazdan
+yeniden okunur. "Geri al" formu son okunan değerlere döndürür (cihaza bir şey göndermez). Gövdede `password`/`encrypt`/`EZVIZ`/`platform`/
+`verificationCode` adlı öğe varsa PUT reddedilir.
+
+**Dikkat:** kanal adı yazımı `InputProxy/channels/{n}` belgesini bütün olarak geri yazar (kameranın IP/port/kullanıcı adı dahil, şifre öğesi
+GET'te gelmez ve gönderilmez). Bu cihazda denenmedi; ad değişikliğinden sonra kameranın çevrimiçi kaldığını doğrulayın.

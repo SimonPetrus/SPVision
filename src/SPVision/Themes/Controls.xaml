@@ -346,20 +346,70 @@
         </Setter>
     </Style>
 
-    <!-- Settings buttons: one width and height for every button of the settings pages (136×36). -->
+    <!-- Settings buttons: one size for every button of the settings pages and their dialogs (120×30, radius 4,
+         font 12, as in the approved mockup). -->
     <Style x:Key="SettingsButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
-        <Setter Property="Width" Value="136" />
-        <Setter Property="Height" Value="36" />
+        <Setter Property="Width" Value="120" />
+        <Setter Property="Height" Value="30" />
         <Setter Property="MinHeight" Value="0" />
-        <Setter Property="Padding" Value="8,0" />
+        <Setter Property="Padding" Value="6,0" />
         <Setter Property="Margin" Value="0" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeTile}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBg}" />
+                        </Trigger>
+                        <Trigger Property="IsPressed" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource PressedBg}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <Style x:Key="SettingsAccentButton" TargetType="Button" BasedOn="{StaticResource AccentButton}">
-        <Setter Property="Width" Value="136" />
-        <Setter Property="Height" Value="36" />
+        <Setter Property="Width" Value="120" />
+        <Setter Property="Height" Value="30" />
         <Setter Property="MinHeight" Value="0" />
-        <Setter Property="Padding" Value="8,0" />
+        <Setter Property="Padding" Value="6,0" />
         <Setter Property="Margin" Value="0" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeTile}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" BorderBrush="{TemplateBinding BorderBrush}"
+                            BorderThickness="{TemplateBinding BorderThickness}" CornerRadius="4" Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" RecognizesAccessKey="True" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource AccentHover}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource TextStrong}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.4" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
     <!-- Destructive secondary button ("Cihazı kaldır"): same shape, red text and border. -->
     <Style x:Key="SettingsDangerButton" TargetType="Button" BasedOn="{StaticResource SettingsButton}">
