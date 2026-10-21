@@ -21,7 +21,7 @@ public partial class App : Application
     /// </summary>
     public static void ApplyHardwareDecoding()
     {
-        ApplyHardwareDecoding();
+        HikDecode.PreferHardware = Settings.HardwareDecoding;
         Players.VideoAcceleration = Settings.HardwareDecoding;
     }
 
@@ -65,7 +65,7 @@ public partial class App : Application
 
         // HCNetSDK for encrypted streams; no-op on failure. Log: errors only unless settings.json raises SdkLogLevel.
         HikSdk.Init(Path.Combine(logDir, "sdk"), SdkLog.Level(Settings.SdkLogLevel));
-        HikDecode.PreferHardware = Settings.HardwareDecoding;
+        ApplyHardwareDecoding();
 
         Engine.Start(new EngineConfig
         {
