@@ -63,6 +63,7 @@ public partial class SettingsView : UserControl
         InitializeComponent();
         BuildListHeader();
         RecorderPage.Message += text => Message?.Invoke(text);
+        RecorderPage.DeviceUpdated += RecorderPage_DeviceUpdated;
         NavDevices.IsChecked = true;
     }
 
@@ -414,6 +415,23 @@ public partial class SettingsView : UserControl
         BuildDeviceList();
         DeviceSaved?.Invoke(device, loginChanged);
         Message?.Invoke($"Kaydedildi: {device.Name}");
+        ProbeDevices(device);
+    }
+
+    /// <summary>
+    /// Cihaz ayarları changed the recorder's address or SPVision's account password on the recorder: save the device
+    /// (password DPAPI-protected by <see cref="SettingsStore"/>) and reconnect, like Kaydet in the device editor.
+    /// </summary>
+    void RecorderPage_DeviceUpdated(Device device, bool loginChanged)
+    {
+        if (_editor?.IsNew == true)
+        {
+            _newDevice = null;
+        }
+        CloseEditor(); // an open editor holds a draft of the old values
+        App.SaveSettings();
+        BuildDeviceList();
+        DeviceSaved?.Invoke(device, loginChanged);
         ProbeDevices(device);
     }
 

@@ -30,6 +30,28 @@ public static class IsapiPaths
     public static string RecordTrack(int channel) => Invariant($"ISAPI/ContentMgmt/record/tracks/{StreamUrls.TrackId(channel, StreamQuality.Main)}");
     public static string RecordTrackCapabilities(int channel) => RecordTrack(channel) + "/capabilities";
 
+    // ---- phase 2: Olaylar ----
+    public const string EventTriggers = "ISAPI/Event/triggers";
+    public const string EventTriggersCap = "ISAPI/Event/triggersCap";
+    public static string EventTrigger(string id) => "ISAPI/Event/triggers/" + id;
+    public static string VideoLoss(int channel) => Invariant($"ISAPI/ContentMgmt/InputProxy/channels/{channel}/video/videoLoss");
+    public static string Tamper(int channel) => Invariant($"ISAPI/ContentMgmt/InputProxy/channels/{channel}/video/tamperDetection");
+
+    // ---- phase 2: Ağ (ports: read only, see IsapiWritePolicy) ----
+    public const string Interfaces = "ISAPI/System/Network/interfaces";
+    public const string Bond = "ISAPI/System/Network/Bond";
+    public const string AdminAccesses = "ISAPI/Security/adminAccesses";
+    public static string InterfaceAddress(int id) => Invariant($"ISAPI/System/Network/interfaces/{id}/ipAddress");
+
+    // ---- phase 2: Kullanıcılar (no password is ever read: the list has none) ----
+    public const string Users = "ISAPI/Security/users";
+    public const string SecurityCapabilities = "ISAPI/Security/capabilities";
+    public static string User(int id) => Invariant($"ISAPI/Security/users/{id}");
+
+    // ---- phase 2: Sistem (risky; sent only by IsapiClient.SendRiskyAsync) ----
+    public const string Reboot = "ISAPI/System/reboot";
+    public static string HddFormat(int id) => Invariant($"ISAPI/ContentMgmt/Storage/hdd/{id}/format");
+
     static string Invariant(FormattableString s) => s.ToString(CultureInfo.InvariantCulture);
 }
 

@@ -674,12 +674,11 @@ public static class RecorderPlan
 
     public static List<ConfigWrite> Camera(int channel, string target, CameraSettings before, CameraSettings after)
     {
+        // The camera name is not written: the recorder keeps it in the IP channel record (InputProxy/channels/{n})
+        // together with the camera's address and login, and that record's password is never returned by a GET, so
+        // writing the record back could leave the camera without its password (offline, not recording). Rename
+        // from the recorder's web UI. (Name is still part of CameraSettings for display.)
         var writes = new List<ConfigWrite>();
-        if (before.Name is { } oldName && after.Name is { } newName && newName != oldName)
-        {
-            writes.Add(new ConfigWrite(IsapiPaths.InputProxyChannel(channel), target,
-                [new SetValueEdit("Kamera adı", "name", newName, oldName, newName)]));
-        }
 
         if (before.Overlay is { } o && after.Overlay is { } n)
         {
