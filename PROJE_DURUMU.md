@@ -1,9 +1,9 @@
 # SP-2026 Lite — Proje Durumu
 
-Son güncelleme: 20.10.2026 (SDK video katmanı tamamlandı)
+Son güncelleme: 21.10.2026 (gerçek cihaz testi geçti; sıradaki iş paketleme)
 
 Bu belge, projeye kim devam ederse etsin (yeni bir sohbet ya da bir geliştirici) her şeyi baştan anlatmaya
-gerek kalmasın diye tutuluyor.
+gerek kalmasın diye tutuluyor. Ayrıntılı ve en güncel rehber: [CLAUDE_REHBERI.md](CLAUDE_REHBERI.md).
 
 ## Amaç
 
@@ -55,15 +55,26 @@ sorup hatırlayan bir izleme uygulaması. **Kayıt cihazında hiçbir güvenlik 
   - SDK DLL'leri `SP2026Lite.csproj` ile çıktıya kopyalanır (`sdk/.../lib` → uygulama kökü,
     `HCNetSDKCom` alt klasörü korunur; SDK yoksa derleme uyarı verir, kırılmaz).
 
-## Kalan tek iş: gerçek cihaz testi (Adım 5)
+- **Gerçek cihaz testi — 21.10.2026'da geçti** (DS-8632NI-I8, akış şifreleme **açık**, dokunulmadı):
+  - **16 kamera aynı anda SDK yoluyla** akıyor; SDK logu temiz (`Stream Head Data Callback` 16×).
+  - İşlemci yükü **~%8.7** (32 çekirdeğin yüzdesi; eski iVMS 4 kamerada tek çekirdeğin %107'siydi).
+- **SDK kanal numarası hatası — 21.10.2026'da bulundu ve düzeltildi:** NVR'larda SDK kanal numarası ISAPI
+  kanal numarasından farklıdır; dijital kanallar `StartDChan`'dan başlar (bu cihazda **33**). Yanlış numara
+  `NET_DVR_CHANNEL_ERROR` (dwError 4) veriyordu. Artık her SDK çağrısından önce
+  `HikSession.SdkChannel(isapiChannel)` ile çevriliyor; kanallar uygulamada ISAPI numarasıyla (1-22) saklanır.
 
-Kod tarafı bitti; şifreli akışta 16 kamera HD performans testi ve gözle doğrulama kaldı:
+## Kalan iş: paketleme (yayınlama)
 
-- Kayıt cihazı açıkken (`192.168.1.2`) canlı izlemeyi aç: görüntü gelmeli, tek kare donması/çökmesi olmamalı.
-- İşlemci yükünü ölç (hedef: eski iVMS'in 4 kamera %107'sinin belirgin altında; şifresiz Flyleaf
-  referansı 16 kamerada ~%52).
-- ISAPI'den akış anahtarı okunuyor mu kontrol et (anahtar sorulmamalı; `Device.StreamKey` DPAPI'de).
-- Oynatma ekranında gün/kamera seç, oynat/duraklat/sarla/klip al.
+Kod ve cihaz testi bitti; kalan tek iş, çift tıklayınca çalışan, kurulum gerektirmeyen bir paket üretmek
+(ayrıntılı adımlar: [CLAUDE_REHBERI.md](CLAUDE_REHBERI.md) § 7):
+
+- `dotnet publish` ile `win-x64` yayını (self-contained önerilir; kullanıcı makinesinde .NET gerekmez).
+- Çıktıda `SP-2026 Lite.exe`, `FFmpeg\*.dll`, `HCNetSDK.dll`, `PlayCtrl.dll`, `HCCore.dll` ve `HCNetSDKCom\`
+  alt klasörünün bulunduğunu kontrol et (SDK runtime'da `HCNetSDKCom\*.dll` arar; klasör yapısı korunmalı).
+- Tek dosya exe yerine klasör dağıtımı (+ Inno Setup/MSIX ya da zip) tercih edilir.
+- Yayın sonrası el ile test: boş `%APPDATA%\SP-2026 Lite` ile ilk açılış (cihaz ekleme), 16 kamera canlı,
+  oynatma, anlık görüntü, klip.
+- SDK DLL'leri lisanslıdır: paketin içinde olabilirler (kullanım içindir) ama repoya/internete **yüklenmez**.
 
 ## Notlar
 
@@ -75,9 +86,11 @@ Kod tarafı bitti; şifreli akışta 16 kamera HD performans testi ve gözle do�
 
 ## Derleme
 
+SDK önce el ile `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` klasörüne yerleştirilmelidir (repoda yok).
+
 ```powershell
 .\tools\get-ffmpeg.ps1
 dotnet build SP2026Lite.slnx
-dotnet test
+dotnet test tests\SP2026Lite.Core.Tests\SP2026Lite.Core.Tests.csproj
 dotnet run --project src\SP2026Lite
 ```

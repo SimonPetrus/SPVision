@@ -12,7 +12,7 @@
 Eski **iVMS-4200 Lite** (2019, 32-bit, CPU'yu yoran) izleme uygulamasının yerine yazılmış
 hafif bir WPF istemcisi. Hikvision DS-8632NI-I8 kayıt cihazına (192.168.1.2) bağlı 22 IP
 kamerayı canlı izler (1/4/9/16 ızgara) ve kayıtları oynatır. **En kritik nokta:** Cihazda
-"akış şifreleme" (stream encryption) **açiktir ve AÇILMAYACAK** — bu, proje sahibinin kesin
+"akış şifreleme" (stream encryption) **açıktır ve KAPATILMAYACAK** — bu, proje sahibinin kesin
 istemidir. Şifreli akışı yalnızca Hikvision'ın resmi SDK'sı çözebilir; proje bu yüzden
 HCNetSDK + PlayCtrl entegrasyonu içerir.
 
@@ -32,7 +32,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ## 3. Derleme ve çalıştırma (Windows 11, .NET 10 SDK, x64)
 
 ```powershell
-cd "SP-2026 Lite"
+cd SPVision
 dotnet build SP2026Lite.slnx          # 0 hata / 0 uyarı beklenir
 dotnet test tests\SP2026Lite.Core.Tests\SP2026Lite.Core.Tests.csproj   # 15/15 geçer
 dotnet run --project src\SP2026Lite
@@ -65,7 +65,7 @@ dotnet run --project src\SP2026Lite
      `PlayM4_OpenStream` (canlı 2 MB / oynatma 10 MB) → `SetDisplayBuf(15)` → `PlayM4_Play(port, hwnd)`
   4. `NET_DVR_STREAMDATA` → `PlayM4_InputData`
 - **ÇOK ÖNEMLİ — kanal numarası:** NVR'larda SDK kanal no ≠ ISAPI kanal no. Dijital kanallar
-  `DeviceInfoV40.StartDChan`'dan başlar (bu cihazda **33**). **Mutlaka**
+  `DeviceInfoV40.DeviceV30.StartDChan`'dan başlar (bu cihazda **33**). **Mutlaka**
   [`HikSession.SdkChannel(isapiChannel)`](src/SP2026Lite/Hik/HikSession.cs) ile çevir; yanlış
   numara `NET_DVR_CHANNEL_ERROR` (dwError 4) verir ve cihaz linki reddeder. (Bu hata 21.10.2026'da
   bulundu ve düzeltildi; logda `LinkToDvr ... dwErrCode[0x00100100]` görürsen kanal sorunu var.)
@@ -73,13 +73,13 @@ dotnet run --project src\SP2026Lite
   (HwndHost) video yüzeyidir. Kare üstü yazılar (kamera adı, KAYIT rozeti) HWND'ye çizilemez →
   VideoTile bir **Popup** kullanır; PlaybackView Flyleaf overlay'ini gizleyip StatusText kullanır.
 
-## 5. Klasör → dosya haritası (WPF tarafı)
+## 5. Klasör → dosya haritası (WPF tarafı, yollar `src/SP2026Lite/` altına göredir)
 
 | Dosya | Sorumluluk |
 |---|---|
-| `src/SP2026Lite/App.xaml.cs` | `HikSdk.Init/Shutdown`, Flyleaf `Engine.Start`, ayar yükleme |
-| `Views/MainWindow.xaml(.cs)` | Pencere, görünüm değiştirme (Canlı/Oynatma/Cihazlar) |
-| `Views/LiveView.xaml(.cs)` | 1/4/9/16 ızgara, sürükle-bırak, düzeni kaydet/ger yükle |
+| `App.xaml.cs` | `HikSdk.Init/Shutdown`, Flyleaf `Engine.Start`, ayar yükleme |
+| `MainWindow.xaml(.cs)` | Pencere, görünüm değiştirme (Canlı İzleme/Kayıt Oynatma), cihaz ağacı (ekle/düzenle/sil, sürükle-bırak), tam ekran (F11) |
+| `Views/LiveView.xaml(.cs)` | 1/4/9/16 ızgara, sürükle-bırak, düzeni kaydet/geri yükle |
 | `Controls/VideoTile.xaml(.cs)` | Tek kamera karesi — **çift yol** (Flyleaf/SDK), Popup overlay, yeniden bağlanma (3/10/30 sn), kayıt + anlık görüntü |
 | `Views/PlaybackView.xaml(.cs)` | Kayıt oynatma — ISAPI arama + zaman çizelgesi + çift yol oynatma (oynat/duraklat/sar/klip) |
 | `Views/DeviceDialog.xaml(.cs)` | Cihaz ekle/düzenle: IP, port, kullanıcı, şifre, **akış anahtarı (doğrulama kodu)** + "Cihazdan oku" butonu (ISAPI'den çeker) |

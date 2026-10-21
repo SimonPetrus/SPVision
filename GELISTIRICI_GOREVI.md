@@ -1,8 +1,9 @@
 # Geliştirici görevi — Şifreli akış için video katmanı
 
-> **Durum: 20.10.2026 itibarıyla KOD TAMAMLANDI.** Aşağıdaki görevin tamamı uygulandı; derleme 0 hata/0 uyarı,
-> 15/15 test geçiyor, SDK DLL'leri çıktıda. Kalan tek iş gerçek cihazda test (bkz. son bölüm). Bu belge artık
-> uygulamanın nasıl kurulduğunu anlatan referanstır; yeni iş vermez.
+> **Durum: KOD 20.10.2026'da TAMAMLANDI, GERÇEK CİHAZ TESTİ 21.10.2026'da GEÇTİ.** Aşağıdaki görevin tamamı
+> uygulandı; derleme 0 hata/0 uyarı, 15/15 test geçiyor, SDK DLL'leri çıktıda. Şifreleme açık cihazda 16 kamera
+> SDK yoluyla akıyor (CPU ~%8.7, 32 çekirdeğin yüzdesi). Bu belge artık uygulamanın nasıl kurulduğunu anlatan
+> tarihsel bir referanstır; yeni iş vermez. Sıradaki iş (paketleme) için bkz. [CLAUDE_REHBERI.md](CLAUDE_REHBERI.md).
 
 Bu belge, SP-2026 Lite'ta eksik kalan tek parçayı tamamlayacak C# geliştiricisi içindi. Uygulamanın geri
 kalanı çalışıyor ve testleri geçiyor; yalnızca Hikvision'ın **akış şifreleme (stream encryption)** açık olduğu
@@ -68,24 +69,26 @@ kameralarda görüntü açan katman eksikti.
   SDK lisansı gereği DLL'ler repoya **konmaz**.
 
 ## Kabul ölçütü
-- Şifreleme açık cihazda 16 kamera HD açılıyor, görüntü düzgün. *(kod hazır — test bekliyor)*
+- Şifreleme açık cihazda 16 kamera HD açılıyor, görüntü düzgün. *(21.10.2026: geçti — 16 kamera SDK yoluyla, log temiz)*
 - İşlemci yükü eski iVMS-4200 Lite'tan belirgin düşük (karşılaştırma için: eski uygulama 4 kamerada
-  tek çekirdeğin ~%107'si; yeni uygulama şifresiz akışta 16 kamerada ~%52).
+  tek çekirdeğin ~%107'si; yeni uygulama şifresiz akışta 16 kamerada ~%52). *(21.10.2026: geçti — şifreli
+  akışta 16 kamera SDK yoluyla CPU ~%8.7, 32 çekirdeğin yüzdesi)*
 - Akış anahtarı en fazla bir kez soruluyor (mümkünse hiç: ISAPI'den okunuyor), DPAPI ile saklanıyor.
-- Kayıt cihazında hiçbir ayar değiştirilmiyor.
+- Kayıt cihazında hiçbir ayar değiştirilmiyor. *(akış şifreleme açık kaldı, dokunulmadı)*
 
-## Kalan iş: gerçek cihaz testi
+## Gerçek cihaz testi — 21.10.2026'da geçti
 
-Kayıt cihazı (`192.168.1.2`) erişilebilirken:
+Kayıt cihazında (`192.168.1.2`, DS-8632NI-I8, akış şifreleme açık) yapıldı:
 
-1. `dotnet run --project src\SP2026Lite` ile aç, canlı izlemede 16 kamera HD aç; görüntü, donma, çökme kontrolü.
-2. Görev Yöneticisi'nden işlemci yükünü ölç (hedef yukarıdaki referansların altında).
-3. Akış anahtarı sorulmuyorsa ISAPI okuma çalışıyor demektir; sorulursa bir kez gir, sonrası DPAPI'den gelmeli.
-4. Oynatma ekranında gün/kamera seç; oynat, duraklat, sar, anlık görüntü, klip al.
-5. Sorun çıkarsa: `HikSdk.ExceptionRaised` olayları ve `HikException.Describe` çıktıları ilk ipucudur;
-   `HikNative.cs` imzaları `incEn` başlıklarıyla satır satır doğrulanmıştır, sapma varsa önce çağrı
-   parametrelerini (channel, port, hWnd, anahtar uzunluğu 128) kontrol edin.
+- Canlı izlemede **16 kamera aynı anda SDK yoluyla** açıldı; SDK logu temiz (`Stream Head Data Callback` 16×).
+- İşlemci yükü **~%8.7** (32 çekirdeğin yüzdesi) — yukarıdaki referansların belirgin altında.
+- Test sırasında bulunan ve aynı gün düzeltilen hata: **SDK kanal numarası.** NVR'larda SDK kanal no ≠ ISAPI
+  kanal no; dijital kanallar `StartDChan`'dan başlar (bu cihazda **33**). Yanlış numara `NET_DVR_CHANNEL_ERROR`
+  (dwError 4) veriyordu; artık `HikSession.SdkChannel(isapiChannel)` ile çevriliyor.
+- Sorun çıkarsa ilk ipuçları hâlâ geçerli: `HikSdk.ExceptionRaised` olayları, `HikException.Describe` çıktıları
+  ve `%APPDATA%\SP-2026 Lite\logs\sdk\` altındaki HCNetSDK logu.
 
 ## Nereden başlamalı
 `PROJE_DURUMU.md` genel durumu, `reversing/BULGULAR.md` eski uygulamanın nasıl çalıştığını anlatır.
-Kod tarafı tamamlandı; sıra yukarıdaki gerçek cihaz testinde.
+Kod ve gerçek cihaz testi tamamlandı; sıradaki iş **paketleme (yayınlama)** — adımlar
+[CLAUDE_REHBERI.md](CLAUDE_REHBERI.md) § 7'de.
