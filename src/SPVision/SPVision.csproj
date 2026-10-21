@@ -15,8 +15,8 @@
     <Product>SPVision</Product>
     <AssemblyTitle>SPVision</AssemblyTitle>
     <Description>SPVision - Hikvision kayıt cihazı için canlı izleme ve kayıt oynatma istemcisi</Description>
-    <!-- Uygulama ikonu ayrıca tasarlanıyor. Hazır olunca buraya ekleyin, örn.:
-         <ApplicationIcon>Assets\SPVision.ico</ApplicationIcon> -->
+    <!-- Uygulama ikonu (exe + pencere başlığı/görev çubuğu). Kaynak: Assets\SPVision.svg -->
+    <ApplicationIcon>Assets\SPVision.ico</ApplicationIcon>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
   </PropertyGroup>
 
@@ -26,6 +26,11 @@
 
   <ItemGroup>
     <PackageReference Include="FlyleafLib" Version="3.11.12" />
+  </ItemGroup>
+
+  <!-- Window icon, loaded from pack://application:,,,/Assets/SPVision.ico (see App.xaml.cs). -->
+  <ItemGroup>
+    <Resource Include="Assets\SPVision.ico" />
   </ItemGroup>
 
   <!-- FFmpeg 9 shared DLLs, fetched with tools/get-ffmpeg.ps1 -->

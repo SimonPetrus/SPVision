@@ -1,5 +1,7 @@
 ﻿using System.IO;
 using System.Windows;
+using System.Windows.Media;
+using System.Windows.Media.Imaging;
 using FlyleafLib;
 using SPVision.Core;
 using SPVision.Hik;
@@ -17,6 +19,7 @@ public partial class App : Application
     {
         base.OnStartup(e);
         DarkTitleBar.Register();
+        RegisterWindowIcon();
 
         DispatcherUnhandledException += (_, args) =>
         {
@@ -67,6 +70,34 @@ public partial class App : Application
         var window = new MainWindow();
         MainWindow = window;
         window.Show();
+    }
+
+    /// <summary>
+    /// Gives every window without its own icon the app icon (title bar + taskbar). The .ico holds 16-256 px
+    /// frames, so Windows gets a hand-drawn small icon instead of a scaled-down large one.
+    /// </summary>
+    static void RegisterWindowIcon()
+    {
+        ImageSource? icon;
+        try
+        {
+            icon = BitmapFrame.Create(new Uri("pack://application:,,,/Assets/SPVision.ico", UriKind.Absolute),
+                BitmapCreateOptions.None, BitmapCacheOption.OnLoad);
+            icon.Freeze();
+        }
+        catch (Exception ex) when (ex is IOException or NotSupportedException or FileFormatException)
+        {
+            return; // not fatal: windows fall back to the exe icon
+        }
+
+        EventManager.RegisterClassHandler(typeof(Window), FrameworkElement.LoadedEvent,
+            new RoutedEventHandler((sender, _) =>
+            {
+                if (sender is Window { Icon: null } window)
+                {
+                    window.Icon = icon;
+                }
+            }));
     }
 
     protected override void OnExit(ExitEventArgs e)
