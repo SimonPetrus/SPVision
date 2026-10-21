@@ -28,27 +28,14 @@ public sealed partial class IsapiClient : IConfigTransport
         {
             Content = new StringContent(xml, Encoding.UTF8, new MediaTypeHeaderValue("application/xml")),
         };
-        HttpResponseMessage response;
-        try
+        // A redirect throws here, before its body could pass for a ResponseStatus; it is never followed.
+        using (var response = await SendRawAsync(request, ct))
         {
-            response = await _http.SendAsync(request, ct);
-        }
-        catch (HttpRequestException e)
-        {
-            throw new IsapiException($"Cihaza bağlanılamadı: {e.Message}", connectionFailed: e.StatusCode is null);
-        }
-        catch (TaskCanceledException) when (!ct.IsCancellationRequested)
-        {
-            throw new IsapiException("Cihaz zaman aşımına uğradı.", connectionFailed: true);
-        }
-        using (response)
-        {
-            Answered = true;
-            var text = await response.Content.ReadAsStringAsync(ct);
+            var text = await ReadTextAsync(response, ct);
             XDocument? doc = null;
             try
             {
-                doc = text.Length > 0 ? XDocument.Parse(text) : null;
+                doc = text.Length > 0 ? IsapiXml.Parse(text) : null;
             }
             catch (System.Xml.XmlException)
             {
@@ -59,7 +46,7 @@ public sealed partial class IsapiClient : IConfigTransport
             }
             if (response.StatusCode == System.Net.HttpStatusCode.Unauthorized)
             {
-                throw new IsapiException("Kullanıcı adı veya şifre hatalı.", response.StatusCode);
+                throw new IsapiException(UnauthorizedMessage(response), response.StatusCode);
             }
             // A 2xx without a ResponseStatus body is not a confirmed success.
             return IsapiResponseStatus.FromHttp(response.StatusCode);

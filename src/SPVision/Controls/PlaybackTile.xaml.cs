@@ -1012,8 +1012,8 @@ public partial class PlaybackTile : UserControl
     static string Safe(string name) =>
         string.Concat(name.Select(c => System.IO.Path.GetInvalidFileNameChars().Contains(c) ? '_' : c)).Trim();
 
-    static string Shorten(string? error) =>
-        string.IsNullOrEmpty(error) ? "" : error.Length > 120 ? error[..120] + "…" : error;
+    static string Shorten(string? error) => // credentials out of any quoted RTSP URL first, then cut
+        StreamUrls.RedactCredentials(error) is var text && text.Length > 120 ? text[..120] + "…" : text;
 
     // ---- State / lifetime ----
 

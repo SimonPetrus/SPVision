@@ -536,8 +536,8 @@ public partial class VideoTile : UserControl
         "Görüntü şifrelemesi açıksa kayıt cihazının web arayüzünden kapatın: " +
         "Yapılandırma › Ağ › Gelişmiş › Platform Erişimi › \"Akış Şifreleme\".";
 
-    static string Shorten(string? error) =>
-        string.IsNullOrEmpty(error) ? "" : error.Length > 120 ? error[..120] + "…" : error;
+    static string Shorten(string? error) => // credentials out of any quoted RTSP URL first, then cut
+        StreamUrls.RedactCredentials(error) is var text && text.Length > 120 ? text[..120] + "…" : text;
 
     /// <summary>
     /// Updates the header strip. Failed/stopped tiles hide their (black) video host so the reason

@@ -20,6 +20,9 @@ public sealed class IsapiException(string message, HttpStatusCode? status = null
 /// </summary>
 public sealed partial class IsapiClient : IDisposable
 {
+    /// <summary>Largest response read at all (snapshot JPEGs); a bigger answer fails instead of filling memory.</summary>
+    internal const int MaxResponseLength = 16 * 1024 * 1024;
+
     readonly HttpClient _http;
 
     public IsapiClient(Device device, TimeSpan? timeout = null)
@@ -29,20 +32,27 @@ public sealed partial class IsapiClient : IDisposable
         var credential = new NetworkCredential(device.UserName, device.Password);
         var handler = new SocketsHttpHandler
         {
-            Credentials = new CredentialCache { { baseUri, "Digest", credential }, { baseUri, "Basic", credential } },
-            PreAuthenticate = true,
+            // Digest only: a Basic entry hands the password in clear text to whoever answers 401 Basic (a man in the
+            // middle on the LAN). Pre-authentication is Basic-only in .NET, so it stays off.
+            Credentials = new CredentialCache { { baseUri, "Digest", credential } },
+            PreAuthenticate = false,
+            // A 3xx would replay the method, body and credentials to another path, past IsapiWritePolicy.
+            AllowAutoRedirect = false,
         };
         if (device.UseHttps)
         {
             // Recorders ship self-signed certificates; they are only reached on the local network.
             handler.SslOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
         }
-        _http = new HttpClient(handler) { BaseAddress = baseUri, Timeout = timeout ?? TimeSpan.FromSeconds(10) };
+        _http = CreateHttp(handler, baseUri, timeout ?? TimeSpan.FromSeconds(10));
     }
 
     /// <summary>Tests: requests go to <paramref name="handler"/> instead of the network.</summary>
     internal IsapiClient(Uri baseUri, HttpMessageHandler handler) =>
-        _http = new HttpClient(handler) { BaseAddress = baseUri, Timeout = TimeSpan.FromSeconds(10) };
+        _http = CreateHttp(handler, baseUri, TimeSpan.FromSeconds(10));
+
+    static HttpClient CreateHttp(HttpMessageHandler handler, Uri baseUri, TimeSpan timeout) =>
+        new(handler) { BaseAddress = baseUri, Timeout = timeout, MaxResponseContentBufferSize = MaxResponseLength };
 
     /// <summary>The device has answered at least one request (any status) through this client.</summary>
     public bool Answered { get; private set; }
@@ -102,7 +112,7 @@ public sealed partial class IsapiClient : IDisposable
         {
             throw new IsapiException("Cihaz görüntü yerine farklı bir yanıt döndürdü.");
         }
-        return await response.Content.ReadAsByteArrayAsync(ct);
+        return await response.Content.ReadAsByteArrayAsync(ct); // buffered by the client, at most MaxResponseLength
     }
 
     /// <summary>
@@ -160,7 +170,7 @@ public sealed partial class IsapiClient : IDisposable
         try
         {
             using var response = await SendAsync(request, ct);
-            text = await response.Content.ReadAsStringAsync(ct);
+            text = await ReadTextAsync(response, ct);
         }
         catch (IsapiException e) when (MonthQueryUnsupported(e.Status))
         {
@@ -168,7 +178,7 @@ public sealed partial class IsapiClient : IDisposable
         }
         try
         {
-            return ParseDailyDistribution(XDocument.Parse(text));
+            return ParseDailyDistribution(IsapiXml.Parse(text));
         }
         catch (System.Xml.XmlException)
         {
@@ -231,10 +241,35 @@ public sealed partial class IsapiClient : IDisposable
 
     async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
     {
+        var response = await SendRawAsync(request, ct);
+        if (!response.IsSuccessStatusCode)
+        {
+            var status = response.StatusCode;
+            var message = status == HttpStatusCode.Unauthorized
+                ? UnauthorizedMessage(response)
+                : $"Cihaz {(int)status} {status} döndürdü ({request.RequestUri}).";
+            response.Dispose();
+            throw new IsapiException(message, status);
+        }
+        return response;
+    }
+
+    /// <summary>
+    /// One request, body buffered (at most <see cref="MaxResponseLength"/>). Transport failures, an over-long answer
+    /// and any redirect (never followed: see the handler) throw <see cref="IsapiException"/>; other statuses are
+    /// the caller's.
+    /// </summary>
+    async Task<HttpResponseMessage> SendRawAsync(HttpRequestMessage request, CancellationToken ct)
+    {
         HttpResponseMessage response;
         try
         {
             response = await _http.SendAsync(request, ct);
+        }
+        catch (HttpRequestException e) when (e.HttpRequestError == HttpRequestError.ConfigurationLimitExceeded)
+        {
+            Answered = true;
+            throw new IsapiException(TooLargeMessage);
         }
         catch (HttpRequestException e)
         {
@@ -247,23 +282,43 @@ public sealed partial class IsapiClient : IDisposable
             throw new IsapiException("Cihaz zaman aşımına uğradı.", connectionFailed: true);
         }
         Answered = true;
-        if (!response.IsSuccessStatusCode)
+        if ((int)response.StatusCode is >= 300 and < 400)
         {
             var status = response.StatusCode;
             response.Dispose();
-            throw new IsapiException(status == HttpStatusCode.Unauthorized
-                ? "Kullanıcı adı veya şifre hatalı."
-                : $"Cihaz {(int)status} {status} döndürdü ({request.RequestUri}).", status);
+            throw new IsapiException($"Cihaz isteği başka bir adrese yönlendirdi ({(int)status} {status}); yönlendirme izlenmez.", status);
         }
         return response;
     }
 
+    const string TooLargeMessage = "Cihazın yanıtı beklenenden çok büyük; okunmadı.";
+
+    /// <summary>401 text. A device that offers only Basic gets no password (Digest only, see the handler): say so.</summary>
+    static string UnauthorizedMessage(HttpResponseMessage response)
+    {
+        var schemes = response.Headers.WwwAuthenticate.Select(h => h.Scheme).ToList();
+        return schemes.Count > 0 && !schemes.Any(s => s.Equals("Digest", StringComparison.OrdinalIgnoreCase))
+            ? "Cihaz yalnızca şifreyi açık gönderen Basic kimlik doğrulamasını istedi; şifre gönderilmedi (Digest gerekir)."
+            : "Kullanıcı adı veya şifre hatalı.";
+    }
+
+    /// <summary>Body text of an XML answer, at most <see cref="IsapiXml.MaxLength"/> characters.</summary>
+    static async Task<string> ReadTextAsync(HttpResponseMessage response, CancellationToken ct)
+    {
+        if (response.Content.Headers.ContentLength > IsapiXml.MaxLength)
+        {
+            throw new IsapiException(TooLargeMessage);
+        }
+        var text = await response.Content.ReadAsStringAsync(ct);
+        return text.Length > IsapiXml.MaxLength ? throw new IsapiException(TooLargeMessage) : text;
+    }
+
     static async Task<XDocument> ReadXmlAsync(HttpResponseMessage response, CancellationToken ct)
     {
-        var text = await response.Content.ReadAsStringAsync(ct);
+        var text = await ReadTextAsync(response, ct);
         try
         {
-            return XDocument.Parse(text);
+            return IsapiXml.Parse(text);
         }
         catch (System.Xml.XmlException e)
         {

@@ -96,6 +96,27 @@ public sealed record IsapiResponseStatus(int StatusCode, string? StatusString, s
 /// <summary>Namespace-agnostic element access. Paths are "/"-separated local names of direct children.</summary>
 public static class IsapiXml
 {
+    /// <summary>Largest XML document accepted from a device, in characters (ISAPI documents are a few KB).</summary>
+    public const int MaxLength = 4 * 1024 * 1024;
+
+    /// <summary>
+    /// The one parser for device-supplied XML: like <see cref="XDocument.Parse(string)"/> (insignificant whitespace
+    /// dropped), but a DTD is refused (no entity expansion, nothing resolved from outside) and so is a document over
+    /// <see cref="MaxLength"/> characters. Throws <see cref="System.Xml.XmlException"/>.
+    /// </summary>
+    public static XDocument Parse(string text)
+    {
+        var settings = new System.Xml.XmlReaderSettings
+        {
+            DtdProcessing = System.Xml.DtdProcessing.Prohibit,
+            XmlResolver = null,
+            MaxCharactersInDocument = MaxLength,
+            IgnoreWhitespace = true, // what XDocument.Parse does without LoadOptions.PreserveWhitespace
+        };
+        using var reader = System.Xml.XmlReader.Create(new StringReader(text), settings);
+        return XDocument.Load(reader);
+    }
+
     public static XElement? Child(XElement parent, string localName) =>
         parent.Elements().FirstOrDefault(e => e.Name.LocalName == localName);
 
