@@ -40,6 +40,10 @@ public sealed class IsapiClient : IDisposable
         _http = new HttpClient(handler) { BaseAddress = baseUri, Timeout = timeout ?? TimeSpan.FromSeconds(10) };
     }
 
+    /// <summary>Tests: requests go to <paramref name="handler"/> instead of the network.</summary>
+    internal IsapiClient(Uri baseUri, HttpMessageHandler handler) =>
+        _http = new HttpClient(handler) { BaseAddress = baseUri, Timeout = TimeSpan.FromSeconds(10) };
+
     /// <summary>The device has answered at least one request (any status) through this client.</summary>
     public bool Answered { get; private set; }
 
@@ -101,18 +105,24 @@ public sealed class IsapiClient : IDisposable
         return await response.Content.ReadAsByteArrayAsync(ct);
     }
 
-    /// <summary>Finds recorded segments for one camera, following "MORE" pages.</summary>
+    /// <summary>
+    /// Finds recorded segments for one camera, following "MORE" pages. Recorders may return fewer results per
+    /// page than asked (the web UI asks for 40), so the next page starts after the results actually received.
+    /// </summary>
     public async Task<List<RecordingSegment>> SearchRecordingsAsync(int channel, DateTime from, DateTime to, CancellationToken ct = default)
     {
         var result = new List<RecordingSegment>();
         var searchId = Guid.NewGuid().ToString().ToUpperInvariant();
         const int pageSize = 100;
-        for (var position = 0; ; position += pageSize)
+        const int maxPages = 100; // a day has far fewer segments; guards against a recorder that never stops saying MORE
+        var position = 0;
+        for (var page = 0; page < maxPages; page++)
         {
             var body = BuildSearchRequest(searchId, StreamUrls.TrackId(channel, StreamQuality.Main), from, to, position, pageSize);
-            var (segments, more) = ParseSearchResult(await PostXmlAsync("ISAPI/ContentMgmt/search", body, ct));
+            var (segments, more, received) = ParseSearchPage(await PostXmlAsync("ISAPI/ContentMgmt/search", body, ct));
             result.AddRange(segments);
-            if (!more || segments.Count == 0)
+            position += received;
+            if (!more || received == 0)
             {
                 break;
             }
@@ -258,9 +268,17 @@ public sealed class IsapiClient : IDisposable
 
     internal static (List<RecordingSegment> Segments, bool More) ParseSearchResult(XDocument doc)
     {
+        var (segments, more, _) = ParseSearchPage(doc);
+        return (segments, more);
+    }
+
+    /// <summary>One result page: the valid segments, the MORE flag and how many match items the page held.</summary>
+    static (List<RecordingSegment> Segments, bool More, int Received) ParseSearchPage(XDocument doc)
+    {
         var root = doc.Root!;
         var status = Value(root, "responseStatusStrg") ?? "";
-        var segments = Elements(root, "searchMatchItem")
+        var items = Elements(root, "searchMatchItem").ToList();
+        var segments = items
             .Select(item =>
             {
                 var span = Elements(item, "timeSpan").FirstOrDefault() ?? item;
@@ -269,27 +287,32 @@ public sealed class IsapiClient : IDisposable
                     ParseTime(Value(span, "endTime")),
                     Value(item, "playbackURI") ?? "");
             })
-            .Where(s => s.End > s.Start)
+            .Where(s => s.Start != default && s.End > s.Start)
             .ToList();
-        return (segments, string.Equals(status, "MORE", StringComparison.OrdinalIgnoreCase));
+        return (segments, string.Equals(status, "MORE", StringComparison.OrdinalIgnoreCase), items.Count);
     }
 
     /// <summary>Recorders treat the trailing "Z" as their own local time, so no UTC conversion is done.</summary>
     internal static string FormatTime(DateTime t) => t.ToString("yyyy-MM-dd'T'HH:mm:ss'Z'", CultureInfo.InvariantCulture);
 
+    /// <summary>
+    /// Device wall-clock time: a "Z" or "+hh:mm" / "-hh:mm" suffix is dropped (not converted). An unreadable
+    /// value gives <c>default</c>, so that one bad item drops out instead of failing the whole search.
+    /// </summary>
     internal static DateTime ParseTime(string? s)
     {
         if (string.IsNullOrEmpty(s))
         {
             return default;
         }
-        var trimmed = s.TrimEnd('Z', 'z');
-        var plus = trimmed.IndexOfAny(['+'], 10);
-        if (plus > 0)
+        var trimmed = s.Trim().TrimEnd('Z', 'z');
+        // The offset sign comes after "yyyy-MM-ddTHH:mm:ss" (19 characters); the date's own '-' come before it.
+        var offset = trimmed.Length > 19 ? trimmed.IndexOfAny(['+', '-'], 19) : -1;
+        if (offset > 0)
         {
-            trimmed = trimmed[..plus];
+            trimmed = trimmed[..offset];
         }
-        return DateTime.Parse(trimmed, CultureInfo.InvariantCulture, DateTimeStyles.None);
+        return DateTime.TryParse(trimmed, CultureInfo.InvariantCulture, DateTimeStyles.None, out var time) ? time : default;
     }
 
     static IEnumerable<XElement> Elements(XElement parent, string localName) =>

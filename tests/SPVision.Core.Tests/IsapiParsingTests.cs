@@ -149,7 +149,75 @@ public class IsapiParsingTests
     [Theory]
     [InlineData("2026-10-20T08:15:30Z")]
     [InlineData("2026-10-20T08:15:30+03:00")]
+    [InlineData("2026-10-20T08:15:30-05:00")]
     [InlineData("2026-10-20T08:15:30")]
+    [InlineData(" 2026-10-20T08:15:30Z ")]
     public void ParsesDeviceTimesAsWallClock(string text) =>
         Assert.Equal(new DateTime(2026, 10, 20, 8, 15, 30), IsapiClient.ParseTime(text));
+
+    [Fact]
+    public void UnreadableTimeDropsOnlyThatItem()
+    {
+        Assert.Equal(default, IsapiClient.ParseTime("yesterday"));
+
+        var doc = XDocument.Parse($"""
+            <CMSearchResult xmlns="{Ns}"><responseStatusStrg>OK</responseStatusStrg><matchList>
+              <searchMatchItem><timeSpan><startTime>bad</startTime><endTime>2026-10-20T09:00:00Z</endTime></timeSpan></searchMatchItem>
+              <searchMatchItem><timeSpan><startTime>2026-10-20T10:00:00Z</startTime><endTime>2026-10-20T11:00:00Z</endTime></timeSpan></searchMatchItem>
+            </matchList></CMSearchResult>
+            """);
+
+        var (segments, _) = IsapiClient.ParseSearchResult(doc);
+
+        Assert.Single(segments);
+        Assert.Equal(new DateTime(2026, 10, 20, 10, 0, 0), segments[0].Start);
+    }
+
+    /// <summary>Answers ContentMgmt searches with fixed pages and records the requests (no network).</summary>
+    sealed class SearchPages(params string[] pages) : HttpMessageHandler
+    {
+        public List<XDocument> Requests { get; } = [];
+
+        protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+        {
+            Assert.Equal(HttpMethod.Post, request.Method);
+            Assert.EndsWith("/ISAPI/ContentMgmt/search", request.RequestUri!.AbsolutePath);
+            Requests.Add(XDocument.Parse(await request.Content!.ReadAsStringAsync(ct)));
+            return new HttpResponseMessage(System.Net.HttpStatusCode.OK) { Content = new StringContent(pages[Requests.Count - 1]) };
+        }
+    }
+
+    static string Page(string status, int firstHour, int count) =>
+        $"""<CMSearchResult xmlns="{Ns}"><responseStatusStrg>{status}</responseStatusStrg><matchList>""" +
+        string.Concat(Enumerable.Range(firstHour, count).Select(h =>
+            $"<searchMatchItem><timeSpan><startTime>2026-10-20T{h:00}:00:00Z</startTime><endTime>2026-10-20T{h:00}:30:00Z</endTime></timeSpan></searchMatchItem>")) +
+        "</matchList></CMSearchResult>";
+
+    [Fact]
+    public async Task SearchContinuesAfterTheResultsActuallyReceived()
+    {
+        // The recorder returns fewer results per page than asked (here 3, then 2): the next page must start at 3.
+        var handler = new SearchPages(Page("MORE", 0, 3), Page("OK", 3, 2));
+        using var client = new IsapiClient(new Uri("http://recorder.test/"), handler);
+
+        var segments = await client.SearchRecordingsAsync(1, new DateTime(2026, 10, 20), new DateTime(2026, 10, 20, 23, 59, 59));
+
+        Assert.Equal(5, segments.Count);
+        Assert.Equal(Enumerable.Range(0, 5).Select(h => new DateTime(2026, 10, 20, h, 0, 0)), segments.Select(s => s.Start));
+        Assert.Equal(new[] { "0", "3" }, handler.Requests.Select(r => r.Root!.Element("searchResultPostion")!.Value));
+        Assert.All(handler.Requests, r => Assert.Equal("101", r.Root!.Element("trackList")!.Element("trackID")!.Value));
+        Assert.Single(handler.Requests.Select(r => r.Root!.Element("searchID")!.Value).Distinct()); // one search, paged
+    }
+
+    [Fact]
+    public async Task DaySearchAsksForOneResult()
+    {
+        var handler = new SearchPages(Page("MORE", 8, 1), $"""<CMSearchResult xmlns="{Ns}"><responseStatusStrg>NO MATCHES</responseStatusStrg></CMSearchResult>""");
+        using var client = new IsapiClient(new Uri("http://recorder.test/"), handler);
+
+        Assert.True(await client.HasRecordingsAsync(2, new DateTime(2026, 10, 20), new DateTime(2026, 10, 20, 23, 59, 59)));
+        Assert.False(await client.HasRecordingsAsync(2, new DateTime(2026, 10, 21), new DateTime(2026, 10, 21, 23, 59, 59)));
+        Assert.All(handler.Requests, r => Assert.Equal("1", r.Root!.Element("maxResults")!.Value));
+        Assert.Equal("201", handler.Requests[0].Root!.Element("trackList")!.Element("trackID")!.Value);
+    }
 }

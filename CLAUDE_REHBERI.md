@@ -166,6 +166,28 @@ dotnet run --project src\SPVision
   kapatılır ([`HikRender`](src/SPVision/Hik/HikRender.cs)); ayar değişince açık portlara anında uygulanır. Flyleaf
   (şifresiz) yolunda böyle bir katman yoktur. Ayar `AppSettings.ShowMotionBoxes` (varsayılan açık); üst çubuktaki
   kesik çizgili kare düğmesi ve Ayarlar › Görüntü anahtarı aynı ayarı değiştirir.
+- **Oynatmada hareket kutuları (21.10.2026 düzeltmesi):** `NET_DVR_PlayBackByTime_V40`'a da pencere verilir
+  (`VodPara.Wnd`), yani SDK oynatmayı **kendi PlayCtrl portuyla** da aynı pencereye çizer — canlıdaki RealPlay
+  çizicisinin karşılığı. Eskiden yalnız bizim port kapatılıyordu, SDK'nın portu kutuları çizmeye devam ediyordu.
+  Şimdi o port `NET_DVR_GetPlayBackPlayerIndex(playHandle)` ile bulunur ve aynı `PlayM4_RenderPrivateData` anahtarı
+  ona da uygulanır (`HikRender.SetPlaybackMotionBoxes`): SYSHEAD'de port açılınca, SDK portunu geç açarsa sonraki
+  ~200 veri paketinde, `Started`'ta yeniden ve ayar değişince (karenin `_sdkGate` kuyruğunda, UI dışı). Her arama yeni
+  tutamaç + yeni port = varsayılan (açık), bu yüzden her açılışta yeniden uygulanır. Flyleaf yolu FFmpeg ile yalnız video
+  akışını çözer; Hikvision özel veri paketlerini çizmez (kutular orada hiç görünmez). Kutular kameranın kendisinde
+  görüntüye "yakılmışsa" (kamera OSD ayarı) hiçbir istemci kaldıramaz.
+- **Takvim noktaları ve zaman çizelgesi (21.10.2026):** nokta = **işaretli kameralardan herhangi birinin** o gün kaydı
+  var (yalnız odaklı kamera değil); gelecek günlere nokta konmaz; seçili günde nokta beyazdır (`SelectedFg`), diğerlerinde
+  yeşil (`Recorded`: açık `#0F7B0F`, koyu `#6CCB5F` — "online/ok" yeşiliyle aynı). Saf mantık Core
+  [`RecordedDays`](src/SPVision.Core/PlaybackSync.cs) (kamera + gün başına cevap; birleşim; başka kameranın noktaladığı gün
+  tekrar sorulmaz; en yeni günden geriye). Kamera başına arka planda bir arama döngüsü (`_markLoaders`, en çok 2 eş zamanlı
+  istek), cevaplar geldikçe noktalar tek tek belirir; kamera çıkarılınca / ay değişince döngüsü durur. (Eski hata: tek
+  odaklı kamera, 31 istek bitmeden hiç nokta yok, her odak/gün değişiminde baştan başlıyor, tek bir hata tüm ayı siliyordu.)
+  Oynatma gününün tam araması da o günün cevabı olarak yazılır. Zaman çizelgesi: odaklı kameranın kayıtları güne kırpılıp
+  birleştirilerek (`RecordingJump.ClipToDay`) yeşil çubuk olarak çizilir; odak başka kameraya geçince o kameranın kayıtları
+  arka planda yeniden aranır (bilinenler, cihaz cevap vermezse korunur). Arama başarısız olursa bilgi çubuğunda amber
+  "Kayıt listesi alınamadı: …" yazar (eskiden sessizdi: yeşil yoktu, oynatma gece yarısından başlıyordu).
+  `SearchRecordingsAsync` sonraki sayfayı **gelen sonuç sayısı kadar** ilerletir (cihaz istenenden az döndürebilir; eskiden
+  100 atlanıyordu) ve okunamayan zaman damgalı tek öğe tüm aramayı düşürmez.
 
 ### Temalar (açık / koyu / sistem)
 

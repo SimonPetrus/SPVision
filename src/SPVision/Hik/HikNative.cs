@@ -252,6 +252,10 @@ public static class HikNative
     // Only affects video the SDK decodes itself (RealPlay with a play window); display-only, nothing is sent to the device.
     [DllImport(NetSdk)] public static extern bool NET_DVR_RenderPrivateData(int realHandle, int intelType, bool enable);
 
+    // NET_DVR_API LONG __stdcall NET_DVR_GetPlayBackPlayerIndex(LONG lPlayHandle);
+    // The PlayCtrl port the SDK itself decodes/draws a playback with (PlayBackByTime_V40 got a window); -1 if none.
+    [DllImport(NetSdk)] public static extern int NET_DVR_GetPlayBackPlayerIndex(int playHandle);
+
     // ---- PlayCtrl ----
 
     [DllImport(PlayCtrl)] public static extern bool PlayM4_GetPort(ref int port);

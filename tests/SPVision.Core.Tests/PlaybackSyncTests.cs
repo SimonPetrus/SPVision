@@ -352,4 +352,113 @@ public class PlaybackSyncTests
         Assert.Equal("Şubat 2027", CalendarMonth.Title(new DateTime(2027, 2, 1)));
         Assert.Equal(new[] { "Pt", "Sa", "Ça", "Pe", "Cu", "Ct", "Pz" }, CalendarMonth.WeekdayNames);
     }
+
+    // ---- Timeline segments ----
+
+    [Fact]
+    public void TimelineSegmentsAreClippedToTheDay()
+    {
+        var segments = new[]
+        {
+            Segment(Day.AddHours(-2), At(1, 0)),          // started the evening before
+            Segment(At(23, 0), Day.AddDays(1).AddHours(2)), // runs past midnight
+            Segment(Day.AddDays(-1), Day.AddDays(-1).AddHours(5)), // other day: dropped
+        };
+
+        var clipped = RecordingJump.ClipToDay(segments, Day.AddHours(13)); // any time of the day selects the day
+
+        Assert.Equal(2, clipped.Count);
+        Assert.Equal((Day, At(1, 0)), (clipped[0].Start, clipped[0].End));
+        Assert.Equal((At(23, 0), Day.AddDays(1)), (clipped[1].Start, clipped[1].End));
+    }
+
+    [Fact]
+    public void TimelineSegmentsAreSortedAndOverlapsMerged()
+    {
+        var segments = new[]
+        {
+            Segment(At(10, 0), At(11, 0)),
+            Segment(At(8, 0), At(9, 0)),
+            Segment(At(8, 30), At(9, 30)), // overlaps the previous one
+            Segment(At(9, 30), At(9, 45)), // touches it
+            Segment(At(12, 0), At(12, 0)), // empty
+        };
+
+        var clipped = RecordingJump.ClipToDay(segments, Day);
+
+        Assert.Equal(new[] { (At(8, 0), At(9, 45)), (At(10, 0), At(11, 0)) }, clipped.Select(s => (s.Start, s.End)));
+    }
+
+    [Fact]
+    public void TimelineWithoutSegmentsIsEmpty() => Assert.Empty(RecordingJump.ClipToDay([], Day));
+
+    // ---- Calendar dots ----
+
+    static readonly DateTime Month = new(2026, 10, 1);
+
+    [Fact]
+    public void CalendarDotWhenAnyCheckedCameraRecorded()
+    {
+        var days = new RecordedDays();
+        days.Set(Cam(1), new DateTime(2026, 10, 3), true);
+        days.Set(Cam(1), new DateTime(2026, 10, 4), false);
+        days.Set(Cam(2), new DateTime(2026, 10, 4), true);
+        days.Set(Cam(2), new DateTime(2026, 10, 5), false);
+
+        Assert.Equal(new[] { 3, 4 }, days.Marked([Cam(1), Cam(2)], Month, Day).Order());
+        Assert.Equal(new[] { 3 }, days.Marked([Cam(1)], Month, Day).Order());   // camera 2 unchecked: its dot goes
+        Assert.Empty(days.Marked([Cam(3)], Month, Day));
+        Assert.Empty(days.Marked([], Month, Day));
+    }
+
+    [Fact]
+    public void CalendarNeverDotsFutureDaysOrOtherMonths()
+    {
+        var days = new RecordedDays();
+        days.Set(Cam(1), new DateTime(2026, 10, 25), true); // after "today" (21 Oct)
+        days.Set(Cam(1), new DateTime(2026, 9, 30), true);  // previous month
+        days.Set(Cam(1), Day, true);
+
+        Assert.Equal(new[] { 21 }, days.Marked([Cam(1)], Month, Day));
+        Assert.Equal(new[] { 30 }, days.Marked([Cam(1)], new DateTime(2026, 9, 1), Day));
+    }
+
+    [Fact]
+    public void CalendarSearchGoesNewestFirstAndSkipsDaysAlreadyDotted()
+    {
+        var days = new RecordedDays();
+
+        Assert.Equal(Day, days.NextToSearch(Cam(1), [Cam(1), Cam(2)], Month, Day)); // today first, never the future
+
+        days.Set(Cam(1), Day, false);
+        days.Set(Cam(2), new DateTime(2026, 10, 20), true);
+
+        // 20 Oct is dotted by camera 2 already: camera 1 is not asked about it.
+        Assert.Equal(new DateTime(2026, 10, 19), days.NextToSearch(Cam(1), [Cam(1), Cam(2)], Month, Day));
+        // Camera 2 unchecked: camera 1 has to answer 20 Oct itself.
+        Assert.Equal(new DateTime(2026, 10, 20), days.NextToSearch(Cam(1), [Cam(1)], Month, Day));
+        Assert.True(days.Get(Cam(1), Day.AddHours(12)) == false); // any time of the day is that day
+        Assert.Null(days.Get(Cam(1), new DateTime(2026, 10, 19)));
+    }
+
+    [Fact]
+    public void CalendarSearchEndsWhenEveryDayIsKnown()
+    {
+        var days = new RecordedDays();
+        var september = new DateTime(2026, 9, 1);
+        for (var day = september; day.Month == 9; day = day.AddDays(1))
+        {
+            days.Set(Cam(1), day, day.Day % 2 == 0);
+        }
+
+        Assert.Null(days.NextToSearch(Cam(1), [Cam(1)], september, Day));
+        Assert.Equal(15, days.Marked([Cam(1)], september, Day).Count);
+    }
+
+    [Fact]
+    public void SearchFailureText()
+    {
+        Assert.Equal("Kayıt listesi alınamadı: Cihaz zaman aşımına uğradı.", PlaybackText.SearchFailed("Cihaz zaman aşımına uğradı."));
+        Assert.Equal("Kayıt listesi alınamadı", PlaybackText.SearchFailed(""));
+    }
 }

@@ -31,4 +31,32 @@ static class HikRender
             }
         }
     }
+
+    /// <summary>
+    /// Playback: the SDK decodes and draws the stream into the window given to NET_DVR_PlayBackByTime_V40 with
+    /// its own PlayCtrl port (the playback counterpart of the RealPlay renderer above). Same switch on that port,
+    /// so its boxes do not show over ours. Returns false while the SDK has not opened that port yet.
+    /// </summary>
+    public static bool SetPlaybackMotionBoxes(int playHandle, int ownPort, bool show)
+    {
+        if (playHandle < 0)
+        {
+            return false;
+        }
+        int sdkPort;
+        try
+        {
+            sdkPort = HikNative.NET_DVR_GetPlayBackPlayerIndex(playHandle);
+        }
+        catch (EntryPointNotFoundException)
+        {
+            return true; // older DLLs: nothing to find, stop asking
+        }
+        if (sdkPort < 0 || sdkPort == ownPort)
+        {
+            return false;
+        }
+        SetMotionBoxes(sdkPort, -1, show);
+        return true;
+    }
 }

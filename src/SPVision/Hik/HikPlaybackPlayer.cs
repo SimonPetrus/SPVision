@@ -25,8 +25,13 @@ public sealed class HikPlaybackPlayer : IDisposable
     bool _saving;
     bool _paused;
     int _appliedSteps;          // speed steps applied to the current handle (0 = normal)
+    int _sdkPortTries;          // data packets left to look for the SDK's own port of this handle (motion boxes off)
+    volatile bool _showMotionBoxes = true;
     volatile bool _started;
     volatile bool _disposed;
+
+    /// <summary>Data packets after the stream header during which the SDK's own playback port is looked for.</summary>
+    const int SdkPortTries = 200;
 
     public HikPlaybackPlayer()
     {
@@ -45,8 +50,11 @@ public sealed class HikPlaybackPlayer : IDisposable
     public bool IsRunning { get { lock (_lock) return _playHandle >= 0; } }
     public bool IsStarted => _started;
 
-    /// <summary>Draw the recorder's motion / analysis boxes; read when the PlayCtrl port opens.</summary>
-    public bool ShowMotionBoxes { get; set; } = true;
+    /// <summary>
+    /// Draw the recorder's motion / analysis boxes; read when the PlayCtrl port opens (every seek is a new handle
+    /// and a new port, which start with PlayCtrl's default: drawn).
+    /// </summary>
+    public bool ShowMotionBoxes { get => _showMotionBoxes; set => _showMotionBoxes = value; }
 
     public bool IsSaving { get { lock (_lock) return _saving; } }
     public bool IsPaused { get { lock (_lock) return _paused; } }
@@ -67,6 +75,7 @@ public sealed class HikPlaybackPlayer : IDisposable
             _started = false;
             _paused = false;
             _appliedSteps = 0;
+            _sdkPortTries = 0;
             _callback = OnPlayData;
             streamKeyPending = string.IsNullOrEmpty(streamKey) ? null : streamKey;
             windowHandlePending = hWnd.ToInt32();
@@ -268,15 +277,27 @@ public sealed class HikPlaybackPlayer : IDisposable
         }
     }
 
-    /// <summary>Switches the motion / analysis boxes on the running playback (no-op before the port opens).</summary>
+    /// <summary>
+    /// Switches the motion / analysis boxes on the running playback: our port and the SDK's own playback port
+    /// (no-op before the ports open; the open applies <see cref="ShowMotionBoxes"/> itself). Takes the player
+    /// lock, which control commands hold while the recorder answers: call it off the UI thread.
+    /// </summary>
     public void SetMotionBoxes(bool show)
     {
         ShowMotionBoxes = show;
         lock (_lock)
         {
-            if (!_disposed && _port >= 0)
+            if (_disposed || _playHandle < 0)
+            {
+                return;
+            }
+            if (_port >= 0)
             {
                 HikRender.SetMotionBoxes(_port, -1, show);
+            }
+            if (HikRender.SetPlaybackMotionBoxes(_playHandle, _port, show))
+            {
+                _sdkPortTries = 0;
             }
         }
     }
@@ -316,6 +337,13 @@ public sealed class HikPlaybackPlayer : IDisposable
                     int hwndValue = windowHandlePending;
                     if (!HikNative.PlayM4_Play(_port, (IntPtr)hwndValue))
                         throw HikException.LastError("PlayCtrl oynatmayı başlatamadı");
+
+                    // The SDK draws this playback into the same window with its own port, which also starts
+                    // with the boxes on. It may open that port after this header: keep looking for a while.
+                    if (!ShowMotionBoxes && !HikRender.SetPlaybackMotionBoxes(handle, _port, false))
+                    {
+                        _sdkPortTries = SdkPortTries;
+                    }
                 }
                 _started = true;
                 Started?.Invoke();
@@ -324,6 +352,11 @@ public sealed class HikPlaybackPlayer : IDisposable
 
             if (dataType == HikNative.StreamData && port >= 0)
             {
+                // Hot path: a plain counter check; the lookup is a local SDK call (no network).
+                if (_sdkPortTries > 0)
+                {
+                    _sdkPortTries = !ShowMotionBoxes && !HikRender.SetPlaybackMotionBoxes(handle, port, false) ? _sdkPortTries - 1 : 0;
+                }
                 for (int i = 0; i < 50; i++)
                 {
                     if (HikNative.PlayM4_InputData(port, buffer, size)) return;

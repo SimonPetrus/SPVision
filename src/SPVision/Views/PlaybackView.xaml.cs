@@ -55,7 +55,9 @@ public partial class PlaybackView : UserControl
     readonly Stopwatch _clock = new();
     readonly Stopwatch _holdWatch = new();
     readonly SemaphoreSlim _searches = new(4, 4); // ISAPI searches at once (the recorder serves them one by one anyway)
-    readonly Dictionary<(Guid Device, int Channel, DateTime Month), HashSet<int>> _recordedDays = [];
+    readonly SemaphoreSlim _markSearches = new(2, 2); // calendar day searches at once (behind the playback day's own)
+    readonly RecordedDays _recordedDays = new();
+    readonly Dictionary<CameraRef, CancellationTokenSource> _markLoaders = []; // calendar searches per checked camera
 
     GridLayout _layout = GridLayout.PlaybackDefault;
     PlaybackSlots _slots = new(GridLayout.PlaybackDefault.TileCount);
@@ -72,7 +74,8 @@ public partial class PlaybackView : UserControl
     string? _message;
     bool _stateChangePending;
     CancellationTokenSource _dayCts = new();
-    CancellationTokenSource? _marksCts;
+    DateTime _markMonth;               // month the running calendar searches are for
+    (CameraRef Camera, DateTime Day)? _timelineKey; // focused camera and day the timeline last asked the recorder for
 
     public PlaybackView()
     {
@@ -187,7 +190,7 @@ public partial class PlaybackView : UserControl
         _active = false;
         _tick.Stop();
         _dayCts.Cancel();
-        _marksCts?.Cancel();
+        CancelMarkLoaders(_ => true);
         foreach (var tile in _tiles)
         {
             tile.Release();
@@ -322,11 +325,7 @@ public partial class PlaybackView : UserControl
         {
             return;
         }
-        if (ReferenceEquals(tile, FocusedTile))
-        {
-            UpdateTimeline();
-            _ = LoadRecordedDaysAsync();
-        }
+        OnSegmentsLoaded(tile);
         if (!_active)
         {
             return;
@@ -340,6 +339,37 @@ public partial class PlaybackView : UserControl
             TryStart();
         }
         UpdateUi();
+    }
+
+    /// <summary>
+    /// The focused camera's recordings were searched again (focus moved to it): the recorder may have more by now,
+    /// or the earlier search failed. Known segments stay when it does not answer.
+    /// </summary>
+    async Task RefreshSegmentsAsync(PlaybackTile tile, CancellationToken ct)
+    {
+        if (await tile.LoadSegmentsAsync(_day, _searches, ct, keepOnFailure: true) && !ct.IsCancellationRequested)
+        {
+            OnSegmentsLoaded(tile);
+        }
+    }
+
+    /// <summary>A tile's search of the day finished: calendar dot of the day, and the timeline if it is focused.</summary>
+    void OnSegmentsLoaded(PlaybackTile tile)
+    {
+        if (tile.Source is { } source && tile.Segments is { } segments)
+        {
+            _recordedDays.Set(source, _day, segments.Count > 0);
+        }
+        LoadRecordedDays();
+        if (ReferenceEquals(tile, FocusedTile))
+        {
+            UpdateTimeline();
+            if (tile.Segments is null && tile.SearchError is { } error)
+            {
+                ShowMessage(PlaybackText.SearchFailed(error)); // otherwise the timeline simply stays without green
+                _timelineKey = null; // asked again on the next focus or camera change
+            }
+        }
     }
 
     /// <summary>
@@ -541,13 +571,32 @@ public partial class PlaybackView : UserControl
         UpdateTimeline();
         UpdateRows();
         UpdateUi();
-        _ = LoadRecordedDaysAsync();
+        LoadRecordedDays();
+        RefreshFocusedSegments();
         TryStart();
     }
 
+    /// <summary>
+    /// Focus moved to another camera (or the day changed): its recordings are asked for again. A tile still
+    /// searching delivers them itself; one that searched earlier is searched once more (in the background).
+    /// </summary>
+    void RefreshFocusedSegments()
+    {
+        if (FocusedTile is not { Source: { } source } focused || _timelineKey == (source, _day))
+        {
+            return;
+        }
+        _timelineKey = (source, _day);
+        if (focused.SearchDone)
+        {
+            _ = RefreshSegmentsAsync(focused, _dayCts.Token);
+        }
+    }
+
+    /// <summary>Recorded segments of the focused camera, clipped to the day, as green bars on the timeline.</summary>
     void UpdateTimeline()
     {
-        Timeline.SetDay(_day, FocusedTile?.Segments ?? []);
+        Timeline.SetDay(_day, RecordingJump.ClipToDay(FocusedTile?.Segments ?? [], _day));
         Timeline.Position = _hasTime ? Master : null;
     }
 
@@ -584,20 +633,23 @@ public partial class PlaybackView : UserControl
             DayGrid.Children.Add(button);
         }
         NextMonthButton.IsEnabled = _month < new DateTime(DateTime.Today.Year, DateTime.Today.Month, 1);
-        UpdateDayButtons();
-        _ = LoadRecordedDaysAsync();
+        LoadRecordedDays();
     }
 
-    /// <summary>Selected day highlighted; days with recordings of the focused camera carry a dot.</summary>
+    /// <summary>Cameras checked in the list (they are in the grid): the calendar dots are theirs.</summary>
+    List<CameraRef> CheckedCameras() => _slots.Slots.OfType<CameraRef>().Distinct().ToList();
+
+    /// <summary>
+    /// Selected day highlighted; a day carries a green dot when any checked camera recorded on it (white on the
+    /// selected day's accent). Days after today never do.
+    /// </summary>
     void UpdateDayButtons()
     {
-        var marks = FocusedTile is { Device: { } device, Camera: { } camera } &&
-                    _recordedDays.TryGetValue((device.Id, camera.Channel, _month), out var days) ? days : null;
+        var marked = _recordedDays.Marked(CheckedCameras(), _month, DateTime.Today);
         foreach (var (button, dot, date) in _dayButtons)
         {
             var selected = date == _day;
-            var recorded = marks?.Contains(date.Day) == true ||
-                           (selected && FocusedTile?.Segments is { Count: > 0 });
+            var recorded = marked.Contains(date.Day);
             button.IsChecked = selected;
             if (recorded)
             {
@@ -612,43 +664,87 @@ public partial class PlaybackView : UserControl
         }
     }
 
-    /// <summary>Asks the recorder, day by day, whether the focused camera recorded anything (one result per day).</summary>
-    async Task LoadRecordedDaysAsync()
+    /// <summary>
+    /// Dots for the shown month: one background search per checked camera that is not running yet (camera
+    /// unchecked or month changed → its search stops). Answers are kept, so nothing is asked twice; dots appear
+    /// day by day as the recorder answers.
+    /// </summary>
+    void LoadRecordedDays()
     {
-        _marksCts?.Cancel();
         UpdateDayButtons();
-        if (FocusedTile is not { Device: { } device, Camera: { } camera })
+        var cameras = CheckedCameras();
+        if (_markMonth != _month)
         {
-            return;
+            CancelMarkLoaders(_ => true);
+            _markMonth = _month;
         }
-        var key = (device.Id, camera.Channel, _month);
-        if (_recordedDays.ContainsKey(key))
+        CancelMarkLoaders(camera => !cameras.Contains(camera));
+        foreach (var camera in cameras.Where(c => !_markLoaders.ContainsKey(c)))
         {
-            return;
+            var cts = new CancellationTokenSource();
+            _markLoaders[camera] = cts;
+            _ = LoadMarksAsync(camera, _month, cts);
         }
-        var cts = _marksCts = new CancellationTokenSource();
-        var days = new HashSet<int>();
+    }
+
+    void CancelMarkLoaders(Func<CameraRef, bool> match)
+    {
+        foreach (var (camera, cts) in _markLoaders.Where(l => match(l.Key)).ToList())
+        {
+            cts.Cancel();
+            _markLoaders.Remove(camera);
+        }
+    }
+
+    /// <summary>
+    /// Asks the recorder, day by day (newest first), whether the camera recorded anything: the read-only
+    /// recording search with one result per day. Days another checked camera already dotted are skipped. A
+    /// failure leaves the remaining days unknown; they are asked again on the next focus, day or camera change.
+    /// </summary>
+    async Task LoadMarksAsync(CameraRef source, DateTime month, CancellationTokenSource cts)
+    {
         try
         {
-            using var isapi = new IsapiClient(device, TimeSpan.FromSeconds(10));
-            for (var date = _month; date.Month == _month.Month && date <= DateTime.Today; date = date.AddDays(1))
+            if (FindCamera(source) is not { } found)
             {
-                if (await isapi.HasRecordingsAsync(camera.Channel, date, date.AddDays(1).AddSeconds(-1), cts.Token))
+                return;
+            }
+            using var isapi = new IsapiClient(found.Device, TimeSpan.FromSeconds(10));
+            while (!cts.IsCancellationRequested &&
+                   _recordedDays.NextToSearch(source, CheckedCameras(), month, DateTime.Today) is { } day)
+            {
+                bool recorded;
+                await _markSearches.WaitAsync(cts.Token);
+                try
                 {
-                    days.Add(date.Day);
+                    recorded = await isapi.HasRecordingsAsync(found.Camera.Channel, day, day.AddDays(1).AddSeconds(-1), cts.Token);
+                }
+                finally
+                {
+                    _markSearches.Release();
+                }
+                _recordedDays.Set(source, day, recorded);
+                if (!cts.IsCancellationRequested)
+                {
+                    UpdateDayButtons();
                 }
             }
         }
         catch (OperationCanceledException)
         {
-            return;
         }
-        catch (IsapiException)
+        catch (Exception e) when (e is IsapiException or UriFormatException)
         {
-            return; // no marks; the day search itself still works
+            // No dots for the days left; the playback day's own search still works (and shows its error).
         }
-        _recordedDays[key] = days;
-        UpdateDayButtons();
+        finally
+        {
+            if (_markLoaders.TryGetValue(source, out var current) && current == cts)
+            {
+                _markLoaders.Remove(source);
+            }
+            cts.Dispose();
+        }
     }
 
     void PrevMonth_Click(object sender, RoutedEventArgs e)

@@ -70,6 +70,9 @@ public partial class PlaybackTile : UserControl
     /// <summary>The recording search of the day has finished (successfully or not): the tile can join the playback.</summary>
     public bool SearchDone { get; private set; }
 
+    /// <summary>Why the last recording search failed (shown by the view for the focused camera); null when it worked.</summary>
+    public string? SearchError { get; private set; }
+
     public TileState State => _state;
 
     /// <summary>Waiting for its next recording (or the recording ended): resumed by the view when the shared time is recorded.</summary>
@@ -128,6 +131,7 @@ public partial class PlaybackTile : UserControl
         Camera = camera;
         Segments = null;
         SearchDone = false;
+        SearchError = null;
         IsParked = false;
         _preferHik = false;
         EmptyFrame.Visibility = Visibility.Collapsed;
@@ -150,6 +154,7 @@ public partial class PlaybackTile : UserControl
         Camera = null;
         Segments = null;
         SearchDone = false;
+        SearchError = null;
         IsParked = false;
         ShowEmpty();
     }
@@ -163,8 +168,11 @@ public partial class PlaybackTile : UserControl
         }
     }
 
-    /// <summary>Searches the camera's recordings of the day (ISAPI). False when the tile changed meanwhile.</summary>
-    public async Task<bool> LoadSegmentsAsync(DateTime day, SemaphoreSlim searches, CancellationToken ct)
+    /// <summary>
+    /// Searches the camera's recordings of the day (ISAPI, read-only). False when the tile changed meanwhile.
+    /// <paramref name="keepOnFailure"/>: a refresh of known segments keeps them when the recorder does not answer.
+    /// </summary>
+    public async Task<bool> LoadSegmentsAsync(DateTime day, SemaphoreSlim searches, CancellationToken ct, bool keepOnFailure = false)
     {
         if (Device is not { } device || Camera is not { } camera)
         {
@@ -172,6 +180,7 @@ public partial class PlaybackTile : UserControl
         }
         var generation = _showGeneration;
         List<RecordingSegment>? segments;
+        string? error = null;
         try
         {
             await searches.WaitAsync(ct);
@@ -192,12 +201,17 @@ public partial class PlaybackTile : UserControl
         catch (Exception e) when (e is IsapiException or UriFormatException)
         {
             segments = null; // unknown: the tile simply plays from the requested time
+            error = e.Message;
         }
         if (generation != _showGeneration || ct.IsCancellationRequested)
         {
             return false; // the tile got another camera (or day) meanwhile
         }
-        Segments = segments;
+        if (segments is not null || !keepOnFailure || Segments is null)
+        {
+            Segments = segments;
+            SearchError = error;
+        }
         SearchDone = true;
         return true;
     }
@@ -286,8 +300,37 @@ public partial class PlaybackTile : UserControl
         }
     }
 
-    /// <summary>Settings or the top bar toggled the motion boxes.</summary>
-    public void ApplyMotionBoxes(bool show) => _hikPlayer?.SetMotionBoxes(show);
+    /// <summary>
+    /// Settings or the top bar toggled the motion boxes (SDK path; Flyleaf does not draw the recorder's private
+    /// data). An open in progress picks the value up when its port opens; a running stream is switched in the
+    /// tile's SDK queue, off the UI thread (the player lock is held while the recorder answers a command).
+    /// </summary>
+    public void ApplyMotionBoxes(bool show)
+    {
+        if (_hikPlayer is not { } player)
+        {
+            return;
+        }
+        player.ShowMotionBoxes = show;
+        Task.Run(async () =>
+        {
+            await _sdkGate.WaitAsync();
+            try
+            {
+                if (!player.IsDisposed)
+                {
+                    player.SetMotionBoxes(show);
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+            finally
+            {
+                _sdkGate.Release();
+            }
+        });
+    }
 
     /// <summary>Stops playback (view left); the camera stays assigned.</summary>
     public void Stop()
@@ -433,6 +476,10 @@ public partial class PlaybackTile : UserControl
             player.RequestedSpeedSteps = PlaybackSpeed.Steps(_speedIndex);
             player.RequestedPaused = _paused;
             SyncSdkControls(player);
+            if (!App.Settings.ShowMotionBoxes)
+            {
+                ApplyMotionBoxes(false); // again on the running handle (the SDK's own port may open after ours)
+            }
         });
     }
 

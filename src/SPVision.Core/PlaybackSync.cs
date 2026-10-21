@@ -186,6 +186,91 @@ public static class RecordingJump
     /// <summary>Start of the first recording after <paramref name="time"/>, if any.</summary>
     public static DateTime? NextStart(IReadOnlyList<RecordingSegment> segments, DateTime time) =>
         segments.Where(s => s.Start > time).Select(s => (DateTime?)s.Start).Min();
+
+    /// <summary>
+    /// The segments as the timeline draws them: clipped to <paramref name="day"/> (a recording running over
+    /// midnight is cut at 00:00 / 24:00), empty ones dropped, sorted, overlapping or touching ones merged.
+    /// </summary>
+    public static IReadOnlyList<RecordingSegment> ClipToDay(IEnumerable<RecordingSegment> segments, DateTime day)
+    {
+        var dayStart = day.Date;
+        var dayEnd = dayStart.AddDays(1);
+        var result = new List<RecordingSegment>();
+        var clipped = segments
+            .Select(s => s with { Start = s.Start < dayStart ? dayStart : s.Start, End = s.End > dayEnd ? dayEnd : s.End })
+            .Where(s => s.End > s.Start)
+            .OrderBy(s => s.Start);
+        foreach (var segment in clipped)
+        {
+            if (result.Count > 0 && segment.Start <= result[^1].End)
+            {
+                if (segment.End > result[^1].End)
+                {
+                    result[^1] = result[^1] with { End = segment.End };
+                }
+                continue;
+            }
+            result.Add(segment);
+        }
+        return result;
+    }
+}
+
+/// <summary>
+/// Calendar dots of the playback sidebar. A day gets a dot when ANY of the checked cameras recorded on it;
+/// days after today never get one. Answers are kept per camera and day, so unchecking a camera only removes
+/// the dots it alone gave, and a day already dotted by one camera is not asked again for the others.
+/// </summary>
+public sealed class RecordedDays
+{
+    readonly Dictionary<(CameraRef Camera, DateTime Day), bool> _known = [];
+
+    /// <summary>Stores the recorder's answer (a day search, or the full recording search of the playback day).</summary>
+    public void Set(CameraRef camera, DateTime day, bool recorded) => _known[(camera, day.Date)] = recorded;
+
+    /// <summary>The stored answer; null when the camera was not asked about that day yet.</summary>
+    public bool? Get(CameraRef camera, DateTime day) => _known.TryGetValue((camera, day.Date), out var recorded) ? recorded : null;
+
+    /// <summary>Day numbers of <paramref name="month"/> that carry a dot for the given cameras.</summary>
+    public IReadOnlySet<int> Marked(IEnumerable<CameraRef> cameras, DateTime month, DateTime today)
+    {
+        var list = cameras.Distinct().ToList();
+        var days = new HashSet<int>();
+        foreach (var day in DaysOf(month, today))
+        {
+            if (list.Any(c => Get(c, day) == true))
+            {
+                days.Add(day.Day);
+            }
+        }
+        return days;
+    }
+
+    /// <summary>
+    /// The next day <paramref name="camera"/> should be asked about, newest first: up to today, not answered
+    /// for this camera yet and not already dotted by another of <paramref name="cameras"/>. Null when done.
+    /// </summary>
+    public DateTime? NextToSearch(CameraRef camera, IEnumerable<CameraRef> cameras, DateTime month, DateTime today)
+    {
+        var others = cameras.Where(c => c != camera).Distinct().ToList();
+        foreach (var day in DaysOf(month, today).Reverse())
+        {
+            if (Get(camera, day) is null && !others.Any(c => Get(c, day) == true))
+            {
+                return day;
+            }
+        }
+        return null;
+    }
+
+    static IEnumerable<DateTime> DaysOf(DateTime month, DateTime today)
+    {
+        var first = new DateTime(month.Year, month.Month, 1);
+        for (var day = first; day.Month == first.Month && day <= today.Date; day = day.AddDays(1))
+        {
+            yield return day;
+        }
+    }
 }
 
 /// <summary>Playback speed steps: 1/8×, 1/4×, 1/2×, 1×, 2×, 4×, 8×.</summary>
@@ -289,6 +374,10 @@ public static class PlaybackText
 
     public static string NoneAfter(DateTime lastEnd) =>
         $"Bu saatten sonra kayıt yok (son kayıt {lastEnd.ToString("HH:mm", CultureInfo.InvariantCulture)})";
+
+    /// <summary>The recording search of the focused camera failed: no green segments, playback still works.</summary>
+    public static string SearchFailed(string reason) =>
+        string.IsNullOrWhiteSpace(reason) ? "Kayıt listesi alınamadı" : $"Kayıt listesi alınamadı: {reason}";
 
     /// <summary>"Saate git": two digit fields; null when they do not form a valid time of day.</summary>
     public static TimeSpan? ParseTimeOfDay(string? hours, string? minutes) =>
