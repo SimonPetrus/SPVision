@@ -12,8 +12,8 @@ public class PlaybackCatchUpTests
 
     static DateTime At(double secondsFromMidnight) => Midnight + TimeSpan.FromSeconds(secondsFromMidnight);
 
-    static CatchUpAction Decide(DateTime? frame, DateTime? other = null, double elapsed = 0.5, bool canReopen = true) =>
-        PlaybackCatchUp.Decide(Midnight, frame, other, TimeSpan.FromSeconds(elapsed), canReopen);
+    static CatchUpAction Decide(DateTime? frame, double elapsed = 0.5, bool canReopen = true) =>
+        PlaybackCatchUp.Decide(Midnight, frame, TimeSpan.FromSeconds(elapsed), canReopen);
 
     [Fact]
     public void Key_frame_of_the_previous_day_is_fast_forwarded_hidden()
@@ -36,14 +36,12 @@ public class PlaybackCatchUpTests
     }
 
     [Fact]
-    public void Both_renderers_of_the_window_must_be_past_the_requested_time()
+    public void The_window_is_shown_once_its_only_renderer_is_a_few_frames_past_the_requested_time()
     {
-        // The SDK's own playback port draws into the same window and lags ours by ~0.1 s at 4×.
-        Assert.Equal(CatchUpAction.Settle, Decide(At(0.2), other: At(0.07)));
-        Assert.Equal(CatchUpAction.FastForward, Decide(At(-2), other: At(-2.1)));
-        Assert.Equal(CatchUpAction.Reveal, Decide(At(0.25), other: At(0.13)));
-        Assert.Equal(CatchUpAction.Reveal, Decide(At(0.2), other: At(0.4))); // the other one ahead: ours decides
-        Assert.Equal(CatchUpAction.Reveal, Decide(At(0.2), other: null));    // SDK port not known: ours only
+        // Our port is the window's only renderer (the SDK gets no window): its frame time alone decides.
+        Assert.Equal(CatchUpAction.Settle, Decide(At(0.119)));
+        Assert.Equal(CatchUpAction.Reveal, Decide(At(0.12)));
+        Assert.Equal(CatchUpAction.Reveal, Decide(At(0.2)));
     }
 
     [Fact]

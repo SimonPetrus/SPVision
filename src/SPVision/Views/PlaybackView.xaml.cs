@@ -620,7 +620,7 @@ public partial class PlaybackView : UserControl
                 {
                     tile.SetNudge(SyncNudge.None); // became the focused tile (the reference), or left the SDK path
                 }
-                switch (PlaybackSync.Decide(master, tileTime, tile.IsParked, tile.Segments, tolerance, Rate, canNudge, tile.Nudge, tile.NudgeAge))
+                switch (PlaybackSync.Decide(master, tileTime, tile.IsParked, tile.Segments, tolerance, Rate, canNudge, tile.Nudge, tile.SinceNudgeChange))
                 {
                     case SyncAction.Seek:
                         tile.SeekTo(LeadFor(tile), _speed, _paused);

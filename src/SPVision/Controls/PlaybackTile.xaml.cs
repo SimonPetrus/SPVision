@@ -98,10 +98,23 @@ public partial class PlaybackTile : UserControl
     /// <summary>How the view is bringing this tile back in step without reopening it (SDK path only).</summary>
     public SyncNudge Nudge { get; private set; }
 
-    DateTime _nudgeSince;
+    DateTime _nudgeChanged = DateTime.MinValue;
 
-    /// <summary>How long the current nudge runs (real time).</summary>
-    public TimeSpan NudgeAge => Nudge == SyncNudge.None ? TimeSpan.Zero : DateTime.UtcNow - _nudgeSince;
+    /// <summary>
+    /// Real time since the nudge last started or ended (the age of a running nudge): the drift correction changes a
+    /// tile's speed / pause at most once a second (<see cref="PlaybackSync.MinNudgeHold"/>).
+    /// </summary>
+    public TimeSpan SinceNudgeChange => DateTime.UtcNow - _nudgeChanged;
+
+    /// <summary>Back to the shared speed / pause without a command of its own (the caller sends the controls or reopens).</summary>
+    void ClearNudge()
+    {
+        if (Nudge != SyncNudge.None)
+        {
+            Nudge = SyncNudge.None;
+            _nudgeChanged = DateTime.UtcNow;
+        }
+    }
 
     /// <summary>
     /// The tile's time is the real frame time and it can be sped up / held (SDK path). Flyleaf's RTSP playback is paced
@@ -275,7 +288,7 @@ public partial class PlaybackTile : UserControl
     {
         _speedIndex = speedIndex;
         _paused = paused;
-        Nudge = SyncNudge.None; // a fresh open starts at the shared speed
+        ClearNudge(); // a fresh open starts at the shared speed
         if (Device is null || Camera is null)
         {
             return;
@@ -307,7 +320,7 @@ public partial class PlaybackTile : UserControl
     public void Park(IReadOnlyList<RecordingSegment>? segments, DateTime time)
     {
         StopClip();
-        Nudge = SyncNudge.None;
+        ClearNudge();
         StopPlayers();
         IsParked = true;
         var next = segments is null ? null : RecordingJump.NextStart(segments, time);
@@ -321,7 +334,7 @@ public partial class PlaybackTile : UserControl
     public void SetSpeed(int speedIndex)
     {
         _speedIndex = speedIndex;
-        Nudge = SyncNudge.None;
+        ClearNudge();
         if (_hikPlayer is { } hik && UsesSdk)
         {
             ApplySdkControls(hik);
@@ -335,7 +348,7 @@ public partial class PlaybackTile : UserControl
     public void SetPaused(bool paused)
     {
         _paused = paused;
-        Nudge = SyncNudge.None;
+        ClearNudge();
         if (_hikPlayer is { } hik && UsesSdk)
         {
             ApplySdkControls(hik);
@@ -365,7 +378,7 @@ public partial class PlaybackTile : UserControl
             return;
         }
         Nudge = nudge;
-        _nudgeSince = DateTime.UtcNow;
+        _nudgeChanged = DateTime.UtcNow;
         if (_hikPlayer is { } hik && UsesSdk)
         {
             ApplySdkControls(hik);
@@ -413,7 +426,7 @@ public partial class PlaybackTile : UserControl
     public void Stop()
     {
         StopClip();
-        Nudge = SyncNudge.None;
+        ClearNudge();
         StopPlayers();
         IsParked = false;
         if (Camera is not null)
@@ -587,12 +600,9 @@ public partial class PlaybackTile : UserControl
                 return;
             }
             _preferHik = true;
-            // The shared speed / pause the catch-up returns to (a fresh handle plays at normal speed).
+            // The shared speed / pause the catch-up returns to (a fresh handle plays at normal speed). Motion boxes: our
+            // port, the only renderer, applied the setting when it opened.
             SetRequestedControls(player);
-            if (!App.Settings.ShowMotionBoxes)
-            {
-                ApplyMotionBoxes(false); // again on the running handle (the SDK's own port may open after ours)
-            }
             StartCatchUp(player);
         });
     }
