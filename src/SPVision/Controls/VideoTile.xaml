@@ -1,0 +1,99 @@
+<UserControl x:Class="SPVision.Controls.VideoTile"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:fl="clr-namespace:FlyleafLib.Controls.WPF;assembly=FlyleafLib"
+             xmlns:local="clr-namespace:SPVision.Controls"
+             x:Name="Root" Focusable="True" FocusVisualStyle="{x:Null}" AllowDrop="True"
+             MouseLeftButtonDown="Tile_MouseLeftButtonDown" MouseMove="Tile_MouseMove"
+             DragEnter="Tile_DragOver" DragOver="Tile_DragOver" Drop="Tile_Drop">
+    <!-- 2 px on every side: the live grid adds 2 px more, giving a 4 px gutter and 4 px gaps. -->
+    <Grid x:Name="LayoutRoot" Margin="2" Background="{StaticResource HitTestBg}">
+        <Grid.ContextMenu>
+            <ContextMenu x:Name="Menu" Opened="Menu_Opened">
+                <MenuItem x:Name="MenuMain" Header="HD — ana akış" Click="MenuMain_Click" />
+                <MenuItem x:Name="MenuSub" Header="SD — alt akış" Click="MenuSub_Click" />
+                <MenuItem x:Name="MenuAuto" Header="Otomatik (kare boyutuna göre)" Click="MenuAuto_Click" />
+                <Separator />
+                <MenuItem x:Name="MenuSnapshot" Header="Anlık görüntü al" Click="MenuSnapshot_Click" />
+                <MenuItem x:Name="MenuRecord" Header="Kaydı başlat" Click="MenuRecord_Click" />
+                <Separator />
+                <MenuItem x:Name="MenuReconnect" Header="Yeniden bağlan" Click="MenuReconnect_Click" />
+                <MenuItem x:Name="MenuClose" Header="Kareyi kapat" Click="MenuClose_Click" />
+                <Separator />
+                <MenuItem x:Name="MenuStopAll" Header="Tüm kareleri durdur" Click="MenuStopAll_Click" />
+                <MenuItem x:Name="MenuFolders" Header="Görüntü ve kayıt klasörlerini aç" Click="MenuFolders_Click" />
+            </ContextMenu>
+        </Grid.ContextMenu>
+
+        <!-- Empty tile: dashed outline, accent when selected -->
+        <Grid x:Name="EmptyFrame">
+            <Rectangle x:Name="EmptyOutline" RadiusX="3" RadiusY="3" StrokeThickness="1" StrokeDashArray="4 3"
+                       Stroke="{StaticResource InputBorder}" SnapsToDevicePixels="True" />
+            <TextBlock Text="Kamera sürükleyin" HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="{StaticResource TextSecondary}" FontSize="{StaticResource FontSizeStatus}"
+                       TextTrimming="CharacterEllipsis" Margin="8,0" />
+        </Grid>
+
+        <!-- Tile with a camera: header strip (WPF) above the video host (HWND); nothing overlaps the video. -->
+        <Border x:Name="Frame" Visibility="Collapsed" Background="{StaticResource TileBg}" BorderThickness="1"
+                BorderBrush="{StaticResource TileBorder}" CornerRadius="3" SnapsToDevicePixels="True">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition x:Name="HeaderRow" Height="26" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Border x:Name="Header" Background="{StaticResource TileHeaderBg}" BorderBrush="{StaticResource Border}"
+                        BorderThickness="0,0,0,1" Padding="8,0" CornerRadius="2,2,0,0">
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Ellipse x:Name="StatusDot" Style="{StaticResource StatusDot}" Margin="0,0,6,0" />
+                        <TextBlock x:Name="CameraName" Grid.Column="1" FontWeight="SemiBold" FontSize="{StaticResource FontSizeTile}"
+                                   Foreground="{StaticResource TextFg}" TextTrimming="CharacterEllipsis" VerticalAlignment="Center" />
+                        <TextBlock x:Name="StateText" Grid.Column="2" Text="Bağlanıyor…" Foreground="{StaticResource WarningText}"
+                                   FontSize="{StaticResource FontSizeSmall}" VerticalAlignment="Center" Margin="6,0,0,0"
+                                   Visibility="Collapsed" />
+                        <Border x:Name="RecBadge" Grid.Column="3" Background="{StaticResource Danger}" CornerRadius="3" Padding="5,1"
+                                Margin="6,0,0,0" VerticalAlignment="Center" Visibility="Collapsed">
+                            <StackPanel Orientation="Horizontal">
+                                <Ellipse Width="5" Height="5" Fill="{StaticResource SelectedFg}" VerticalAlignment="Center" Margin="0,0,4,0" />
+                                <TextBlock Text="KAYIT" FontSize="{StaticResource FontSizeBadge}" FontWeight="Bold"
+                                           Foreground="{StaticResource SelectedFg}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Border>
+                        <Border x:Name="QualityBorder" Grid.Column="4" BorderBrush="{StaticResource BadgeBorder}" BorderThickness="1"
+                                CornerRadius="3" Padding="5,0" Margin="6,0,0,0" VerticalAlignment="Center">
+                            <TextBlock x:Name="QualityBadge" FontSize="{StaticResource FontSizeBadge}" FontWeight="Bold"
+                                       Foreground="{StaticResource IconFg}" />
+                        </Border>
+                    </Grid>
+                </Border>
+
+                <Grid x:Name="VideoArea" Grid.Row="1" Background="{StaticResource VideoBg}">
+                    <!-- Shown only while the video hosts are hidden (failed / stopped) -->
+                    <TextBlock x:Name="MessageText" HorizontalAlignment="Center" VerticalAlignment="Center" TextAlignment="Center"
+                               TextWrapping="Wrap" TextTrimming="CharacterEllipsis" Margin="12"
+                               Foreground="{StaticResource TextSecondary}" FontSize="{StaticResource FontSizeStatus}" />
+                    <Grid x:Name="VideoLayer">
+                        <!-- SDK path: plain child HWND PlayCtrl draws into (encrypted streams) -->
+                        <local:HikVideoHost x:Name="HikHost" Visibility="Collapsed" />
+                        <!-- FFmpeg path (unencrypted streams) -->
+                        <fl:FlyleafHost x:Name="Host"
+                                        KeyBindings="None" MouseBindings="None"
+                                        ToggleFullScreenOnDoubleClick="None"
+                                        PanMoveOnCtrl="None" PanZoomOnCtrlWheel="None" PanRotateOnShiftWheel="None"
+                                        AttachedDragMove="None" DetachedDragMove="None" AttachedResize="None" DetachedResize="None"
+                                        OpenOnDrop="None" SwapOnDrop="None" SwapDragEnterOnShift="None"
+                                        BringToFrontOnClick="False" VideoBackground="{StaticResource VideoBg}" />
+                    </Grid>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

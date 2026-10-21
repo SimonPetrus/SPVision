@@ -1,9 +1,13 @@
-# SP-2026 Lite — Claude için Tam Rehber
+# SPVision — Claude için Tam Rehber
 
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 32/32 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 41/41 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+>
+> **Ad değişikliği (21.10.2026):** Uygulamanın eski adı **SP-2026 Lite** idi (proje/namespace
+> `SP2026Lite`, exe `SP-2026 Lite.exe`). Sahibinin onayıyla adı **SPVision** oldu; aşağıdaki
+> geçmiş notlarında eski ad geçiyorsa aynı uygulamadır.
 
 ---
 
@@ -20,10 +24,10 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 
 | Yol | Ne işe yarar |
 |---|---|
-| `SP2026Lite.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SP2026Lite.slnx` |
-| `src/SP2026Lite.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
-| `src/SP2026Lite/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SP2026Lite.Core.Tests/` | 32 xUnit testi (`dotnet test tests\SP2026Lite.Core.Tests\SP2026Lite.Core.Tests.csproj`) |
+| `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
+| `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
+| `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
+| `tests/SPVision.Core.Tests/` | 41 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -33,16 +37,23 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 
 ```powershell
 cd SPVision
-dotnet build SP2026Lite.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SP2026Lite.Core.Tests\SP2026Lite.Core.Tests.csproj   # 32/32 geçer
-dotnet run --project src\SP2026Lite
+dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 41/41 geçer
+dotnet run --project src\SPVision
 ```
 
 - SDK ve FFmpeg DLL'leri `.csproj` tarafından **otomatik çıktı klasörüne kopyalanır**;
   `sdk\...\lib` ya da `ffmpeg` klasörü yoksa derleme uyarı verir ama kırılmaz.
-- Uygulama ayarları + loglar: `%APPDATA%\SP-2026 Lite\` (`settings.json` — şifreler ve akış
+- Uygulama ayarları + loglar: `%APPDATA%\SPVision\` (`settings.json` — şifreler ve akış
   anahtarı DPAPI ile `dpapi:` önekiyle şifreli; `logs\sdk\SdkLog_1_W.log` = HCNetSDK logu,
-  `logs\player.log` = Flyleaf logu).
+  `logs\player.log` = Flyleaf logu). Anlık görüntüler `Resimler\SPVision`, kayıt/klipler
+  `Videolar\SPVision` altına gider.
+- **Eski addan geçiş** ([`LegacyMigration`](src/SPVision.Core/LegacyMigration.cs), `App.OnStartup`):
+  `%APPDATA%\SPVision\settings.json` yoksa ve `%APPDATA%\SP-2026 Lite\settings.json` varsa
+  dosya **bir kez kopyalanır** (taşınmaz, eski klasör silinmez). Ayarlardaki görüntü/kayıt klasörü
+  hâlâ eski varsayılansa (`Resimler\SP-2026 Lite`, `Videolar\SP-2026 Lite`) yeni klasöre çevrilir;
+  eski dosyalar yerinde kalır. **DPAPI entropisi `"SP-2026 Lite"` olarak kalmalıdır**
+  (`SettingsStore.Entropy`): eski şifre/akış anahtarları onunla şifreli; değiştirirsen hepsi çözülemez.
 
 ## 4. Mimari: video iki yoldan akar
 
@@ -54,11 +65,11 @@ dotnet run --project src\SP2026Lite
                  FlyleafLib + FFmpeg GPU decode
 ```
 
-- Karar [`VideoTile.Open`](src/SP2026Lite/Controls/VideoTile.xaml.cs) içinde:
+- Karar [`VideoTile.Open`](src/SPVision/Controls/VideoTile.xaml.cs) içinde:
   `useHik = _preferHik || Device.StreamKeyFor(Camera) dolu`. FFmpeg şifreli akışı açamaz
   (`Status.Failed`) → **tek seferlik** SDK'ya düşer (`_triedHikFallback`, `_preferHik` kalıcı).
 - **SDK boru hattı** (her iki canlı/oynatma için aynı mantık):
-  1. `NET_DVR_Login_V40` (cihaz başına tek oturum: [`HikSession`](src/SP2026Lite/Hik/HikSession.cs))
+  1. `NET_DVR_Login_V40` (cihaz başına tek oturum: [`HikSession`](src/SPVision/Hik/HikSession.cs))
   2. `NET_DVR_RealPlay_V40` (canlı) / `NET_DVR_PlayBackByTime_V40` (oynatma) + veri callback'i
   3. İlk `NET_DVR_SYSHEAD` paketinde: `PlayM4_GetPort` → `PlayM4_SetSecretKey(port, 1, anahtar, 128)`
      → `PlayM4_SetDecodeEngineEx(port, 1)` (GPU) → `PlayM4_SetStreamOpenMode` →
@@ -66,10 +77,10 @@ dotnet run --project src\SP2026Lite
   4. `NET_DVR_STREAMDATA` → `PlayM4_InputData`
 - **ÇOK ÖNEMLİ — kanal numarası:** NVR'larda SDK kanal no ≠ ISAPI kanal no. Dijital kanallar
   `DeviceInfoV40.DeviceV30.StartDChan`'dan başlar (bu cihazda **33**). **Mutlaka**
-  [`HikSession.SdkChannel(isapiChannel)`](src/SP2026Lite/Hik/HikSession.cs) ile çevir; yanlış
+  [`HikSession.SdkChannel(isapiChannel)`](src/SPVision/Hik/HikSession.cs) ile çevir; yanlış
   numara `NET_DVR_CHANNEL_ERROR` (dwError 4) verir ve cihaz linki reddeder. (Bu hata 21.10.2026'da
   bulundu ve düzeltildi; logda `LinkToDvr ... dwErrCode[0x00100100]` görürsen kanal sorunu var.)
-- SDK görüntüyü bir **HWND**'ye çizer (WPF'te airspace): [`HikVideoHost`](src/SP2026Lite/Controls/HikVideoHost.cs)
+- SDK görüntüyü bir **HWND**'ye çizer (WPF'te airspace): [`HikVideoHost`](src/SPVision/Controls/HikVideoHost.cs)
   (HwndHost) video yüzeyidir. Video üstüne WPF içeriği çizilemez → VideoTile **iki satırlı**dır:
   üstte WPF **başlık şeridi** (durum noktası, kamera adı, "Bağlanıyor…", KAYIT ve HD/SD rozeti;
   25/32'de 22 px, 6/8'de 26 px), altta üzerine hiçbir şey çizilmeyen video alanı. (Eski Popup
@@ -80,7 +91,7 @@ dotnet run --project src\SP2026Lite
   video alanının yüksekliğine bakar (`VideoTile.VideoHeight`). PlaybackView Flyleaf overlay'ini
   gizleyip StatusText kullanır.
 
-## 5. Klasör → dosya haritası (WPF tarafı, yollar `src/SP2026Lite/` altına göredir)
+## 5. Klasör → dosya haritası (WPF tarafı, yollar `src/SPVision/` altına göredir)
 
 | Dosya | Sorumluluk |
 |---|---|
@@ -101,11 +112,13 @@ dotnet run --project src\SP2026Lite
 | `Hik/HikPlaybackPlayer.cs` | Oynatma SDK oturumu (PlayBackByTime + PlayCtrl + GetTime + klip SaveData) |
 | `Hik/HikException.cs` | SDK hata kodlarının Türkçe açıklamaları (`Describe`) |
 
-Core tarafı: [`IsapiClient`](src/SP2026Lite.Core/IsapiClient.cs) (Digest auth; cihaz bilgisi,
+Core tarafı: [`IsapiClient`](src/SPVision.Core/IsapiClient.cs) (Digest auth; cihaz bilgisi,
 kamera listesi, kayıt arama, anlık görüntü, şifreleme durumu + doğrulama kodu okuma),
-[`Models.cs`](src/SP2026Lite.Core/Models.cs) (Device/Camera/AppSettings; `StreamKeyFor()`:
-kamera anahtarı yoksa cihaz anahtarını kullanır), [`SettingsStore`](src/SP2026Lite.Core/SettingsStore.cs)
-(DPAPI şifreli JSON), [`StreamUrls`](src/SP2026Lite.Core/StreamUrls.cs) (RTSP adresleri).
+[`Models.cs`](src/SPVision.Core/Models.cs) (Device/Camera/AppSettings; `StreamKeyFor()`:
+kamera anahtarı yoksa cihaz anahtarını kullanır), [`SettingsStore`](src/SPVision.Core/SettingsStore.cs)
+(DPAPI şifreli JSON), [`StreamUrls`](src/SPVision.Core/StreamUrls.cs) (RTSP adresleri),
+[`AppPaths`](src/SPVision.Core/AppPaths.cs) (varsayılan klasörler) ve
+[`LegacyMigration`](src/SPVision.Core/LegacyMigration.cs) (eski addan tek seferlik ayar kopyası).
 
 ## 6. Doğrulanmış gerçek durum (21.10.2026)
 
@@ -113,7 +126,7 @@ kamera anahtarı yoksa cihaz anahtarını kullanır), [`SettingsStore`](src/SP20
 - **16 kamera aynı anda SDK yoluyla akıyor**, log temiz (`Stream Head Data Callback` 16×),
   **CPU ~%8.7** (32 çekirdeğin yüzdesi; eski iVMS 4 kamerada tek çekirdeğin %107'siydi).
 - Şifresiz Flyleaf yolu daha önce test edildi: 16 kamera HD'de tek çekirdek ~%52.
-- Derleme 0 hata/0 uyarı, 32/32 test. Kalan tek iş: **paketleme (yayınlama)**.
+- Derleme 0 hata/0 uyarı, 41/41 test (o gün 32/32 idi; geçiş testleriyle 41). Kalan tek iş: **paketleme (yayınlama)**.
 
 ## 7. Senin (Claude'un) yapacağın iş: paketleme
 
@@ -121,12 +134,12 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
 
 1. **Yayınlama komutu** (önerilen başlangıç):
    ```powershell
-   dotnet publish src\SP2026Lite\SP2026Lite.csproj -c Release -r win-x64 --self-contained true `
+   dotnet publish src\SPVision\SPVision.csproj -c Release -r win-x64 --self-contained true `
      -p:PublishSingleFile=false -o publish
    ```
    - `self-contained` sayede kullanıcı makinesinde .NET gerekmez (~150 MB eklenir).
      Daha küçük istenirse `--self-contained false` + framework-dependent kurulum.
-   - Çıktıda olması gerekenler: `SP-2026 Lite.exe`, `FFmpeg\*.dll`, `HCNetSDK.dll`,
+   - Çıktıda olması gerekenler: `SPVision.exe`, `FFmpeg\*.dll`, `HCNetSDK.dll`,
      `PlayCtrl.dll`, `HCCore.dll`, `HCNetSDKCom\` alt klasörü (16 DLL) — csproj bunları
      otomatik kopyalar; publish sonrası **kontrol et**.
 2. **Dikkat:** SDK DLL'leri lisanslıdır; ihraç edilen paketin içinde olabilirler (kullanım
@@ -135,8 +148,10 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
    `PlayCtrl`) `IncludeNativeLibrariesForSelfExtract=true` gerektirir; HCNetSDKCom alt
    klasör yapısı **korunmalıdır** (SDK runtime'da `HCNetSDKCom\*.dll` arar) — bu yüzden
    **klasör dağıtımı + Inno Setup/MSIX zip tercih edilir**.
-4. Yayın sonrası el ile test: boş `%APPDATA%\SP-2026 Lite` ile ilk açılış (cihaz ekleme
-   sihirbazı), 16 kamera canlı, oynatma, anlık görüntü, klip.
+4. Yayın sonrası el ile test: boş `%APPDATA%\SPVision` ile ilk açılış (cihaz ekleme
+   sihirbazı), 16 kamera canlı, oynatma, anlık görüntü, klip. Ayrıca eski
+   `%APPDATA%\SP-2026 Lite\settings.json` varken ilk açılışta ayarların ve şifrelerin geldiğini
+   doğrula.
 
 ## 8. Sık karşılaşılacak tuzaklar (öğrenilmiş dersler)
 

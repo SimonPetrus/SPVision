@@ -1,0 +1,11 @@
+<UserControl x:Class="SPVision.Views.LiveView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <!-- The toolbar (layouts, quality, snapshot, record, full screen) lives in the main window's top bar,
+         short messages in its status bar: nothing here may resize the tiles (their video is an HWND). -->
+    <DockPanel Background="{StaticResource GutterBg}">
+        <!-- Rows/columns are built in code: the 6 and 8 layouts need a spanning large tile.
+             2 px here + 2 px tile margin = 4 px gutter on every side and 4 px between tiles. -->
+        <Grid x:Name="TileGrid" Margin="2" SizeChanged="Grid_SizeChanged" />
+    </DockPanel>
+</UserControl>

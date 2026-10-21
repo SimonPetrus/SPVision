@@ -1,9 +1,0 @@
-<Solution>
-  <Folder Name="/src/">
-    <Project Path="src/SP2026Lite.Core/SP2026Lite.Core.csproj" />
-    <Project Path="src/SP2026Lite/SP2026Lite.csproj" />
-  </Folder>
-  <Folder Name="/tests/">
-    <Project Path="tests/SP2026Lite.Core.Tests/SP2026Lite.Core.Tests.csproj" />
-  </Folder>
-</Solution>

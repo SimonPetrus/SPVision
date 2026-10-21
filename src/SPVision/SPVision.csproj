@@ -1,0 +1,54 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <PlatformTarget>x64</PlatformTarget>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <AssemblyName>SPVision</AssemblyName>
+    <RootNamespace>SPVision</RootNamespace>
+    <Version>0.1.0</Version>
+    <Product>SPVision</Product>
+    <AssemblyTitle>SPVision</AssemblyTitle>
+    <Description>SPVision - Hikvision kayıt cihazı için canlı izleme ve kayıt oynatma istemcisi</Description>
+    <!-- Uygulama ikonu ayrıca tasarlanıyor. Hazır olunca buraya ekleyin, örn.:
+         <ApplicationIcon>Assets\SPVision.ico</ApplicationIcon> -->
+    <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SPVision.Core\SPVision.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FlyleafLib" Version="3.11.12" />
+  </ItemGroup>
+
+  <!-- FFmpeg 9 shared DLLs, fetched with tools/get-ffmpeg.ps1 -->
+  <ItemGroup>
+    <None Include="..\..\ffmpeg\*.dll" Link="FFmpeg\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="CheckFFmpeg" BeforeTargets="Build" Condition="!Exists('..\..\ffmpeg\avcodec-63.dll')">
+    <Warning Text="FFmpeg DLL'leri bulunamadı. Önce tools\get-ffmpeg.ps1 çalıştırın." />
+  </Target>
+
+  <!-- Hikvision Device Network SDK V6.1.11.40 (win64), licensed - not committed to repo.
+       Runtime layout: SDK DLLs at app root, HCNetSDKCom subfolder preserved. -->
+  <PropertyGroup>
+    <HikSdkLib>..\..\sdk\EN-HCNetSDKV6.1.11.40_build20260922_win64\lib</HikSdkLib>
+  </PropertyGroup>
+  <ItemGroup>
+    <None Include="$(HikSdkLib)\*.dll" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="$(HikSdkLib)\HCNetSDKCom\*.dll" Link="HCNetSDKCom\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <Target Name="CheckHikSdk" BeforeTargets="Build" Condition="!Exists('$(HikSdkLib)\HCNetSDK.dll')">
+    <Warning Text="Hikvision SDK DLL'leri bulunamadı ($(HikSdkLib)). SDK klasörünü README'deki adımlarla yerleştirin." />
+  </Target>
+
+</Project>

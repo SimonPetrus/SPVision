@@ -1,16 +1,18 @@
-# SP-2026 Lite
+# SPVision
 
 Hikvision kayıt cihazları (NVR/DVR) ve kameralar için hafif bir izleme istemcisi. Eski **iVMS-4200 Lite**'ın
 yerine, onu tersine mühendislikle inceledikten sonra sıfırdan yazıldı (bkz. [reversing/BULGULAR.md](reversing/BULGULAR.md)).
 
 > Ayrıntılı rehber (mimari, dosya haritası, doğrulanmış durum, sıradaki iş): [CLAUDE_REHBERI.md](CLAUDE_REHBERI.md)
+>
+> Uygulamanın eski adı **SP-2026 Lite** idi; 21.10.2026'da **SPVision** olarak yeniden adlandırıldı.
 
 ## Neden?
 
 iVMS-4200 Lite 4 kameralık bir ızgarada bir işlemci çekirdeğini tamamen meşgul ediyordu: tam çözünürlüklü H.265
 akışlarını 32-bit eski bir decoder ile **yazılımsal** çözüyor ve arka planda bulut/güncelleme servisleri çalıştırıyordu.
 
-SP-2026 Lite:
+SPVision:
 
 - Görüntüyü **ekran kartında** çözer ve çizer.
 - Video **iki yoldan** akar:
@@ -53,21 +55,26 @@ Gereksinimler: Windows 10/11 x64, [.NET 10 SDK](https://dotnet.microsoft.com/dow
 
 ```powershell
 .\tools\get-ffmpeg.ps1          # FFmpeg 9 LGPL paylaşımlı DLL'lerini ffmpeg\ klasörüne indirir
-dotnet build SP2026Lite.slnx
-dotnet test tests\SP2026Lite.Core.Tests\SP2026Lite.Core.Tests.csproj
-dotnet run --project src\SP2026Lite
+dotnet build SPVision.slnx
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj
+dotnet run --project src\SPVision
 ```
 
-Ayarlar ve loglar: `%APPDATA%\SP-2026 Lite\` · Görüntüler: `Resimler\SP-2026 Lite` · Kayıtlar: `Videolar\SP-2026 Lite`
+Ayarlar ve loglar: `%APPDATA%\SPVision\` · Görüntüler: `Resimler\SPVision` · Kayıtlar: `Videolar\SPVision`
+
+**Eski addan geçiş:** İlk açılışta `%APPDATA%\SPVision\settings.json` yoksa ve eski
+`%APPDATA%\SP-2026 Lite\settings.json` varsa, ayar dosyası bir kez yeni klasöre **kopyalanır** (eski klasör
+silinmez; kayıtlı şifreler ve akış anahtarları çözülmeye devam eder). Eski görüntü/kayıtlar
+`Resimler\SP-2026 Lite` ve `Videolar\SP-2026 Lite` altında kalır; yenileri yeni klasörlere yazılır.
 
 ## Proje yapısı
 
 | Klasör | İçerik |
 |---|---|
-| `src/SP2026Lite.Core` | Modeller, ISAPI istemcisi, RTSP adresleri, şifreli ayar deposu |
-| `src/SP2026Lite` | WPF arayüzü (canlı izleme, oynatma, cihaz yönetimi) |
-| `src/SP2026Lite/Hik/` | Hikvision SDK katmanı: P/Invoke imzaları, SDK oturumu, canlı ve oynatma SDK oynatıcıları |
-| `tests/SP2026Lite.Core.Tests` | Birim testleri |
+| `src/SPVision.Core` | Modeller, ISAPI istemcisi, RTSP adresleri, şifreli ayar deposu |
+| `src/SPVision` | WPF arayüzü (canlı izleme, oynatma, cihaz yönetimi) |
+| `src/SPVision/Hik/` | Hikvision SDK katmanı: P/Invoke imzaları, SDK oturumu, canlı ve oynatma SDK oynatıcıları |
+| `tests/SPVision.Core.Tests` | Birim testleri |
 | `sdk/` | Hikvision Device Network SDK (lisanslı, **repoda yok**, el ile yerleştirilir; `.gitignore`'da) |
 | `reversing/` | iVMS-4200 Lite analiz notları ve Ghidra script'i (ham decompile çıktısı repoda yok) |
 | `tools/` | FFmpeg indirici, Qt `.qm` çözücü, PlayCtrl export denetleyici |

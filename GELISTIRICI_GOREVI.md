@@ -5,13 +5,13 @@
 > SDK yoluyla akıyor (CPU ~%8.7, 32 çekirdeğin yüzdesi). Bu belge artık uygulamanın nasıl kurulduğunu anlatan
 > tarihsel bir referanstır; yeni iş vermez. Sıradaki iş (paketleme) için bkz. [CLAUDE_REHBERI.md](CLAUDE_REHBERI.md).
 
-Bu belge, SP-2026 Lite'ta eksik kalan tek parçayı tamamlayacak C# geliştiricisi içindi. Uygulamanın geri
+Bu belge, SPVision'da (o zamanki adıyla SP-2026 Lite) eksik kalan tek parçayı tamamlayacak C# geliştiricisi içindi. Uygulamanın geri
 kalanı çalışıyor ve testleri geçiyor; yalnızca Hikvision'ın **akış şifreleme (stream encryption)** açık olduğu
 kameralarda görüntü açan katman eksikti.
 
 ## Özet
 
-- Dil/çatı: C# / .NET 10 / WPF (x64). Çözüm: `SP2026Lite.slnx`.
+- Dil/çatı: C# / .NET 10 / WPF (x64). Çözüm: `SPVision.slnx`.
 - Mevcut video katmanı FFmpeg (FlyleafLib) ile **şifresiz** RTSP akışlarını GPU'da çözüyor. Çalışıyor.
 - FFmpeg, Hikvision'ın şifreli akışını açamıyor. Şifreli kameralar için Hikvision'ın resmi
   **Device Network SDK** (HCNetSDK + PlayCtrl) kullanıldı.
@@ -32,14 +32,14 @@ kameralarda görüntü açan katman eksikti.
 
 ## Yapılmış iş (karşı karşılığı)
 
-### 1. Oturum ve yaşam döngüsü — `src/SP2026Lite/Hik/HikSdk.cs`, `HikSession.cs`, `HikException.cs`
+### 1. Oturum ve yaşam döngüsü — `src/SPVision/Hik/HikSdk.cs`, `HikSession.cs`, `HikException.cs`
 - Uygulama açılışında bir kez `NET_DVR_Init()`, kapanışında `NET_DVR_Cleanup()` (App.xaml.cs).
 - Cihaz başına tek oturum: `HikSession.GetOrCreate(device)` → `NET_DVR_Login_V40` (port `Device.SdkPort`=8000),
   `Logout` ile çıkış. Kullanıcı adı/şifre `Device.UserName` / `Device.Password`'ten gelir.
 - `NET_DVR_SetExceptionCallBack_V30` ile kopmalar yakalanıyor (oynatma bitişi 0x8010 dahil);
   `NET_DVR_SetReconnect(30000, true)` açık. Hata kodları Türkçe açıklamalı: `HikException.Describe(code)`.
 
-### 2. Canlı görüntü — `src/SP2026Lite/Hik/HikLivePlayer.cs` + `Controls/VideoTile`
+### 2. Canlı görüntü — `src/SPVision/Hik/HikLivePlayer.cs` + `Controls/VideoTile`
 - `NET_DVR_RealPlay_V40` veri callback'i: `NET_DVR_SYSHEAD` → PlayCtrl boru hattı
   (`GetPort → SetSecretKey(1, key, 128) → SetDecodeEngineEx(HARD=GPU) → OpenStream(2 MB) →
   SetDisplayBuf(15) → SetOverlayMode(false) → Play(port, hwnd)`), `NET_DVR_STREAMDATA` →
@@ -54,7 +54,7 @@ kameralarda görüntü açan katman eksikti.
   olursa (tek seferlik fallback, `_preferHik` kalıcı) SDK yolu; aksi halde Flyleaf. Aç/kapa yarışları
   `_openGeneration` sayaçıyla iptal edilir; oturum + `Start` arka planda `Task.Run` ile çalışır.
 
-### 3. Kayıt oynatma — `src/SP2026Lite/Hik/HikPlaybackPlayer.cs` + `Views/PlaybackView`
+### 3. Kayıt oynatma — `src/SPVision/Hik/HikPlaybackPlayer.cs` + `Views/PlaybackView`
 - Kayıt arama ISAPI ile aynı (dokunulmadı). Oynatma: `NET_DVR_PlayBackByTime_V40` +
   `NET_DVR_SetPlayDataCallBack_V40`; PlayCtrl boru hattı aynı ama `StreamFile` kipinde 10 MB tampon.
 - Duraklat/sürdür/başlat: `NET_DVR_PlayBackControl_V40` (PlayStart/PlayPause/PlayRestart).
@@ -63,7 +63,7 @@ kameralarda görüntü açan katman eksikti.
 - `PlaybackView` çift konak barındırır (FlyleafHost + HikHost, görünürlük takası); zaman çizelgesi konumu
   aktif yoldan okunur (Flyleaf `CurTime` ya da SDK `GetTime()`).
 
-### 4. DLL'ler — `SP2026Lite.csproj`
+### 4. DLL'ler — `SPVision.csproj`
 - `sdk/.../lib/*.dll` → uygulama kökü, `lib/HCNetSDKCom/*.dll` → `HCNetSDKCom\` alt klasörü
   (`None Include` + `CopyToOutputDirectory`), SDK yoksa derleme uyarı verir ama kırılmaz.
   SDK lisansı gereği DLL'ler repoya **konmaz**.
@@ -86,7 +86,7 @@ Kayıt cihazında (`192.168.1.2`, DS-8632NI-I8, akış şifreleme açık) yapıl
   kanal no; dijital kanallar `StartDChan`'dan başlar (bu cihazda **33**). Yanlış numara `NET_DVR_CHANNEL_ERROR`
   (dwError 4) veriyordu; artık `HikSession.SdkChannel(isapiChannel)` ile çevriliyor.
 - Sorun çıkarsa ilk ipuçları hâlâ geçerli: `HikSdk.ExceptionRaised` olayları, `HikException.Describe` çıktıları
-  ve `%APPDATA%\SP-2026 Lite\logs\sdk\` altındaki HCNetSDK logu.
+  ve `%APPDATA%\SPVision\logs\sdk\` altındaki HCNetSDK logu.
 
 ## Nereden başlamalı
 `PROJE_DURUMU.md` genel durumu, `reversing/BULGULAR.md` eski uygulamanın nasıl çalıştığını anlatır.
