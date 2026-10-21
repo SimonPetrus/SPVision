@@ -108,4 +108,9 @@
     <SolidColorBrush x:Key="TileBarHoverBg" Color="#33FFFFFF" />
     <SolidColorBrush x:Key="TileBarActiveBg" Color="#594CC2FF" />
     <SolidColorBrush x:Key="TileBarRecord" Color="#FF6B5E" />
+    <!-- Download pill in the top bar: finished (green) / finished with problems (amber) -->
+    <SolidColorBrush x:Key="OkSoftBg" Color="#1F3A1C" />
+    <SolidColorBrush x:Key="OkBorder" Color="#3C6B36" />
+    <SolidColorBrush x:Key="OkText" Color="#B8E6B1" />
+    <SolidColorBrush x:Key="WarningSoftBorder" Color="#6B5A1E" />
 </ResourceDictionary>

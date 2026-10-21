@@ -3,7 +3,7 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 1169/1169 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 1196/1196 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
 > (21.10.2026'daki düzen seçici + eş zamanlı çoklu oynatma değişikliği ile cihaz düzenleyicideki HTTPS varsayılanı / HTTP'ye düşme sorusu henüz cihazda denenmedi; bkz. §4, §5.)
 > (Canlı izlemede sayfalar — §4 "Canlı izlemede sayfalar" — da henüz cihazda denenmedi.)
 > (Uygulama içi güncelleme — §11 — kod + testlerle hazır; anahtar, Worker ve ilk sürüm sahibinin bir kerelik adımlarını bekliyor, gerçek yayınla denenmedi.)
@@ -33,7 +33,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
 | `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SPVision.Core.Tests/` | 1169 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
+| `tests/SPVision.Core.Tests/` | 1196 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -47,7 +47,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ```powershell
 cd SPVision
 dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1169/1169 geçer
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1196/1196 geçer
 dotnet run --project src\SPVision
 ```
 
@@ -332,10 +332,21 @@ dotnet run --project src\SPVision
   kare gizliyken (büyütme) ve görünüm bırakılınca. Popup hedefini izlemediği için konum/boyut değişince ofset dürtülür.
   Kare 140×64 DIP'ten küçükse şerit gösterilmez. Düğmeler mevcut işleri o kare için çağırır (`TakeSnapshotAsync`, `ToggleClip`);
   alttaki genel Anlık görüntü/Klip düğmeleri aynen çalışır (odaklı kare).
-- **Dijital yakınlaştırma** (yeni; yalnız SDK yolu, yalnız görüntü — kayıt/klip/indirme etkilenmez): "Yakınlaştır" merkezi 2×
-  gösterir; açıkken fare tekerleği imlecin altındaki noktayı sabit tutarak 1×–8× yakınlaştırır (1×'e inince kapanır), sürükleme
-  kaydırır. Saf Core [`DigitalZoom`](src/SPVision.Core/PlaybackTileTools.cs) (birim testli; bölge resmin içinde kalır, çift
-  piksel). Uygulama: `HikPlaybackPlayer.ApplyZoom` → `PlayM4_SetDisplayRegion(port, 0, &RECT, hwnd, TRUE)` (kapatma: `NULL, FALSE`),
+- **Dijital yakınlaştırma** (yalnız SDK yolu, yalnız görüntü — kayıt/klip/indirme etkilenmez; kullanıcı geri bildirimiyle
+  21.10.2026'da düzeltildi): "Yakınlaştır" yalnız **yakınlaştırma kipini** açar — düğme vurgulu, kare üstünde imleç artı (`Cross`),
+  görüntü **1×'te kalır**; fare tekerleği imlecin altındaki noktayı sabit tutarak 1×–8× yakınlaştırır/uzaklaştırır (çentik başına
+  ×1,25, `WheelFactor`), yakınken imleç `SizeAll` ve sürükleme kaydırır (yalnız >1×). Tekerlekle **1×'e inmek kipi kapatmaz**;
+  kip yalnız düğmeye yeniden basınca, kamera değişince/kare boşalınca ve **Durdur**'da kapanır; aramalarda (seek) korunur.
+  İmleç → resim eşlemesi: konum WPF'nin olay konumundan değil imlecin kendisinden (`GetCursorPos`; video penceresine düşen
+  `WM_MOUSEWHEEL`'de `lParam`, ekran pikseli) alınır, video alanının ekran dikdörtgeni `PointToScreen` (fiziksel piksel) +
+  `ActualWidth/Height × DpiScale` ile kurulur — yüksek DPI'da piksel/DIP karışmaz; PlayCtrl resmi pencereye **gerdiği** için
+  (PlayCtrl.dll'de en-boy API'si yok) resim = video alanının tamamı; Core yine de sinemaskop/yan bant ofsetini destekler.
+  `HikVideoHost.WheelHandler`: tekerlek mesajı video HWND'sine (ya da PlayCtrl'in içine açtığı bir pencereden ona) gelirse
+  orada işlenir, kip kapalıysa eskisi gibi ana pencereye geçer. Saf Core [`TileZoom`](src/SPVision.Core/PlaybackTileTools.cs)
+  (kip durum makinesi), `DigitalZoom` (seviye/merkez, `ZoomAt`, `Region`: bölge resmin içinde kalır, çift piksel), `ZoomGeometry`
+  (`ViewPoint`, `ViewDelta`, `PictureRect`, `SourcePixel`) — birim testli: imlecin altındaki kaynak pikseli adımlar boyunca
+  ±3 px içinde sabit, kenarda kırpma, sinemaskop ofseti, DPI ölçeği, 1× = tam kare, kip durumları.
+  Uygulama: `HikPlaybackPlayer.ApplyZoom` → `PlayM4_SetDisplayRegion(port, 0, &RECT, hwnd, TRUE)` (kapatma: `NULL, FALSE`),
   karenin `_sdkGate` kuyruğunda, birleştirilerek (tekerlek/sürükleme sırasında kuyrukta en çok bir istek). Her açılış yeni port
   olduğundan yakalama bitince yeniden uygulanır; kamera değişince sıfırlanır. Salt okuma sondasında çağrı 1920×1080 portta
   `TRUE` döndü (görüntü gözle denetlenmedi). Flyleaf karelerinde düğme devre dışı ("yalnız şifreli akışta").
@@ -347,7 +358,12 @@ dotnet run --project src\SPVision
   2. tık bitiş günü — önceyse yer değişir —, 3. tık yeni seçim; aralık sürekli bant, uçlarda ve hafta kenarlarında yuvarlak:
   Core `DateRangePick`/`RangeBand`; yeşil nokta = seçili kameralardan birinde kayıt var, `dailyDistribution` ay sorgusu; gelecek
   günler kapalı; alt satırda ipucu), **saatler** (ss:dd:ss, "Başlangıç · gg.aa.yyyy" → "Bitiş · gg.aa.yyyy"; varsayılan karenin
-  oynatma saati −5 / +5 dk, gelecek olmaz: `DownloadRange.Default`), **özet** ("Süre: 2 gün 3 sa 10 dk · 2 kamera", "Tahmini boyut:
+  oynatma saati −5 / +5 dk, gelecek olmaz: `DownloadRange.Default`; kutular **maskeli**: yalnız rakam, en çok 6, iki nokta
+  yazarken hemen gelir — "17" → "17:", "1752" → "17:52:", imleç iki noktadan sonra; yazılan ":" atlanır, tek haneden sonra
+  ":" başa 0 koyar ("9:" → "09:"); Backspace/Delete iki noktanın üstünden rakamı siler; dolu kutuda yazmak imleçten sonrasının
+  üstüne yazar; yapıştırma "175200" / "17:52:00" / "17.52.00" → "17:52:00"; kutudan çıkınca/Enter kısa giriş tamamlanır:
+  "1752" → 17:52:00, "17" → 17:00:00, "9" → 09:00:00; özet de tamamlanmış hâli okur, doğrulama aynı (saat ≤ 23, dk/sn ≤ 59):
+  Core `TimeFieldMask` + `DownloadTimeText.ParseInput`, birim testli), **özet** ("Süre: 2 gün 3 sa 10 dk · 2 kamera", "Tahmini boyut:
   … · Boş alan: …"; geçersiz saat, bitiş ≤ başlangıç, gelecek, kamera yok ya da sığmıyorsa amber ve İndir kapalı: Core
   `DownloadForm.Evaluate`), **Kayıt yeri** (varsayılan Ayarlar'daki kayıt klasörü; "…" oturum boyunca başka klasör seçer, ayarı
   değiştirmez) + "MP4 (H.264) · Ses dahil değil · Her kamera ayrı dosya". **Süre sınırı yok** (çok günlük aralık kamera başına tek
@@ -355,13 +371,30 @@ dotnet run --project src\SPVision
   GET ile, `Mp4VideoWriter.Bitrate`: ~1 bit/12 piksel, 1–8 Mb/sn) × süre — dosya yeniden kodlandığı için boyutu kameranın değil
   yazıcının hızı belirler (kameranın bit hızı yalnız çözünürlük okunamazsa); hedef sürücüde 512 MB pay bırakılır
   (`DownloadEstimate`). İndir → kameralar **sırayla** indirilir ([`DownloadBatch`](src/SPVision/Views/DownloadBatch.cs): önce
-  salt okuma kayıt araması — hiç yoksa "Bu aralıkta kayıt yok", oturum açılmaz); panel her kamera için çubuk, %, hız (×) ve kalan
-  süre gösterir, altta İptal; bitince "İndirildi" + **Klasörü aç** (dosya seçili Gezgin) / Yeni indirme. Paneli kapatmak indirmeyi
-  durdurmaz (durum çubuğu "İndirildi: <yol>" yazar); pencere kapanırken `PlaybackView.ShutdownAsync` indirmeleri iptal eder,
-  yarım dosyalar silinir. Dosya adı `<Kamera>_<yyyy-MM-dd_HH-mm-ss>_<yyyy-MM-dd_HH-mm-ss>.mp4` (kamera adı klipteki gibi
+  salt okuma kayıt araması — hiç yoksa "Bu aralıkta kayıt yok", oturum açılmaz). **İndir'e basınca panel hemen kapanır**
+  (kareler tam genişliğe döner), indirme arka planda sürer. **Sahibi uygulama:** [`DownloadManager`](src/SPVision/Views/DownloadManager.cs)
+  ana pencerenin (`MainWindow._downloads`), Kayıt Oynatma'nın değil — sayfa geçişleri (Canlı İzleme / Kayıt Oynatma / Ayarlar),
+  oynatma değişiklikleri ve panelin kapanması indirmeyi etkilemez; yalnız **İptal** ya da uygulamayı kapatmak durdurur
+  (kapanışta `DownloadManager.ShutdownAsync` → `DownloadBatch.CancelAllAsync`, yarım dosyalar silinir). Aynı anda tek indirme:
+  indirme sürerken panel yeniden açılırsa form devre dışı, üstte "Bir indirme sürüyor" notu (`DownloadBusy`).
+  **İlerleme hapı** ([`DownloadStatusPill`](src/SPVision/Controls/DownloadStatusPill.xaml), onaylı tasarım): ana pencerenin üst
+  çubuğunda, **pencerenin tam ortasında** (çubuğun iki yan iç boşluğu eşit; ayrı katman, sütunları itmez), 440×36, yarıçap 18,
+  `CardBg` + 1 px `Border` + hafif gölge (ayrı katmanda — metin bitmap'e düşmesin); indirme simgesi (accent) · kamera adı ·
+  "kamera i / n" (tek kamerada "İndiriliyor") · boşluk · "NN%" · "kalan m:ss" tek satırda 11,5 px, altında 4 px çubuk, sağda
+  64×26 **İptal** (basınca "İptal ediliyor…"). Her sayfada görünür (tam ekranda üst çubukla birlikte gizli). Genişlik
+  `Core.DownloadPill.Width`: sekmelere ve sağdaki araçlara 12 px'ten fazla yaklaşmaz, simetrik daralır; dar genişlikte önce
+  "kamera i / n" + kalan süre (<300 px), sonra simge + kamera adı (<200 px) düşer, 120 px'ten azsa gizlenir (Canlı İzleme
+  1100 px'te tahminen ~120 px kalır — elle bakılmalı). Bitince aynı yerde **sonuç hapı**: tüm dosyalar tamsa yeşil (`OkSoftBg`/
+  `OkBorder`/`OkText`, onay simgesi) "İndirme bitti · N dosya kaydedildi"; eksik/başarısız/iptalde amber (`WarningSoftBg`/
+  `WarningSoftBorder`/`WarningText`) kısa sebep ("İndirme bitti · 2 dosya kaydedildi · 1 dosya eksik indirildi", "Bu aralıkta
+  kayıt yok", "İndirme iptal edildi"): `Core.DownloadPill.Result`; ipucunda kamera kamera ayrıntı. 96×26 **Klasörü aç**: tek
+  dosyada Gezgin dosya seçili, birden çokta klasör (`OpenTarget`), hap hemen kapanır. Hap **15 sn** sonra kendiliğinden
+  kaybolur; fare üstündeyken süre durur, çıkınca 15 sn yeniden başlar. Durum çubuğu yine "İndirildi: <yol>" yazar. Paneldeki
+  ilerleme kartları kaldırıldı. Dosya adı `<Kamera>_<yyyy-MM-dd_HH-mm-ss>_<yyyy-MM-dd_HH-mm-ss>.mp4` (kamera adı klipteki gibi
   güvenli; varsa " (2)" eklenir, üzerine yazılmaz). AutomationId'ler: `DownloadPanel`, `DownloadCamera{n}`, `DownloadDay{n}`,
-  `DownloadStartTime`, `DownloadEndTime`, `DownloadStart`, `DownloadCancel` (Vazgeç), `DownloadAbort` (İptal), `DownloadFolder`,
-  `DownloadOpenFolder`, `DownloadProgress{n}`; şerit `TileBarSnapshot/Clip/Zoom/Download`.
+  `DownloadStartTime`, `DownloadEndTime`, `DownloadStart`, `DownloadCancel` (Vazgeç), `DownloadFolder`, `DownloadBusy`; hap
+  `DownloadProgressPill`, `DownloadProgressCancel`, `DownloadResultText`, `DownloadOpenFolder`; şerit
+  `TileBarSnapshot/Clip/Zoom/Download`.
 - **İndirme motoru** ([`HikRecordingDownload`](src/SPVision/Hik/HikRecordingDownload.cs)): kendi oturumu — `NET_DVR_PlayBackByTime_V40`,
   **pencere yok** (`Wnd = 0`; SDK ne çizer ne hızı ayarlar) — **kayıt dosyası başına bir oturum** (`DownloadParts.Split`, arama
   sonucunun parçaları aralığa kırpılır). Sebep (sondada ölçüldü): tek oturum dosya sınırını geçerken kayıt cihazı sonraki dosyanın
@@ -491,7 +524,8 @@ dotnet run --project src\SPVision
 | `Views/PlaybackView.xaml(.cs)` | Eş zamanlı kayıt oynatma — takvim + kamera listesi, bilgi çubuğu, ≤16 `PlaybackTile`, kontrol çubuğu (oynat/durdur/anlık görüntü/klip · 30 sn geri/ileri + "Saate git" · hız), zaman çizelgesi; eşitleme döngüsü |
 | `Controls/PlaybackTile.xaml(.cs)` | Oynatma karesi: çift yol (SDK/Flyleaf), park, hız/duraklat, anlık görüntü, klip, çift tık (`DoubleClicked`), dijital yakınlaştırma |
 | `Controls/TileToolBar.xaml(.cs)` | Oynatma karesinin üstündeki araç şeridi (Popup içinde; Resim al · Klip kaydet · Yakınlaştır · İndir) |
-| `Views/DownloadPanel.xaml(.cs)`, `Views/DownloadBatch.cs` | "Video indir" paneli (sağda 400 px sütun) ve kameraları sırayla indiren iş |
+| `Views/DownloadPanel.xaml(.cs)`, `Views/DownloadBatch.cs`, `Views/DownloadManager.cs` | "Video indir" paneli (sağda 400 px sütun), kameraları sırayla indiren iş ve uygulama düzeyindeki sahibi (ana pencere) |
+| `Controls/DownloadStatusPill.xaml(.cs)` | Üst çubuğun ortasındaki indirme hapı (ilerleme + İptal, sonuç + Klasörü aç; Core `DownloadPill`) |
 | `Controls/LayoutPicker.xaml(.cs)`, `LayoutDiagram.cs`, `TransientPopup.cs` | Düzen seçici, mini diyagram, geçici Popup kuralları |
 | `Controls/TimelineBar.cs` | 50 px zaman çizelgesi (odaklı kamera): kutu, iz, oynatma başı; etiketler kutudan taşmaz (00:00 sola, 24:00 sağa yaslı); tık = ara, tekerlek/−/+ = yakınlaştır |
 | `Hik/HikNative.cs` | Tüm P/Invoke imzaları + struct'lar (`incEn` başlıklarıyla satır satır doğrulandı; `PlayM4_RenderPrivateData` ve `NET_DVR_RenderPrivateData` dahil) |
@@ -522,7 +556,7 @@ Kayıt (§4 "Kayıt ve klip biçimi"): `Recording/` — `Mp4VideoWriter` (FFmpeg
 9.0.0'a ve `AllowUnsafeBlocks`'a bağlıdır), `VideoRecorder` (kuyruk + kodlayıcı iş parçacığı + doğrulama, `RecordingResult`,
 `RecordingText`, `Recordings`), `FrameClock`, `Mp4Inspector`, `RecordingDownload.cs` (`DownloadRange`, `DownloadNaming`, `DownloadParts`,
 `DownloadTimeline`, `DownloadProgressTracker`, `DownloadEnd`, `DownloadText`, `DownloadEstimate`). Oynatma araçları: [`PlaybackTileTools.cs`](src/SPVision.Core/PlaybackTileTools.cs)
-(`DigitalZoom`, `TileToolBar` yerleşim/bekleme), [`DownloadForm.cs`](src/SPVision.Core/DownloadForm.cs) (`DateRangePick`, `RangeBand`, `DownloadTimeText`, `DownloadForm`). `RecordingTests` sentetik YV12 karelerden MP4 yazıp FFmpeg ile
+(`TileZoom`, `DigitalZoom`, `ZoomGeometry`, `TileToolBar` yerleşim/bekleme), [`DownloadForm.cs`](src/SPVision.Core/DownloadForm.cs) (`DateRangePick`, `RangeBand`, `DownloadTimeText`, `TimeFieldMask`, `DownloadForm`), [`DownloadPill.cs`](src/SPVision.Core/DownloadPill.cs) (hap genişliği/yerleşimi, metinler, sonuç, Klasörü aç hedefi). `RecordingTests` sentetik YV12 karelerden MP4 yazıp FFmpeg ile
 açar/çözer (depodaki `ffmpeg\` DLL'leri yoksa bu testler bir şey yapmadan geçer).
 Cihaz ayarları (§9): [`IsapiWritePolicy`](src/SPVision.Core/IsapiWritePolicy.cs) (yazma izin listesi + yasak kelimeler; riskli işlemlerin tam yol listesi),
 3. aşama: [`Maintenance.cs`](src/SPVision.Core/Maintenance.cs) (`MaintenancePaths`, `MaintenancePolicy` tam girişler + kelimeler, `FactoryResetMode`/`FactoryResetText`,
@@ -586,7 +620,7 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
   karesinin SDK akışını **UI iş parçacığında sırayla** bırakıyordu (her biri `StopRealPlay`/`StopPlayBack`, süren bir açılışın
   ağ zaman aşımını bekleyebilir) ve çıkışı WPF'in `OnMainWindowClose` yoluna bırakıyordu: pencere kayboluyor, süreç 40+ sn ya da
   hiç bitmiyordu. **Şimdi** (`MainWindow.OnClosing`): ilk kapatmada `e.Cancel`, pencere **hemen gizlenir**, `App.StartExitWatchdog`
-  başlar; `LiveView.ShutdownAsync` + `PlaybackView.ShutdownAsync` tüm kareleri **paralel ve UI dışında** bırakır
+  başlar; `LiveView.ShutdownAsync` + `PlaybackView.ShutdownAsync` (+ `DownloadManager.ShutdownAsync`: indirmeler iptal, yarım dosyalar silinir) tüm kareleri **paralel ve UI dışında** bırakır
   (`VideoTile/PlaybackTile.ReleaseAsync` → `Task.Run(player.Dispose)`; Dispose süren kaydı bitirir ve MP4'ü 5 sn'ye kadar
   bekler), sonra `Recordings.WhenAllFinished`; toplam en çok 5 sn. Ardından **açıkça** `Application.Current.Shutdown()`;
   `App.OnExit` `HikSdk.Shutdown(2 sn)` (`NET_DVR_Cleanup` ayrı iş parçacığında, beklemesi sınırlı). Bekçi: kapanış başladıktan

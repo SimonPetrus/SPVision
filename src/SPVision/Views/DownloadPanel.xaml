@@ -141,26 +141,6 @@
             <Setter Property="Padding" Value="0" />
             <Setter Property="Margin" Value="0" />
         </Style>
-
-        <!-- Thin progress bar: 6 px track, radius 3, accent fill. -->
-        <Style x:Key="ThinProgress" TargetType="ProgressBar">
-            <Setter Property="Height" Value="6" />
-            <Setter Property="Minimum" Value="0" />
-            <Setter Property="Maximum" Value="100" />
-            <Setter Property="Foreground" Value="{DynamicResource Accent}" />
-            <Setter Property="Background" Value="{DynamicResource Divider}" />
-            <Setter Property="Template">
-                <Setter.Value>
-                    <ControlTemplate TargetType="ProgressBar">
-                        <Border Background="{TemplateBinding Background}" CornerRadius="3" SnapsToDevicePixels="True">
-                            <Grid x:Name="PART_Track" ClipToBounds="True">
-                                <Border x:Name="PART_Indicator" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="3" />
-                            </Grid>
-                        </Border>
-                    </ControlTemplate>
-                </Setter.Value>
-            </Setter>
-        </Style>
     </UserControl.Resources>
 
     <Border Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource Border}" BorderThickness="1,0,0,0">
@@ -181,7 +161,7 @@
                 </Button>
             </Grid>
 
-            <!-- ===== Footer: two equal 32 px buttons, 8 px apart (one full-width button while downloading) ===== -->
+            <!-- ===== Footer: two equal 32 px buttons, 8 px apart ===== -->
             <Grid DockPanel.Dock="Bottom">
                 <Border BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0" />
                 <Grid x:Name="FormFooter" Margin="16,12">
@@ -195,23 +175,20 @@
                     <Button x:Name="DismissButton" Grid.Column="2" Content="Vazgeç" Style="{StaticResource FooterButton}" Click="Close_Click"
                             AutomationProperties.AutomationId="DownloadCancel" AutomationProperties.Name="Vazgeç" />
                 </Grid>
-                <Button x:Name="CancelButton" Margin="16,12" Content="İptal" Style="{StaticResource FooterButton}" Click="CancelDownload_Click"
-                        Visibility="Collapsed" AutomationProperties.AutomationId="DownloadAbort" AutomationProperties.Name="İndirmeyi iptal et" />
-                <Grid x:Name="DoneFooter" Margin="16,12" Visibility="Collapsed">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="8" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <Button x:Name="OpenFolderButton" Content="Klasörü aç" Style="{StaticResource FooterAccentButton}" Click="OpenFolder_Click"
-                            AutomationProperties.AutomationId="DownloadOpenFolder" AutomationProperties.Name="Klasörü aç" />
-                    <Button x:Name="NewButton" Grid.Column="2" Content="Yeni indirme" Style="{StaticResource FooterButton}" Click="New_Click"
-                            AutomationProperties.AutomationId="DownloadNew" AutomationProperties.Name="Yeni indirme" />
-                </Grid>
             </Grid>
 
             <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
-                <Grid Margin="16,12,16,12">
+                <StackPanel Margin="16,12,16,12">
+                    <!-- A download runs (its progress is in the top bar's pill): no second one; the form waits, disabled. -->
+                    <Border x:Name="BusyNote" Margin="0,0,0,12" Padding="10,8" CornerRadius="6" Background="{DynamicResource WarningSoftBg}"
+                            Visibility="Collapsed" AutomationProperties.AutomationId="DownloadBusy">
+                        <StackPanel>
+                            <TextBlock Text="Bir indirme sürüyor" FontSize="{StaticResource FontSizeTile}" FontWeight="SemiBold"
+                                       Foreground="{DynamicResource WarningText}" />
+                            <TextBlock Text="İlerlemesi üst çubukta. Bitince ya da iptal edilince yeni indirme başlatabilirsiniz."
+                                       Margin="0,2,0,0" Style="{StaticResource NoteText}" TextWrapping="Wrap" />
+                        </StackPanel>
+                    </Border>
                     <!-- ===== Form ===== -->
                     <StackPanel x:Name="FormPanel">
                         <!-- Cameras of the playback tiles -->
@@ -267,12 +244,16 @@
                             <TextBlock x:Name="StartLabel" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
                             <TextBlock x:Name="EndLabel" Grid.Column="2" Style="{StaticResource LabelText}" Margin="0,0,0,4" />
                             <TextBox x:Name="StartTimeBox" Grid.Row="1" Style="{StaticResource TimeField}" TextChanged="Time_TextChanged"
-                                     PreviewTextInput="Time_PreviewTextInput" AutomationProperties.AutomationId="DownloadStartTime"
+                                     PreviewTextInput="Time_PreviewTextInput" PreviewKeyDown="Time_PreviewKeyDown"
+                                     DataObject.Pasting="Time_Pasting" LostKeyboardFocus="Time_LostKeyboardFocus"
+                                     AutomationProperties.AutomationId="DownloadStartTime"
                                      AutomationProperties.Name="Başlangıç saati (ss:dd:ss)" />
                             <c:GlyphIcon Grid.Row="1" Grid.Column="1" Data="{StaticResource IconArrowRight}" Size="12" StrokeThickness="2.4"
                                          Foreground="{DynamicResource TextSecondary}" />
                             <TextBox x:Name="EndTimeBox" Grid.Row="1" Grid.Column="2" Style="{StaticResource TimeField}" TextChanged="Time_TextChanged"
-                                     PreviewTextInput="Time_PreviewTextInput" AutomationProperties.AutomationId="DownloadEndTime"
+                                     PreviewTextInput="Time_PreviewTextInput" PreviewKeyDown="Time_PreviewKeyDown"
+                                     DataObject.Pasting="Time_Pasting" LostKeyboardFocus="Time_LostKeyboardFocus"
+                                     AutomationProperties.AutomationId="DownloadEndTime"
                                      AutomationProperties.Name="Bitiş saati (ss:dd:ss)" />
                         </Grid>
 
@@ -307,15 +288,7 @@
                         </Grid>
                         <TextBlock Text="MP4 (H.264) · Ses dahil değil · Her kamera ayrı dosya" Style="{StaticResource NoteText}" Margin="0,4,0,0" />
                     </StackPanel>
-
-                    <!-- ===== Progress / results ===== -->
-                    <StackPanel x:Name="ProgressPanel" Visibility="Collapsed">
-                        <TextBlock x:Name="ProgressTitle" Style="{StaticResource SectionText}" />
-                        <TextBlock x:Name="ProgressRange" Style="{StaticResource LabelText}" Margin="0,4,0,8" Typography.NumeralAlignment="Tabular" />
-                        <StackPanel x:Name="ProgressList" AutomationProperties.Name="İndirmeler" />
-                        <TextBlock Text="MP4 (H.264) · Ses dahil değil · Her kamera ayrı dosya" Style="{StaticResource NoteText}" Margin="0,8,0,0" />
-                    </StackPanel>
-                </Grid>
+                </StackPanel>
             </ScrollViewer>
         </DockPanel>
     </Border>

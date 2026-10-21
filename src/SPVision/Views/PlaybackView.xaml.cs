@@ -121,7 +121,6 @@ public partial class PlaybackView : UserControl
         TileBar.ZoomRequested += tile => tile.ToggleZoom();
         TileBar.DownloadRequested += OpenDownload;
         DownloadPanel.CloseRequested += CloseDownload;
-        DownloadPanel.Message += text => Message?.Invoke(text);
         Loaded += (_, _) => HookWindow();
 
         // Layout of the last session now (the top bar picker shows it); its cameras when the view is first shown,
@@ -230,8 +229,8 @@ public partial class PlaybackView : UserControl
         HideTileBar();
         _dayCts.Cancel();
         CancelMarkLoaders(_ => true);
-        // Running downloads stop too (their partial files are deleted); they use playback sessions of their own.
-        return Task.WhenAll(_tiles.Select(tile => tile.ReleaseAsync()).Append(DownloadPanel.ShutdownAsync()).ToList());
+        // Downloads are not the view's: the main window's DownloadManager stops them (they outlive this view).
+        return Task.WhenAll(_tiles.Select(tile => tile.ReleaseAsync()).ToList());
     }
 
     /// <summary>Top bar: layout picker (up to 16 tiles).</summary>
@@ -1629,6 +1628,13 @@ public partial class PlaybackView : UserControl
 
     // ---- "Video indir" panel ----
 
+    /// <summary>The app's downloads (main window): the panel starts a batch there and closes; it outlives this view.</summary>
+    internal DownloadManager? Downloads
+    {
+        get => DownloadPanel.Downloads;
+        set => DownloadPanel.Downloads = value;
+    }
+
     /// <summary>Cameras of the playback tiles, in tile order (the panel's list).</summary>
     List<(Device Device, Camera Camera)> PlaybackCameras() => ActiveTiles.Select(t => (t.Device!, t.Camera!)).ToList();
 
@@ -1642,7 +1648,7 @@ public partial class PlaybackView : UserControl
 
     void CloseDownload()
     {
-        DownloadPanel.Visibility = Visibility.Collapsed; // a running download goes on; the status bar reports it
+        DownloadPanel.Visibility = Visibility.Collapsed; // a running download goes on (the top bar's pill shows it)
         HideTileBar();
     }
 

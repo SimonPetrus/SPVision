@@ -18,8 +18,9 @@ namespace SPVision.Views;
 /// playback tiles, that tile's camera checked; one calendar for the day range (first click = start day, second = end
 /// day), the two times (default: the tile's playback time −5 / +5 min), the summary with duration, estimated size and
 /// free space (İndir is off when the input is invalid or the files would not fit; no maximum length), the target folder.
-/// İndir downloads the checked cameras one after another (<see cref="DownloadBatch"/>); the panel then shows each
-/// camera's progress (bar, %, speed, estimate) with İptal, and "Klasörü aç" at the end.
+/// İndir hands the checked cameras to the app's <see cref="DownloadManager"/> (one after another, <see cref="DownloadBatch"/>)
+/// and closes the panel: the progress, İptal and "Klasörü aç" are in the top bar's pill, on every page. Opened again while
+/// a download runs, the form is disabled under "Bir indirme sürüyor" (one download at a time).
 /// </summary>
 public partial class DownloadPanel : UserControl
 {
@@ -30,18 +31,14 @@ public partial class DownloadPanel : UserControl
 
     sealed record DayCell(DateTime Date, Border Band, Button Button, TextBlock Number, Ellipse Dot);
 
-    sealed record ProgressRow(ProgressBar Bar, TextBlock Status, TextBlock Detail);
-
     readonly List<CameraRow> _rows = [];
     readonly List<DayCell> _days = [];
     readonly HashSet<CameraRef> _checked = [];
     readonly Dictionary<CameraRef, double> _rates = [];                         // estimated file bytes per second
     readonly Dictionary<(CameraRef Camera, DateTime Month), IReadOnlySet<int>> _recorded = [];
     readonly HashSet<(CameraRef Camera, DateTime Month)> _recordedAsked = [];
-    readonly Dictionary<DownloadItem, ProgressRow> _progressRows = [];
     DateRangePick _range = new(DateTime.Today, DateTime.Today);
     DateTime _month = new(DateTime.Today.Year, DateTime.Today.Month, 1);
-    DownloadBatch? _batch;
     bool _loading;
 
     public DownloadPanel()
@@ -64,11 +61,31 @@ public partial class DownloadPanel : UserControl
     /// <summary>The panel's close button / Vazgeç (the view collapses the column).</summary>
     public event Action? CloseRequested;
 
-    /// <summary>Outcome messages for the status bar ("İndirildi: …").</summary>
-    public event Action<string>? Message;
+    DownloadManager? _downloads;
 
-    /// <summary>A download is running (closing the panel keeps it running; the window's close cancels it).</summary>
-    public bool IsDownloading => _batch?.Completion is { IsCompleted: false };
+    /// <summary>The app's downloads (owned by the main window; the panel only starts one and follows whether one runs).</summary>
+    internal DownloadManager? Downloads
+    {
+        get => _downloads;
+        set
+        {
+            if (_downloads is not null)
+            {
+                _downloads.Started -= OnDownloadsChanged;
+                _downloads.Finished -= OnDownloadsChanged;
+            }
+            _downloads = value;
+            if (value is not null)
+            {
+                value.Started += OnDownloadsChanged;
+                value.Finished += OnDownloadsChanged;
+            }
+            UpdateBusy();
+        }
+    }
+
+    /// <summary>A download is running: the form waits (no second one).</summary>
+    bool Busy => _downloads?.IsRunning == true;
 
     /// <summary>The camera the panel was last opened for (its tile's İndir shows as active).</summary>
     public CameraRef? Target { get; private set; }
@@ -77,17 +94,12 @@ public partial class DownloadPanel : UserControl
 
     /// <summary>
     /// Opens (or re-targets) the panel for <paramref name="target"/>: the cameras on the playback tiles, the target
-    /// checked; range = the target's playback time −5 … +5 min, or the selected day. While a download runs its progress
-    /// stays on screen.
+    /// checked; range = the target's playback time −5 … +5 min, or the selected day. While a download runs the form is
+    /// shown disabled under "Bir indirme sürüyor".
     /// </summary>
     public void Open(IReadOnlyList<(Device Device, Camera Camera)> cameras, CameraRef? target, DateTime? playbackTime, DateTime day)
     {
         Target = target;
-        if (IsDownloading)
-        {
-            return;
-        }
-        ShowForm();
         _checked.Clear();
         if (target is { } t && cameras.Any(c => new CameraRef(c.Device.Id, c.Camera.Channel) == t))
         {
@@ -106,12 +118,13 @@ public partial class DownloadPanel : UserControl
         BuildCalendar();
         Evaluate();
         LoadRates();
+        UpdateBusy();
     }
 
     /// <summary>The playback tiles changed while the form is shown: the list follows (checks of remaining cameras stay).</summary>
     public void RefreshCameras(IReadOnlyList<(Device Device, Camera Camera)> cameras)
     {
-        if (FormPanel.Visibility != Visibility.Visible)
+        if (Visibility != Visibility.Visible)
         {
             return;
         }
@@ -122,9 +135,6 @@ public partial class DownloadPanel : UserControl
         LoadRates();
         LoadRecordedDays();
     }
-
-    /// <summary>Window closing: running downloads stop, their partial files are deleted.</summary>
-    public Task ShutdownAsync() => DownloadBatch.CancelAllAsync(TimeSpan.FromSeconds(4));
 
     // ---- Cameras ----
 
@@ -411,14 +421,98 @@ public partial class DownloadPanel : UserControl
 
     // ---- Times, summary ----
 
-    void Time_PreviewTextInput(object sender, TextCompositionEventArgs e) => e.Handled = !e.Text.All(c => char.IsAsciiDigit(c) || c == ':');
+    // The time boxes are masked (Core TimeFieldMask): digits only, the colons appear by themselves after the 2nd and 4th
+    // digit, Backspace / Delete step over them, a paste is read as a time; leaving the box completes a short input.
+
+    bool _masking; // the box's text is being set by the mask (no second pass in TextChanged)
+
+    void Time_PreviewTextInput(object sender, TextCompositionEventArgs e)
+    {
+        e.Handled = true;
+        var box = (TextBox)sender;
+        Apply(box, TimeFieldMask.Insert(box.Text, box.SelectionStart, box.SelectionLength, e.Text));
+    }
+
+    void Time_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        var box = (TextBox)sender;
+        switch (e.Key)
+        {
+            case Key.Back when Keyboard.Modifiers == ModifierKeys.None:
+                Apply(box, TimeFieldMask.Backspace(box.Text, box.SelectionStart, box.SelectionLength));
+                e.Handled = true;
+                break;
+            case Key.Delete when Keyboard.Modifiers == ModifierKeys.None:
+                Apply(box, TimeFieldMask.Delete(box.Text, box.SelectionStart, box.SelectionLength));
+                e.Handled = true;
+                break;
+            case Key.Space:
+                Apply(box, TimeFieldMask.Insert(box.Text, box.SelectionStart, box.SelectionLength, " "));
+                e.Handled = true; // TextInput does not see the space key
+                break;
+            case Key.Enter:
+                CompleteTime(box);
+                e.Handled = true;
+                break;
+        }
+    }
+
+    void Time_Pasting(object sender, DataObjectPastingEventArgs e)
+    {
+        e.CancelCommand();
+        if (e.SourceDataObject.GetData(DataFormats.UnicodeText, true) is string text)
+        {
+            var box = (TextBox)sender;
+            Apply(box, TimeFieldMask.Insert(box.Text, box.SelectionStart, box.SelectionLength, text));
+        }
+    }
+
+    void Time_LostKeyboardFocus(object sender, KeyboardFocusChangedEventArgs e) => CompleteTime((TextBox)sender);
+
+    /// <summary>"1752" → "17:52:00", "9" → "09:00:00" (an invalid time stays as typed; the summary says why).</summary>
+    void CompleteTime(TextBox box)
+    {
+        var text = TimeFieldMask.Complete(box.Text);
+        if (text != box.Text)
+        {
+            Apply(box, new TimeFieldEdit(text, text.Length));
+        }
+    }
+
+    void Apply(TextBox box, TimeFieldEdit edit)
+    {
+        _masking = true;
+        try
+        {
+            if (box.Text != edit.Text)
+            {
+                box.Text = edit.Text; // TextChanged evaluates
+            }
+            box.Select(Math.Clamp(edit.Caret, 0, edit.Text.Length), 0);
+        }
+        finally
+        {
+            _masking = false;
+        }
+    }
 
     void Time_TextChanged(object sender, TextChangedEventArgs e)
     {
-        if (!_loading)
+        if (_loading)
         {
-            Evaluate();
+            return;
         }
+        if (!_masking && sender is TextBox box)
+        {
+            // Any other change (cut, undo, drag and drop): masked again, the caret after the same digits.
+            var edit = TimeFieldMask.Normalize(box.Text, box.CaretIndex);
+            if (edit.Text != box.Text)
+            {
+                Apply(box, edit);
+                return; // the nested TextChanged evaluated
+            }
+        }
+        Evaluate();
     }
 
     DownloadSummary? _summary;
@@ -435,8 +529,8 @@ public partial class DownloadPanel : UserControl
         var fg = _summary.CanStart ? "TextFg" : "WarningText";
         SummaryText.SetResourceReference(TextBlock.ForegroundProperty, fg);
         SizeText.SetResourceReference(TextBlock.ForegroundProperty, fg);
-        StartButton.IsEnabled = _summary.CanStart;
-        StartButton.ToolTip = _summary.CanStart ? "Seçili kameraları indir" : _summary.Text;
+        StartButton.IsEnabled = _summary.CanStart && !Busy;
+        StartButton.ToolTip = Busy ? "Bir indirme sürüyor" : _summary.CanStart ? "Seçili kameraları indir" : _summary.Text;
     }
 
     long? FreeSpace()
@@ -470,190 +564,35 @@ public partial class DownloadPanel : UserControl
 
     // ---- Download ----
 
+    /// <summary>
+    /// İndir: the batch goes to the app's download manager (it keeps running on every page and across playback changes)
+    /// and the panel closes at once; the top bar's pill shows the progress.
+    /// </summary>
     void Start_Click(object sender, RoutedEventArgs e)
     {
         Evaluate();
-        if (_summary is not { CanStart: true, Start: { } start, End: { } end })
+        if (Busy || _downloads is null || _summary is not { CanStart: true, Start: { } start, End: { } end })
         {
             return;
         }
         var cameras = CheckedRows.Select(r => (r.Device, r.Camera)).ToList();
-        _batch = new DownloadBatch(cameras, start, end, Folder, Dispatcher);
-        _batch.ItemChanged += OnItemChanged;
-        ShowProgress(_batch);
-        _ = RunBatchAsync(_batch);
-    }
-
-    async Task RunBatchAsync(DownloadBatch batch)
-    {
-        await batch.RunAsync();
-        if (!ReferenceEquals(batch, _batch))
+        if (_downloads.Start(cameras, start, end, Folder))
         {
-            return;
-        }
-        CancelButton.Visibility = Visibility.Collapsed;
-        DoneFooter.Visibility = Visibility.Visible;
-        OpenFolderButton.IsEnabled = batch.Items.Any(i => i.Outcome?.HasFile == true);
-        ProgressTitle.Text = batch.IsCancelled ? "İndirme iptal edildi"
-            : batch.Items.All(i => i.Outcome?.Kind == Hik.DownloadOutcomeKind.Done) ? "İndirildi"
-            : "İndirme bitti";
-    }
-
-    void OnItemChanged(DownloadItem item)
-    {
-        if (!_progressRows.TryGetValue(item, out var row))
-        {
-            return;
-        }
-        var outcome = item.Outcome;
-        row.Status.Text = outcome switch
-        {
-            { Kind: Hik.DownloadOutcomeKind.Done } => "İndirildi",
-            { Kind: Hik.DownloadOutcomeKind.Incomplete } => "Eksik indirildi",
-            { Kind: Hik.DownloadOutcomeKind.Cancelled } => "İptal edildi",
-            { Kind: Hik.DownloadOutcomeKind.NoRecordings } => "Kayıt yok",
-            { Kind: Hik.DownloadOutcomeKind.Failed } => "İndirilemedi",
-            _ when item.Running => item.Progress is { } p ? $"%{p.Percent}" : item.Status,
-            _ => item.Status,
-        };
-        row.Status.SetResourceReference(TextBlock.ForegroundProperty, outcome switch
-        {
-            { Kind: Hik.DownloadOutcomeKind.Done } => "Online",
-            { Kind: Hik.DownloadOutcomeKind.Failed or Hik.DownloadOutcomeKind.Incomplete } => "WarningText",
-            _ => "TextSecondary",
-        });
-        if (outcome is { Kind: Hik.DownloadOutcomeKind.Done or Hik.DownloadOutcomeKind.Incomplete })
-        {
-            row.Bar.Value = 100;
-            row.Detail.Text = $"{System.IO.Path.GetFileName(outcome.Path)} · {DownloadEstimate.Text(outcome.Bytes)}" +
-                (outcome.Speed is { } speed ? $" · {speed.ToString("0.0", CultureInfo.GetCultureInfo("tr-TR"))}×" : "") +
-                (outcome.Kind == Hik.DownloadOutcomeKind.Incomplete ? $"\n{outcome.Message}" : "");
-            row.Detail.ToolTip = outcome.Path;
-            Message?.Invoke(outcome.Message);
-        }
-        else if (outcome is not null || IsFinalStatus(item))
-        {
-            row.Detail.Text = item.Status;
-            if (outcome is { Kind: Hik.DownloadOutcomeKind.Failed })
-            {
-                Message?.Invoke($"{item.Camera.Name}: {item.Status}");
-            }
-        }
-        else if (item.Progress is { } progress)
-        {
-            row.Bar.Value = progress.Percent;
-            row.Detail.Text = DownloadText.Progress(progress) + (progress.FrameTime is { } time ? $" · {time:HH:mm:ss}" : "");
-        }
-        else
-        {
-            row.Detail.Text = item.Status;
-        }
-        AutomationProperties.SetName(row.Bar, $"{item.Camera.Name}: {row.Status.Text}");
-    }
-
-    static bool IsFinalStatus(DownloadItem item) =>
-        item.Status is DownloadText.NoRecordings or DownloadText.Cancelled || item.Status.StartsWith("İndirilemedi", StringComparison.Ordinal);
-
-    void ShowProgress(DownloadBatch batch)
-    {
-        FormPanel.Visibility = Visibility.Collapsed;
-        ProgressPanel.Visibility = Visibility.Visible;
-        FormFooter.Visibility = Visibility.Collapsed;
-        DoneFooter.Visibility = Visibility.Collapsed;
-        CancelButton.Visibility = Visibility.Visible;
-        ProgressTitle.Text = batch.Items.Count == 1 ? "1 kamera indiriliyor" : $"{batch.Items.Count} kamera sırayla indiriliyor";
-        ProgressRange.Text = $"{batch.Start:dd.MM.yyyy HH:mm:ss}  →  {batch.End:dd.MM.yyyy HH:mm:ss}";
-        ProgressList.Children.Clear();
-        _progressRows.Clear();
-        var number = 0;
-        foreach (var item in batch.Items)
-        {
-            number++;
-            var name = new TextBlock
-            {
-                Text = item.Camera.Name,
-                FontSize = (double)FindResource("FontSizeList"),
-                FontWeight = FontWeights.SemiBold,
-                TextTrimming = TextTrimming.CharacterEllipsis,
-            }.WithBrush(TextBlock.ForegroundProperty, "TextStrong");
-            var status = new TextBlock
-            {
-                Text = item.Status,
-                FontSize = (double)FindResource("FontSizeTile"),
-                Margin = new Thickness(8, 0, 0, 0),
-                VerticalAlignment = VerticalAlignment.Center,
-            }.WithBrush(TextBlock.ForegroundProperty, "TextSecondary");
-            Typography.SetNumeralAlignment(status, FontNumeralAlignment.Tabular);
-            var head = new Grid { ColumnDefinitions = { new ColumnDefinition(), new ColumnDefinition { Width = GridLength.Auto } } };
-            head.Children.Add(name);
-            Grid.SetColumn(status, 1);
-            head.Children.Add(status);
-            var bar = new ProgressBar { Style = (Style)FindResource("ThinProgress"), Margin = new Thickness(0, 6, 0, 0) };
-            AutomationProperties.SetAutomationId(bar, $"DownloadProgress{number}");
-            var detail = new TextBlock
-            {
-                Text = item.Status,
-                Margin = new Thickness(0, 6, 0, 0),
-                FontSize = (double)FindResource("FontSizeSmall"),
-                TextWrapping = TextWrapping.Wrap,
-            }.WithBrush(TextBlock.ForegroundProperty, "TextSecondary");
-            Typography.SetNumeralAlignment(detail, FontNumeralAlignment.Tabular);
-            var card = new Border
-            {
-                Padding = new Thickness(10, 8, 10, 8),
-                CornerRadius = new CornerRadius(6),
-                BorderThickness = new Thickness(1),
-                Margin = new Thickness(0, 0, 0, 8),
-                Child = new StackPanel { Children = { head, bar, detail } },
-            }.WithBrush(Border.BackgroundProperty, "WindowBg").WithBrush(Border.BorderBrushProperty, "Border");
-            ProgressList.Children.Add(card);
-            _progressRows[item] = new ProgressRow(bar, status, detail);
+            CloseRequested?.Invoke();
         }
     }
 
-    void ShowForm()
-    {
-        FormPanel.Visibility = Visibility.Visible;
-        ProgressPanel.Visibility = Visibility.Collapsed;
-        FormFooter.Visibility = Visibility.Visible;
-        DoneFooter.Visibility = Visibility.Collapsed;
-        CancelButton.Visibility = Visibility.Collapsed;
-    }
+    void OnDownloadsChanged(DownloadBatch batch) => UpdateBusy();
 
-    void CancelDownload_Click(object sender, RoutedEventArgs e)
+    void UpdateBusy()
     {
-        _batch?.Cancel();
-        CancelButton.IsEnabled = false;
-        ProgressTitle.Text = "İptal ediliyor…";
-    }
-
-    void OpenFolder_Click(object sender, RoutedEventArgs e)
-    {
-        var file = _batch?.Items.Select(i => i.Outcome).FirstOrDefault(o => o?.HasFile == true)?.Path;
-        try
+        var busy = Busy;
+        BusyNote.Visibility = busy ? Visibility.Visible : Visibility.Collapsed;
+        FormPanel.IsEnabled = !busy;
+        if (_summary is not null)
         {
-            if (file is not null && System.IO.File.Exists(file))
-            {
-                System.Diagnostics.Process.Start("explorer.exe", $"/select,\"{file}\"");
-            }
-            else if (System.IO.Directory.Exists(_batch?.Folder ?? Folder))
-            {
-                System.Diagnostics.Process.Start("explorer.exe", $"\"{_batch?.Folder ?? Folder}\"");
-            }
+            Evaluate(); // İndir follows
         }
-        catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException)
-        {
-            Message?.Invoke($"Klasör açılamadı: {ex.Message}");
-        }
-    }
-
-    /// <summary>Back to the form (same cameras and range) for another download.</summary>
-    void New_Click(object sender, RoutedEventArgs e)
-    {
-        _batch = null;
-        CancelButton.IsEnabled = true;
-        ShowForm();
-        Evaluate();
     }
 
     void Close_Click(object sender, RoutedEventArgs e) => CloseRequested?.Invoke();

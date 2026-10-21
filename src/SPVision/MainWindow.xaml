@@ -11,70 +11,75 @@
         <!-- ===== Top bar, 52 px: wordmark · tabs · (live) layout picker, quality, actions / (playback) layout picker · settings (gear = third view) ===== -->
         <Border x:Name="Header" DockPanel.Dock="Top" Height="52" Background="{DynamicResource BarBg}"
                 BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" Padding="12,0">
-            <Grid>
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                    <ColumnDefinition Width="Auto" />
-                </Grid.ColumnDefinitions>
+            <Grid x:Name="HeaderLayer">
+                <Grid x:Name="HeaderGrid">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                <!-- Logo 24×24 (Assets/Logo.xaml); layout rounding keeps it on whole pixels so it stays crisp. -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0" UseLayoutRounding="True"
-                            AutomationProperties.Name="SPVision">
-                    <Image Source="{StaticResource AppLogo}" Width="24" Height="24" VerticalAlignment="Center" Stretch="Fill" />
-                    <TextBlock FontSize="{StaticResource FontSizeBrand}" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0,0,0"
-                               Foreground="{DynamicResource TextStrong}"><Run Text="SP" Foreground="{DynamicResource Accent}" /><Run Text="Vision" /></TextBlock>
-                </StackPanel>
+                    <!-- Logo 24×24 (Assets/Logo.xaml); layout rounding keeps it on whole pixels so it stays crisp. -->
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,0,20,0" UseLayoutRounding="True"
+                                AutomationProperties.Name="SPVision">
+                        <Image Source="{StaticResource AppLogo}" Width="24" Height="24" VerticalAlignment="Center" Stretch="Fill" />
+                        <TextBlock FontSize="{StaticResource FontSizeBrand}" FontWeight="Bold" VerticalAlignment="Center" Margin="8,0,0,0"
+                                   Foreground="{DynamicResource TextStrong}"><Run Text="SP" Foreground="{DynamicResource Accent}" /><Run Text="Vision" /></TextBlock>
+                    </StackPanel>
 
-                <StackPanel Grid.Column="1" Orientation="Horizontal">
-                    <c:ClickToggleButton x:Name="LiveTab" Content="Canlı İzleme" Style="{StaticResource TabButton}" IsChecked="True" Click="LiveTab_Click" />
-                    <c:ClickToggleButton x:Name="PlaybackTab" Content="Kayıt Oynatma" Style="{StaticResource TabButton}" Click="PlaybackTab_Click" />
-                </StackPanel>
+                    <StackPanel x:Name="TabsPanel" Grid.Column="1" Orientation="Horizontal">
+                        <c:ClickToggleButton x:Name="LiveTab" Content="Canlı İzleme" Style="{StaticResource TabButton}" IsChecked="True" Click="LiveTab_Click" />
+                        <c:ClickToggleButton x:Name="PlaybackTab" Content="Kayıt Oynatma" Style="{StaticResource TabButton}" Click="PlaybackTab_Click" />
+                    </StackPanel>
 
-                <!-- Every control here is 36 px tall: layout picker, segmented group (1 + 2 + 30 + 2 + 1) and icon buttons. -->
-                <StackPanel Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
-                    <StackPanel x:Name="LiveTools" Orientation="Horizontal">
-                        <c:LayoutPicker x:Name="LivePicker" />
-                        <Border Style="{StaticResource SegmentGroup}" Margin="12,0,0,0" AutomationProperties.Name="Görüntü kalitesi">
-                            <StackPanel Orientation="Horizontal">
-                                <c:ClickToggleButton x:Name="QualityAuto" Content="Oto" Style="{StaticResource SegmentButton}" Click="QualityAuto_Click"
-                                              ToolTip="Küçük karelerde SD, büyük karelerde HD (önerilen, işlemciyi yormaz)" AutomationProperties.Name="Otomatik kalite" />
-                                <c:ClickToggleButton x:Name="QualityHd" Content="HD" Style="{StaticResource SegmentButton}" Click="QualityHd_Click" Margin="2,0,0,0"
-                                              ToolTip="Tüm kareler ana akış (yüksek çözünürlük)" AutomationProperties.Name="HD kalite" />
-                                <c:ClickToggleButton x:Name="QualitySd" Content="SD" Style="{StaticResource SegmentButton}" Click="QualitySd_Click" Margin="2,0,0,0"
-                                              ToolTip="Tüm kareler alt akış (düşük çözünürlük)" AutomationProperties.Name="SD kalite" />
-                            </StackPanel>
-                        </Border>
-                        <c:ClickToggleButton x:Name="MotionToggle" Style="{StaticResource IconToggleButton}" Margin="12,0,0,0" Click="MotionToggle_Click"
-                                      ToolTip="Hareket kutularını göster/gizle" AutomationProperties.Name="Hareket kutularını göster/gizle">
-                            <c:GlyphIcon Data="{StaticResource IconMotion}" FillData="{StaticResource IconMotionDot}" />
+                    <!-- Every control here is 36 px tall: layout picker, segmented group (1 + 2 + 30 + 2 + 1) and icon buttons. -->
+                    <StackPanel x:Name="ToolsPanel" Grid.Column="3" Orientation="Horizontal" VerticalAlignment="Center">
+                        <StackPanel x:Name="LiveTools" Orientation="Horizontal">
+                            <c:LayoutPicker x:Name="LivePicker" />
+                            <Border Style="{StaticResource SegmentGroup}" Margin="12,0,0,0" AutomationProperties.Name="Görüntü kalitesi">
+                                <StackPanel Orientation="Horizontal">
+                                    <c:ClickToggleButton x:Name="QualityAuto" Content="Oto" Style="{StaticResource SegmentButton}" Click="QualityAuto_Click"
+                                                  ToolTip="Küçük karelerde SD, büyük karelerde HD (önerilen, işlemciyi yormaz)" AutomationProperties.Name="Otomatik kalite" />
+                                    <c:ClickToggleButton x:Name="QualityHd" Content="HD" Style="{StaticResource SegmentButton}" Click="QualityHd_Click" Margin="2,0,0,0"
+                                                  ToolTip="Tüm kareler ana akış (yüksek çözünürlük)" AutomationProperties.Name="HD kalite" />
+                                    <c:ClickToggleButton x:Name="QualitySd" Content="SD" Style="{StaticResource SegmentButton}" Click="QualitySd_Click" Margin="2,0,0,0"
+                                                  ToolTip="Tüm kareler alt akış (düşük çözünürlük)" AutomationProperties.Name="SD kalite" />
+                                </StackPanel>
+                            </Border>
+                            <c:ClickToggleButton x:Name="MotionToggle" Style="{StaticResource IconToggleButton}" Margin="12,0,0,0" Click="MotionToggle_Click"
+                                          ToolTip="Hareket kutularını göster/gizle" AutomationProperties.Name="Hareket kutularını göster/gizle">
+                                <c:GlyphIcon Data="{StaticResource IconMotion}" FillData="{StaticResource IconMotionDot}" />
+                            </c:ClickToggleButton>
+                            <Button x:Name="SnapshotButton" Style="{StaticResource IconButton}" Margin="4,0,0,0" Click="Snapshot_Click"
+                                    ToolTip="Anlık görüntü (seçili kare)" AutomationProperties.Name="Seçili kameradan anlık görüntü al">
+                                <c:GlyphIcon Data="{StaticResource IconCamera}" />
+                            </Button>
+                            <Button x:Name="RecordButton" Style="{StaticResource IconButton}" Margin="4,0,0,0" Click="Record_Click"
+                                    ToolTip="Kayıt (seçili kare, MP4)" AutomationProperties.Name="Seçili kamerayı kaydet">
+                                <c:GlyphIcon x:Name="RecordIcon" Data="{StaticResource IconRecord}" FillData="{StaticResource IconRecordDot}"
+                                             Foreground="{DynamicResource DangerIcon}" />
+                            </Button>
+                            <Button x:Name="FullScreenButton" Style="{StaticResource IconButton}" Margin="4,0,0,0" Click="FullScreen_Click"
+                                    ToolTip="Tam ekran (F11)" AutomationProperties.Name="Tam ekran (F11)">
+                                <c:GlyphIcon Data="{StaticResource IconFullScreen}" />
+                            </Button>
+                            <Rectangle Width="1" Height="24" Margin="12,0" Fill="{DynamicResource Border}" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <!-- Playback: layout picker limited to 16 tiles (synchronous playback). -->
+                        <StackPanel x:Name="PlaybackTools" Orientation="Horizontal" Visibility="Collapsed">
+                            <c:LayoutPicker x:Name="PlaybackPicker" />
+                            <Rectangle Width="1" Height="24" Margin="12,0" Fill="{DynamicResource Border}" VerticalAlignment="Center" />
+                        </StackPanel>
+                        <c:ClickToggleButton x:Name="SettingsButton" Style="{StaticResource IconToggleButton}" Click="Settings_Click"
+                                      ToolTip="Ayarlar" AutomationProperties.Name="Ayarlar">
+                            <c:GlyphIcon Data="{StaticResource IconSettings}" />
                         </c:ClickToggleButton>
-                        <Button x:Name="SnapshotButton" Style="{StaticResource IconButton}" Margin="4,0,0,0" Click="Snapshot_Click"
-                                ToolTip="Anlık görüntü (seçili kare)" AutomationProperties.Name="Seçili kameradan anlık görüntü al">
-                            <c:GlyphIcon Data="{StaticResource IconCamera}" />
-                        </Button>
-                        <Button x:Name="RecordButton" Style="{StaticResource IconButton}" Margin="4,0,0,0" Click="Record_Click"
-                                ToolTip="Kayıt (seçili kare, MP4)" AutomationProperties.Name="Seçili kamerayı kaydet">
-                            <c:GlyphIcon x:Name="RecordIcon" Data="{StaticResource IconRecord}" FillData="{StaticResource IconRecordDot}"
-                                         Foreground="{DynamicResource DangerIcon}" />
-                        </Button>
-                        <Button x:Name="FullScreenButton" Style="{StaticResource IconButton}" Margin="4,0,0,0" Click="FullScreen_Click"
-                                ToolTip="Tam ekran (F11)" AutomationProperties.Name="Tam ekran (F11)">
-                            <c:GlyphIcon Data="{StaticResource IconFullScreen}" />
-                        </Button>
-                        <Rectangle Width="1" Height="24" Margin="12,0" Fill="{DynamicResource Border}" VerticalAlignment="Center" />
                     </StackPanel>
-                    <!-- Playback: layout picker limited to 16 tiles (synchronous playback). -->
-                    <StackPanel x:Name="PlaybackTools" Orientation="Horizontal" Visibility="Collapsed">
-                        <c:LayoutPicker x:Name="PlaybackPicker" />
-                        <Rectangle Width="1" Height="24" Margin="12,0" Fill="{DynamicResource Border}" VerticalAlignment="Center" />
-                    </StackPanel>
-                    <c:ClickToggleButton x:Name="SettingsButton" Style="{StaticResource IconToggleButton}" Click="Settings_Click"
-                                  ToolTip="Ayarlar" AutomationProperties.Name="Ayarlar">
-                        <c:GlyphIcon Data="{StaticResource IconSettings}" />
-                    </c:ClickToggleButton>
-                </StackPanel>
+                </Grid>
+                <!-- Download pill ("Video indir" running / finished): exactly centred in the window (the bar's 12 px insets
+                     are equal), 440 × 36, 8 px from the top; narrower when the tabs or the tools would be touched (MainWindow). -->
+                <c:DownloadStatusPill x:Name="DownloadPillView" HorizontalAlignment="Center" VerticalAlignment="Center" />
             </Grid>
         </Border>
 

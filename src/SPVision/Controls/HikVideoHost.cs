@@ -18,6 +18,7 @@ public sealed class HikVideoHost : HwndHost
     const int SsBlackRect = 0x0004;
     const int WmNcHitTest = 0x0084;
     const int HtTransparent = -1;
+    const int WmMouseWheel = 0x020A;
 
     [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
     static extern IntPtr CreateWindowEx(int exStyle, string className, string? windowName, int style,
@@ -42,12 +43,31 @@ public sealed class HikVideoHost : HwndHost
 
     protected override void DestroyWindowCore(HandleRef hwnd) => DestroyWindow(hwnd.Handle);
 
+    /// <summary>
+    /// A wheel message that reached the video window itself (wheel delta, cursor in physical screen pixels); return true
+    /// when it was used. Normally the wheel goes to the main window (the window is transparent to hit testing), but a
+    /// wheel routed to the window under the cursor, or forwarded by a window PlayCtrl creates inside it, lands here; unused,
+    /// it is passed on to the main window (DefWindowProc) as before.
+    /// </summary>
+    public Func<int, int, int, bool>? WheelHandler { get; set; }
+
     protected override IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg == WmNcHitTest)
         {
             handled = true;
             return new IntPtr(HtTransparent);
+        }
+        if (msg == WmMouseWheel && WheelHandler is { } wheel)
+        {
+            var delta = (short)((wParam.ToInt64() >> 16) & 0xFFFF);
+            var x = (short)(lParam.ToInt64() & 0xFFFF);          // screen coordinates (GET_X_LPARAM)
+            var y = (short)((lParam.ToInt64() >> 16) & 0xFFFF);
+            if (wheel(delta, x, y))
+            {
+                handled = true;
+                return IntPtr.Zero;
+            }
         }
         return base.WndProc(hwnd, msg, wParam, lParam, ref handled);
     }

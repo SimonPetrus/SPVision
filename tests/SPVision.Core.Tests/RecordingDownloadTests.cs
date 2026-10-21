@@ -303,11 +303,104 @@ public class DownloadFormTests
     [InlineData(null)]
     public void Invalid_time_field_is_refused(string? text) => Assert.Null(DownloadTimeText.Parse(text));
 
+    /// <summary>Types <paramref name="keys"/> one by one at the caret ('\b' = Backspace, '\x7f' = Delete).</summary>
+    static TimeFieldEdit Type(TimeFieldEdit field, string keys)
+    {
+        foreach (var key in keys)
+        {
+            field = key switch
+            {
+                '\b' => TimeFieldMask.Backspace(field.Text, field.Caret, 0),
+                '\x7f' => TimeFieldMask.Delete(field.Text, field.Caret, 0),
+                _ => TimeFieldMask.Insert(field.Text, field.Caret, 0, key.ToString()),
+            };
+        }
+        return field;
+    }
+
+    static readonly TimeFieldEdit Empty = new("", 0);
+
+    [Fact]
+    public void Time_field_puts_the_colons_in_while_typing()
+    {
+        Assert.Equal(new TimeFieldEdit("1", 1), Type(Empty, "1"));
+        Assert.Equal(new TimeFieldEdit("17:", 3), Type(Empty, "17"));        // colon at once, caret after it
+        Assert.Equal(new TimeFieldEdit("17:5", 4), Type(Empty, "175"));
+        Assert.Equal(new TimeFieldEdit("17:52:", 6), Type(Empty, "1752"));
+        Assert.Equal(new TimeFieldEdit("17:52:00", 8), Type(Empty, "175200"));
+        Assert.Equal(new TimeFieldEdit("17:52:00", 8), Type(Empty, "1752009"));  // at most 6 digits
+        Assert.Equal(new TimeFieldEdit("17:52:00", 8), Type(Empty, "17:52:00")); // typed colons are skipped
+        Assert.Equal(new TimeFieldEdit("09:", 3), Type(Empty, "9:"));            // one-digit hour, then a colon
+        Assert.Equal(new TimeFieldEdit("09:05:", 6), Type(Empty, "9:5:"));
+        Assert.Equal(new TimeFieldEdit("", 0), Type(Empty, "a:"));               // letters ignored, nothing to pad
+    }
+
+    [Fact]
+    public void Time_field_backspace_and_delete_step_over_the_colons()
+    {
+        Assert.Equal(new TimeFieldEdit("1", 1), Type(Empty, "17\b"));           // "17:" → "1" (not stuck on the colon)
+        Assert.Equal(new TimeFieldEdit("17:5", 4), Type(Empty, "1752\b"));
+        Assert.Equal(new TimeFieldEdit("", 0), Type(Empty, "175200\b\b\b\b\b\b\b"));
+        // Caret just after the first colon of "17:52:00": Backspace removes the 7, the rest moves up.
+        Assert.Equal(new TimeFieldEdit("15:20:0", 1), TimeFieldMask.Backspace("17:52:00", 3, 0));
+        // Caret just before the colon: Delete removes the 5 behind it.
+        Assert.Equal(new TimeFieldEdit("17:20:0", 3), TimeFieldMask.Delete("17:52:00", 2, 0));
+        Assert.Equal(new TimeFieldEdit("17:52:00", 8), TimeFieldMask.Delete("17:52:00", 8, 0));
+        // A selection is removed as a whole ("52" of "17:52:00").
+        Assert.Equal(new TimeFieldEdit("17:00:", 3), TimeFieldMask.Backspace("17:52:00", 3, 2));
+    }
+
+    [Fact]
+    public void Time_field_overwrites_inserts_and_pastes()
+    {
+        // Typing in the middle of a full field overwrites what follows the caret.
+        Assert.Equal(new TimeFieldEdit("18:52:00", 3), TimeFieldMask.Insert("17:52:00", 1, 0, "8"));
+        // A selection is replaced.
+        Assert.Equal(new TimeFieldEdit("17:30:00", 6), TimeFieldMask.Insert("17:52:00", 3, 2, "30"));
+        // The whole field selected and pasted over, in any spelling.
+        foreach (var pasted in new[] { "175200", "17:52:00", "17.52.00", " 17:52:00 " })
+        {
+            Assert.Equal(new TimeFieldEdit("17:52:00", 8), TimeFieldMask.Insert("08:30:00", 0, 8, pasted));
+        }
+        Assert.Equal(new TimeFieldEdit("08:30:00", 8), TimeFieldMask.Insert("", 0, 0, "8:30:00"));
+        Assert.Equal(new TimeFieldEdit("12:", 3), TimeFieldMask.Insert("", 0, 0, "12abc"));
+        // Anything else (cut, undo) is masked again, the caret after the same digits.
+        Assert.Equal(new TimeFieldEdit("17:52:0", 4), TimeFieldMask.Normalize("1752:0", 3));
+    }
+
+    [Theory]
+    [InlineData("1752", "17:52:00")]
+    [InlineData("17:52:", "17:52:00")]
+    [InlineData("17", "17:00:00")]
+    [InlineData("17:", "17:00:00")]
+    [InlineData("9", "09:00:00")]
+    [InlineData("175", "17:50:00")]
+    [InlineData("17:5", "17:50:00")]
+    [InlineData("175200", "17:52:00")]
+    [InlineData("8:30:00", "08:30:00")]
+    [InlineData("17.52.00", "17:52:00")]
+    [InlineData("", "")]
+    [InlineData(null, "")]
+    public void Time_field_completes_a_short_input_on_leave(string? text, string completed) =>
+        Assert.Equal(completed, TimeFieldMask.Complete(text));
+
+    [Fact]
+    public void Time_field_validation_stays()
+    {
+        Assert.Equal(new TimeSpan(17, 52, 0), DownloadTimeText.ParseInput("17:52:"));
+        Assert.Equal(new TimeSpan(9, 0, 0), DownloadTimeText.ParseInput("9"));
+        Assert.Null(DownloadTimeText.ParseInput("24"));        // hour ≤ 23
+        Assert.Null(DownloadTimeText.ParseInput("17:60:"));    // minutes ≤ 59
+        Assert.Null(DownloadTimeText.ParseInput("17:59:60"));  // seconds ≤ 59
+        Assert.Null(DownloadTimeText.ParseInput(""));
+        Assert.True(DownloadForm.Evaluate(Today, "1000", Today, "10:10:", 1, 1, null, Now).CanStart);
+    }
+
     [Fact]
     public void Summary_explains_why_download_is_off()
     {
         Assert.Equal("En az bir kamera seçin.", DownloadForm.Evaluate(Today, "10:00:00", Today, "10:10:00", 0, 1, null, Now).Text);
-        Assert.Equal("Saatleri ss:dd:ss biçiminde yazın (ör. 08:30:00).", DownloadForm.Evaluate(Today, "10:00", Today, "10:10:00", 1, 1, null, Now).Text);
+        Assert.Equal("Saatleri ss:dd:ss biçiminde yazın (ör. 08:30:00).", DownloadForm.Evaluate(Today, "25:00:00", Today, "10:10:00", 1, 1, null, Now).Text);
         var reversed = DownloadForm.Evaluate(Today, "10:10:00", Today, "10:00:00", 1, 1, null, Now);
         Assert.False(reversed.CanStart);
         Assert.Equal("Bitiş, başlangıçtan sonra olmalı.", reversed.Text);
@@ -358,40 +451,114 @@ public class DownloadFormTests
 
 public class PlaybackTileToolsTests
 {
+    static readonly DigitalZoom Twice = new(2, 0.5, 0.5);
+
     [Fact]
-    public void Zoom_toggle_shows_the_centre_twice_as_large()
+    public void Zoom_button_only_switches_the_mode()
     {
-        var zoom = DigitalZoom.None.Toggle();
+        var on = TileZoom.Off.Toggle();
+        Assert.True(on.Mode);
+        Assert.False(on.IsZoomed);                       // the picture stays at 1× until the wheel turns
+        Assert.Null(on.View.Region(1920, 1080));          // 1× = the whole frame (no source rectangle)
+        Assert.Equal(TileZoom.Off, on.Toggle());          // pressed again: off
+        Assert.Equal(TileZoom.Off, TileZoom.Off.Wheel(120, 0.3, 0.3)); // mode off: the wheel does nothing
+        Assert.Equal(TileZoom.Off, TileZoom.Off.Pan(0.2, 0.2));
+    }
+
+    [Fact]
+    public void Zooming_back_to_1x_keeps_the_mode_on()
+    {
+        var zoom = TileZoom.Off.Toggle().Wheel(120, 0.3, 0.7).Wheel(240, 0.3, 0.7);
         Assert.True(zoom.IsZoomed);
-        Assert.Equal(2, zoom.Level);
-        Assert.Equal((480, 270, 1440, 810), zoom.Region(1920, 1080));
-        Assert.Equal(DigitalZoom.None, zoom.Toggle());
-        Assert.Null(DigitalZoom.None.Region(1920, 1080));
+        Assert.Equal(Math.Pow(DigitalZoom.WheelStep, 3), zoom.View.Level, 9);
+        for (var i = 0; i < 10; i++)
+        {
+            zoom = zoom.Wheel(-120, 0.3, 0.7);
+        }
+        Assert.True(zoom.Mode);                          // 1× reached: still in zoom mode
+        Assert.False(zoom.IsZoomed);
+        Assert.Equal(DigitalZoom.None, zoom.View);
+        Assert.Equal(zoom, zoom.Pan(0.3, 0.3));          // nothing to drag at 1×
+        Assert.True(zoom.Wheel(120, 0.5, 0.5).IsZoomed); // and the wheel zooms again
+        Assert.Equal(DigitalZoom.MaxLevel, zoom.Wheel(120 * 50, 0.5, 0.5).View.Level);
+    }
+
+    [Theory]
+    [InlineData(0.5, 0.5)]
+    [InlineData(0.25, 0.75)]
+    [InlineData(0.9, 0.1)]
+    [InlineData(0.62, 0.41)]
+    public void Wheel_keeps_the_picture_pixel_under_the_cursor(double vx, double vy)
+    {
+        // The source pixel under the cursor on the rectangle PlayCtrl really gets (whole, even pixels), step by step in and out.
+        var zoom = TileZoom.Off.Toggle();
+        var anchor = ZoomGeometry.SourcePixel(zoom.View.Region(1920, 1080), 1920, 1080, vx, vy);
+        Assert.Equal((vx * 1920, vy * 1080), anchor);
+        foreach (var delta in new[] { 120, 120, 120, 240, 120, -120, 120, -240, -120 })
+        {
+            zoom = zoom.Wheel(delta, vx, vy);
+            var now = ZoomGeometry.SourcePixel(zoom.View.Region(1920, 1080), 1920, 1080, vx, vy);
+            Assert.InRange(now.X, anchor.X - 3, anchor.X + 3);
+            Assert.InRange(now.Y, anchor.Y - 3, anchor.Y + 3);
+        }
     }
 
     [Fact]
-    public void Wheel_zoom_keeps_the_point_under_the_cursor()
+    public void Wheel_zoom_at_the_cursor_not_at_the_centre()
     {
-        var zoom = DigitalZoom.None.Toggle().ZoomAt(2, 0.75, 0.5); // 4×, at three quarters of the width
-        Assert.Equal(4, zoom.Level);
-        // The picture point under the cursor was 0.25 + 0.75 × 0.5 = 0.625; it is still under it.
-        var half = 0.5 / zoom.Level;
-        Assert.Equal(0.625, zoom.CenterX - half + 0.75 * 2 * half, 6);
-        Assert.Equal(DigitalZoom.None, zoom.ZoomAt(0.1, 0.5, 0.5)); // back to the whole picture
-        Assert.Equal(DigitalZoom.MaxLevel, zoom.ZoomAt(100, 0.5, 0.5).Level);
+        var zoom = TileZoom.Off.Toggle().Wheel(120 * 3, 0.75, 0.25).View; // ≈1.95×, cursor right / top
+        var region = zoom.Region(1920, 1080)!.Value;
+        // The point at 3/4 width, 1/4 height (1440, 270) stays under the cursor: the region is pulled right / up.
+        Assert.True(region.Left > (1920 - (region.Right - region.Left)) / 2);
+        Assert.True(region.Top < (1080 - (region.Bottom - region.Top)) / 2);
+        var (x, y) = zoom.PictureAt(0.75, 0.25);
+        Assert.Equal(0.75, x, 9);
+        Assert.Equal(0.25, y, 9);
     }
 
     [Fact]
-    public void Zoomed_region_never_leaves_the_picture()
+    public void Zoom_at_the_edge_is_clamped_to_the_picture()
     {
-        var zoom = DigitalZoom.None.Toggle().PanBy(5, 5); // dragged far right / down: the picture's top-left comes into view
-        Assert.Equal((0, 0, 960, 540), zoom.Region(1920, 1080));
-        var corner = DigitalZoom.None.Toggle().ZoomAt(1, 1, 1).PanBy(-3, -3); // dragged left / up: the bottom-right
-        var region = corner.Region(1920, 1080)!.Value;
-        Assert.Equal((960, 540, 1920, 1080), region);
-        Assert.Equal(DigitalZoom.None, DigitalZoom.None.PanBy(0.3, 0.3)); // not zoomed: nothing to move
+        // Cursor in the bottom-right corner: the corner stays there and the region ends at the picture's edge.
+        var corner = TileZoom.Off.Toggle().Wheel(120 * 4, 1, 1).View.Region(1920, 1080)!.Value;
+        Assert.Equal(1920, corner.Right);
+        Assert.Equal(1080, corner.Bottom);
+        var topLeft = TileZoom.Off.Toggle().Wheel(120 * 4, 0, 0).View.Region(1920, 1080)!.Value;
+        Assert.Equal((0, 0), (topLeft.Left, topLeft.Top));
+        // A drag never shows anything outside the picture.
+        var zoom = new TileZoom(true, Twice);
+        Assert.Equal((0, 0, 960, 540), zoom.Pan(5, 5).View.Region(1920, 1080));
+        Assert.Equal((960, 540, 1920, 1080), zoom.Pan(-3, -3).View.Region(1920, 1080));
         var odd = new DigitalZoom(3, 0.5, 0.5).Region(1921, 1081)!.Value;
         Assert.True(odd.Left % 2 == 0 && odd.Top % 2 == 0 && (odd.Right - odd.Left) % 2 == 0);
+    }
+
+    [Fact]
+    public void Cursor_maps_onto_the_picture_with_the_dpi_scale()
+    {
+        // Video area at screen pixel (300, 200), 640 × 360 DIP on a 150 % screen = 960 × 540 pixels.
+        Assert.Equal((0.5, 0.5), ZoomGeometry.ViewPoint(300 + 480, 200 + 270, 300, 200, 640, 360, 1.5));
+        Assert.Equal((0.25, 0.75), ZoomGeometry.ViewPoint(300 + 240, 200 + 405, 300, 200, 640, 360, 1.5));
+        // Ignoring the scale (pixels ÷ DIPs) would have put this cursor at 0.375 / 1.125 instead.
+        Assert.Null(ZoomGeometry.ViewPoint(299, 300, 300, 200, 640, 360, 1.5));       // left of the area
+        Assert.Null(ZoomGeometry.ViewPoint(300 + 960, 300, 300, 200, 640, 360, 1.5)); // right of it
+        Assert.Equal((0.25, -0.5), ZoomGeometry.ViewDelta(240, -270, 640, 360, 1.5));
+    }
+
+    [Fact]
+    public void Letterboxed_picture_offsets_the_cursor()
+    {
+        // 16:9 picture in a 1000 × 1000 area: 1000 × 562.5, bars of 218.75 above and below.
+        Assert.Equal((0.0, 218.75, 1000.0, 562.5), ZoomGeometry.PictureRect(1000, 1000, 16.0 / 9));
+        Assert.Equal((0.5, 0.5), ZoomGeometry.ViewPoint(500, 500, 0, 0, 1000, 1000, 1, 16.0 / 9));
+        Assert.Equal((0.25, 0.0), ZoomGeometry.ViewPoint(250, 218.75, 0, 0, 1000, 1000, 1, 16.0 / 9));
+        Assert.Equal((0.25, 0.0), ZoomGeometry.ViewPoint(250, 100, 0, 0, 1000, 1000, 1, 16.0 / 9)); // on the bar: the edge
+        // Pillarbox: 4:3 picture in a 1600 × 900 area, bars of 200 left and right.
+        Assert.Equal((200.0, 0.0, 1200.0, 900.0), ZoomGeometry.PictureRect(1600, 900, 4.0 / 3));
+        Assert.Equal((0.5, 0.5), ZoomGeometry.ViewPoint(800, 450, 0, 0, 1600, 900, 1, 4.0 / 3));
+        Assert.Equal((0.0, 0.5), ZoomGeometry.ViewDelta(0, 450, 1600, 900, 1, 4.0 / 3));
+        // Stretched (the SDK path): the area is the picture.
+        Assert.Equal((0.0, 0.0, 1600.0, 900.0), ZoomGeometry.PictureRect(1600, 900, 0));
     }
 
     [Fact]
@@ -414,5 +581,61 @@ public class PlaybackTileToolsTests
         Assert.Equal(3, TileToolBar.Owner(null, 3, t0, t0.AddMilliseconds(300))); // just left (onto the bar's edge…)
         Assert.Null(TileToolBar.Owner(null, 3, t0, t0.AddMilliseconds(400)));
         Assert.Null(TileToolBar.Owner(null, null, t0, t0));
+    }
+}
+
+public class DownloadPillTests
+{
+    [Fact]
+    public void Pill_is_440_wide_centred_and_shrinks_between_tabs_and_tools()
+    {
+        // Wide bar: the full 440 px.
+        Assert.Equal(440, DownloadPill.Width(1416, 351, 960));
+        // The tools come within 12 px of a 440 px pill: as wide as fits, symmetric about the centre (2 × (780 − 700 − 12)).
+        Assert.Equal(136, DownloadPill.Width(1400, 351, 780));
+        // The tabs are the closer side.
+        Assert.Equal(300, DownloadPill.Width(1400, 538, 1200));
+        // About the minimum window width on Canlı İzleme: only the mini pill fits; a little less and it is hidden.
+        Assert.Equal(122, DownloadPill.Width(1060, 351, 603));
+        Assert.Equal(0, DownloadPill.Width(1060, 351, 590));
+        Assert.Equal(DownloadPillLayout.Full, DownloadPill.LayoutFor(440));
+        Assert.Equal(DownloadPillLayout.Compact, DownloadPill.LayoutFor(250));
+        Assert.Equal(DownloadPillLayout.Mini, DownloadPill.LayoutFor(130));
+        Assert.Equal(DownloadPillLayout.Hidden, DownloadPill.LayoutFor(0));
+    }
+
+    [Fact]
+    public void Pill_texts_while_running()
+    {
+        Assert.Equal("kamera 2 / 3", DownloadPill.Step(2, 3));
+        Assert.Equal("İndiriliyor", DownloadPill.Step(1, 1));
+        Assert.Equal("0%", DownloadPill.Percent(null));
+        Assert.Equal("42%", DownloadPill.Percent(new DownloadProgressInfo(0.429, 6, null, null)));
+        Assert.Equal("kalan 1:05", DownloadPill.Remaining(TimeSpan.FromSeconds(64.2)));
+        Assert.Equal("kalan 0:09", DownloadPill.Remaining(TimeSpan.FromSeconds(9)));
+        Assert.Equal("kalan 1:02:09", DownloadPill.Remaining(new TimeSpan(1, 2, 9)));
+        Assert.Equal("", DownloadPill.Remaining(null));
+    }
+
+    [Fact]
+    public void Result_pill_is_green_only_when_every_file_is_complete()
+    {
+        Assert.Equal((true, "İndirme bitti · 3 dosya kaydedildi"), DownloadPill.Result(new(3, 0, 0, 0, false)));
+        Assert.Equal((true, "İndirme bitti · 1 dosya kaydedildi · 1 kamerada kayıt yok"), DownloadPill.Result(new(1, 0, 0, 1, false)));
+        Assert.Equal((false, "İndirme bitti · 1 dosya eksik indirildi"), DownloadPill.Result(new(0, 1, 0, 0, false)));
+        Assert.Equal((false, "İndirme bitti · 2 dosya kaydedildi · 1 dosya eksik indirildi"), DownloadPill.Result(new(2, 1, 0, 0, false)));
+        Assert.Equal((false, "İndirme bitti · 1 dosya kaydedildi · 1 kamera indirilemedi"), DownloadPill.Result(new(1, 0, 1, 0, false)));
+        Assert.Equal((false, "1 kamera indirilemedi"), DownloadPill.Result(new(0, 0, 1, 0, false)));
+        Assert.Equal((false, "Bu aralıkta kayıt yok"), DownloadPill.Result(new(0, 0, 0, 2, false)));
+        Assert.Equal((false, "İndirme iptal edildi"), DownloadPill.Result(new(0, 0, 0, 0, true)));
+        Assert.Equal((false, "İndirme iptal edildi · 1 dosya kaydedildi"), DownloadPill.Result(new(1, 0, 0, 0, true)));
+    }
+
+    [Fact]
+    public void Open_folder_selects_one_file_or_opens_the_folder()
+    {
+        Assert.Equal((@"C:\Kayit\a.mp4", true), DownloadPill.OpenTarget([@"C:\Kayit\a.mp4"], @"C:\Kayit"));
+        Assert.Equal((@"C:\Kayit", false), DownloadPill.OpenTarget([@"C:\Kayit\a.mp4", @"C:\Kayit\b.mp4"], @"D:\x"));
+        Assert.Equal((@"D:\x", false), DownloadPill.OpenTarget([], @"D:\x"));
     }
 }

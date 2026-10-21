@@ -44,13 +44,14 @@ public partial class TileToolBar : UserControl
         ClipButton.ToolTip = clipText;
         AutomationProperties.SetName(ClipButton, clipText);
 
-        var zoomed = tile.IsZoomed;
-        ZoomButton.IsEnabled = zoomed || tile.CanZoom;
-        SetActive(ZoomButton, zoomed);
-        var zoomText = zoomed ? "Yakınlaştırmayı kapat (tekerlek: yakınlaştır, sürükle: kaydır)"
-            : tile.CanZoom ? "Yakınlaştır" : "Yakınlaştır (yalnız şifreli akışta, görüntü gelince)";
+        // The button is the zoom mode: active while on (the wheel zooms around the cursor, a drag moves the picture).
+        var zoomMode = tile.IsZoomMode;
+        ZoomButton.IsEnabled = zoomMode || tile.CanZoom;
+        SetActive(ZoomButton, zoomMode);
+        var zoomText = zoomMode ? "Yakınlaştırmayı kapat (tekerlek: yakınlaştır / uzaklaştır, sürükle: kaydır)"
+            : tile.CanZoom ? "Yakınlaştır (sonra fare tekerleğiyle)" : "Yakınlaştır (yalnız şifreli akışta, görüntü gelince)";
         ZoomButton.ToolTip = zoomText;
-        AutomationProperties.SetName(ZoomButton, zoomed ? "Yakınlaştırmayı kapat" : "Yakınlaştır");
+        AutomationProperties.SetName(ZoomButton, zoomMode ? "Yakınlaştırmayı kapat" : "Yakınlaştır");
 
         DownloadButton.IsEnabled = tile.Camera is not null;
         SetActive(DownloadButton, downloadOpen);
