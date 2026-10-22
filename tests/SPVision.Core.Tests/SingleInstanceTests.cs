@@ -104,15 +104,16 @@ public class SingleInstanceTests
         // The updater case: the old process is shutting down (does not come to the front) and lets go a little later.
         var name = NewName();
         using var owner = new Owner(name, () => false);
-        var release = Task.Run(async () =>
+        var release = new Thread(() =>
         {
-            await Task.Delay(500);
+            Thread.Sleep(500);
             owner.End();
         });
+        release.Start();
 
         var second = AcquireOnThread(name, TimeSpan.FromMilliseconds(200), TimeSpan.FromSeconds(10), out _);
 
-        release.Wait();
+        Assert.True(release.Join(TimeSpan.FromSeconds(10)));
         Assert.NotNull(second);
     }
 

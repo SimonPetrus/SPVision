@@ -3,7 +3,8 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 1329/1329 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 1413/1413 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> (Tek örnek, `logs\crash.log` + "Sorunu bildir…" zip'i ve durum çubuğundaki disk uyarısı — §14 — kod + testlerle hazır, uygulamada elle denenmedi.)
 > (Çevrim içi cihazlar / SADP keşfi ve yeni ilk açılış ekranı — §13 — kod + testlerle hazır; ayrıştırma gerçek ağda iki salt okuma
 > `inquiry` sondasıyla doğrulandı, arayüz uygulamada elle denenmedi.)
 > (HTTPS sertifika sabitleme — §8 "HTTPS sertifika sabitleme" — ve Kameralar sekmesindeki tarih/saat biçimi — §9 "Tarih biçimi" — kod + testlerle hazır;
@@ -33,7 +34,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
 | `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SPVision.Core.Tests/` | 1329 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
+| `tests/SPVision.Core.Tests/` | 1413 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -47,7 +48,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ```powershell
 cd SPVision
 dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1329/1329 geçer
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1413/1413 geçer
 dotnet run --project src\SPVision
 ```
 
@@ -500,7 +501,8 @@ dotnet run --project src\SPVision
 
 | Dosya | Sorumluluk |
 |---|---|
-| `App.xaml(.cs)` | `HikSdk.Init/Shutdown`, Flyleaf `Engine.Start`, ayar yükleme; `ThemeManager.Initialize/Shutdown`, başlık çubuğunu kaydeder |
+| `App.xaml(.cs)` | **Tek örnek** (ilk iş; §14), `logs\crash.log` (§14), `HikSdk.Init/Shutdown`, Flyleaf `Engine.Start`, ayar yükleme; `ThemeManager.Initialize/Shutdown`, başlık çubuğunu kaydeder |
+| `DiskMonitor.cs`, `Views/ProblemReportExport.cs` | Durum çubuğundaki disk uyarısının salt okuma denetimi; "Sorunu bildir…" zip'i (§14) |
 | `Themes/Light.xaml`, `Themes/Dark.xaml` | **Tema renkleri ve fırçaları** (aynı anahtarlar). Görünümlerde ham hex kullanma. (Eski oynatma takma adları `PanelBg`, `MutedFg`… kaldırıldı.) |
 | `Themes/Controls.xaml` | Yazı boyutları, ikon geometrileri, kontrol stilleri (Button, `SettingsButton`/`SettingsAccentButton`/`SettingsDangerButton` 120×30 · köşe 4 · yazı 12 — Ayarlar'daki tüm düğmeler ve onay pencereleri, segment/sekme, `IconToggleButton`, `ToggleSwitch` 36×20, `NavButton`, `ListRowToggle`, `Card`, TextBox/arama, ListBox, ScrollBar, ToolTip, ContextMenu…) |
 | `ThemeManager.cs` | Tema sözlüğünü çalışırken değiştirir; Sistem modunda Windows'u canlı izler; `ThemeChanged` olayı |
@@ -1214,3 +1216,43 @@ rozetiyle gösterilir; seçilince "önce Hikvision'ın SADP aracı ya da web say
   (DS-K1A802AMF) yanıt verdi, filtre ikisini gizler. Cihazlar her yanıtı iki kez gönderir (tekilleştirme gerekli). Bu geliştirme
   makinesinde yanıtlar alındı (güvenlik duvarı durumu incelenmedi).
 - Not: LAN'daki biri sahte `ProbeMatch` gönderebilir; bu yalnız formu doldurur — şifre kullanıcıdan gelir, Digest + sertifika pini (§8) aynen geçerlidir.
+
+## 14. Dayanıklılık: tek örnek, hata günlüğü + sorun raporu, disk uyarısı (22.10.2026 — kod + testler hazır, arayüz elle denenmedi)
+
+- **Tek örnek** (Core [`SingleInstance`](src/SPVision.Core/SingleInstance.cs), `App.OnStartup`'ın en başında): Windows oturumu başına
+  **tek** SPVision. Adlı mutex `Local\SPVision.SingleInstance` süreç boyunca tutulur, `OnExit`'te (UI iş parçacığında) bırakılır.
+  İkinci açılış `AllowSetForegroundWindow(ASFW_ANY)` + adlı olay `…SingleInstance.Activate` ile çalışan örneği uyarır; o
+  `MainWindow.BringToFront()` (küçültülmüşse geri yükler — büyütülmüşse büyütülmüş, öne getirir) yapıp `…Activated` olayıyla 2 sn
+  içinde yanıtlar → yeni süreç sessizce çıkar. **Yanıt yoksa** (eski örnek kapanıyor: `BringToFront` kapanışta false döner — güncelleyicinin
+  `explorer.exe` ile yeniden açması, bekçi 8 sn) mutex **10 sn** beklenir; alınırsa yeni örnek o olur, alınamazsa sessizce çıkar.
+  Bırakılmamış (abandoned) mutex alınmış sayılır (`Environment.Exit` / `Kill`). Kural: ikinci örnek hiçbir şey başlatmaz (SDK, Flyleaf,
+  tema), `OnExit` onu atlar. Testler gerçek adlı tutamaçlarla, ayrı iş parçacıklarıyla (mutex iş parçacığına aittir).
+- **Hata günlüğü** `logs\crash.log` (`App.RegisterCrashLog`, Core [`CrashLog` + `LogScrubber`](src/SPVision.Core/CrashLog.cs)):
+  `DispatcherUnhandledException` (uygulama sürer; ileti kutusu "Beklenmeyen bir hata oldu… Ayrıntılar hata günlüğüne yazıldı…
+  Sorunu bildir…" — aynı anda tek kutu), `AppDomain.UnhandledException`, `TaskScheduler.UnobservedTaskException` (yalnız yazılır).
+  Kayıt: zaman, kaynak, SPVision sürümü, OS, .NET, tam `exception.ToString()`. 1 MB'ta `crash.log.1`'e döner (iki dosya). Yazma asla
+  istisna atmaz. **Temizleme** (`LogScrubber.Scrub`, günlükte ve zip'te): `şema://kullanıcı:şifre@` → `şema://***@`; `password=`,
+  `pwd:`, `"Password": "…"`, `<password>…</password>`, akış anahtarı, token, `Authorization:` değerleri → `***`.
+- **Sorunu bildir…** (Ayarlar › Uygulama ayarları › **Destek** kartı, 120×30 `SettingsButton`; [`ProblemReportExport`](src/SPVision/Views/ProblemReportExport.cs)
+  + Core [`ProblemReport`](src/SPVision.Core/ProblemReport.cs)): Kaydet penceresi (Masaüstü, `SPVision-sorun-yyyyMMdd-HHmm.zip`) → zip:
+  logs klasörünün **yalnız üst düzeyinden** `crash.log*`, `shutdown.log`, `player.log*` (her biri temizlenmiş, en çok son 4 MB) +
+  üretilen `sistem.txt` (sürüm, OS, .NET, ekran kartı adları — kayıt defterindeki DriverDesc, donanım hızlandırma, cihaz başına **yalnız**
+  model · yazılım sürümü (salt okuma deviceInfo GET, 5 sn; yanıt yoksa "okunamadı") · kamera sayısı). **Asla girmez:** `settings.json`,
+  `logs\sdk\` (SDK logları), sertifika pinleri, kullanıcı adı / şifre / akış anahtarı, IP adresi, cihaz adı, seri no. Sonra "Klasörü aç / Kapat".
+  Hiçbir yere gönderilmez. Claude (geliştirici) `%APPDATA%\SPVision\settings.json`'ı ve SDK loglarını açmaz/okumaz.
+- **Disk uyarısı** ([`DiskMonitor`](src/SPVision/DiskMonitor.cs) + Core [`DiskWatch`](src/SPVision.Core/DiskHealth.cs)): her kayıt cihazı için
+  **yalnız `GET ISAPI/ContentMgmt/Storage/hdd`** (türü bilinmiyorsa önce deviceInfo GET; IP kameralar atlanır); açılıştan 5 sn sonra, cihazın
+  görüntüsü bağlanınca (o ana kadar başarılı okuma yoksa, en sık 30 sn'de bir) ve **5 dk'da bir**. Cihaz kaydedilince yeniden başlar, kaldırılınca
+  ve kapanışta iptal edilir. Sağlıklı durumlar: `ok`, `normal`, `idle`, `sleeping`, `standby` (`HddInfo.IsHealthy`); disk yoksa ya da başka
+  her durum (error, unformatted, smartFailed, offline, notexist, mismatch, abnormal, formatting, repairing…) sorundur. **Ağ hatası / desteklenmeyen
+  yanıt durumu değiştirmez** (son bilinen kalır); uyarı yalnız başarılı bir okumadan sonra çıkar ve hepsi sağlıklı okununca kaybolur.
+  Durum çubuğunda (her görünümde, "N kamera yeniden bağlanıyor"un sağında) kırmızı nokta + `DangerText` "Disk sorunu — kayıt yapılmıyor
+  olabilir" (`StatusTextButton`: 23 px, 6 px iç boşluk + 12 px dış = diğer öğelerle aynı 18 px ara; sol öğeler dikeyde ortalı); ipucu
+  "cihaz · disk: durum" satırları; tık → Ayarlar › Cihaz ayarları › **Sistem** (Diskler kartı) o cihazla (`RecorderSettingsView.ShowDisks`;
+  uygulanmamış değişiklik sorusu cihaz seçicidekiyle aynı; yazılım güncellemesi sürerken yok sayılır). AutomationId `DiskWarning`.
+  Disk biçimlendirme yoluna ve hiçbir PUT/POST'a dokunulmaz.
+- **Testler** (+84): `SingleInstanceTests` (ilk açılış, öne getirip çıkma, kapanan örnekten devralma, abandoned, takılı örnek, dinlemeden
+  önceki istek), `CrashLogTests` (URL / anahtar=değer / JSON / XML / Authorization temizleme, sıradan metne dokunmama, kayıt biçimi,
+  1 MB dönme, hiç istisna atmama), `ProblemReportTests` (dosya adı, dahil edilen adlar, zip içeriği + settings.json / sdk / pin dışarıda,
+  açık dosya, büyük dosyanın sonu, sistem.txt'te adres/şifre/ad yok), `DiskHealthTests` (durum eşlemesi, ağ hatası durumu korur, iyileşince
+  kaybolur, birden çok cihaz).
