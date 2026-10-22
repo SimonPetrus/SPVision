@@ -79,7 +79,11 @@ if ($SetGitHubSecret) {
     if (-not (Get-Command gh -ErrorAction SilentlyContinue)) {
         Fail "gh (GitHub CLI) bulunamadı; secret'ı elle ekleyin: GitHub › Settings › Secrets and variables › Actions › UPDATE_SIGNING_KEY."
     }
-    Get-Content -Raw -Path $OutFile | & gh secret set UPDATE_SIGNING_KEY --repo $Repo
+    # The file goes to gh byte for byte: piping a string through Windows PowerShell 5.1 re-encodes it, and the stored
+    # secret could not be read as PEM in CI (22.10.2026).
+    $gh = Start-Process gh -ArgumentList @('secret', 'set', 'UPDATE_SIGNING_KEY', '--repo', $Repo) -RedirectStandardInput $OutFile `
+        -NoNewWindow -Wait -PassThru
+    $global:LASTEXITCODE = $gh.ExitCode
     if ($LASTEXITCODE -ne 0) {
         Fail "GitHub secret kaydedilemedi."
     }
