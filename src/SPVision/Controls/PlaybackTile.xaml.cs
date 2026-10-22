@@ -24,6 +24,9 @@ public partial class PlaybackTile : UserControl
     const double HeaderHeight = 26;
     const double CompactHeaderHeight = 22;
 
+    /// <summary>Added next to <see cref="VideoTile.DragFormat"/> when the drag starts from a tile (swap, not copy).</summary>
+    const string TileDragFormat = "SPVision.PlaybackTile";
+
     readonly SemaphoreSlim _sdkGate = new(1, 1); // serializes SDK commands of this tile (open, stop, controls, clip)
     readonly Stopwatch _openWatch = new();
     readonly Stopwatch _seekWatch = new();       // since the view's seek (a wrong-start reopen keeps counting)
@@ -49,6 +52,10 @@ public partial class PlaybackTile : UserControl
     bool _compact;
     TileState _state = TileState.Empty;
     Window? _surface;
+    Point? _dragOrigin;
+    IInputElement? _dragOriginElement;
+    bool _dragActive;                // a camera or tile is being dragged somewhere in the view
+    bool _dropTarget;                // ... and it is over this tile
 
     public PlaybackTile()
     {
@@ -71,6 +78,15 @@ public partial class PlaybackTile : UserControl
 
     /// <summary>The tile was double-clicked (the view maximizes / restores it).</summary>
     public event Action<PlaybackTile>? DoubleClicked;
+
+    /// <summary>A camera of the list was dropped onto this tile.</summary>
+    public event Action<PlaybackTile, CameraRef>? CameraDropped;
+
+    /// <summary>Another tile was dragged onto this one: (source tile, this tile).</summary>
+    public event Action<PlaybackTile, PlaybackTile>? TileDropped;
+
+    /// <summary>A drag of this tile starts (true) or ended (false): the view highlights drop targets meanwhile.</summary>
+    public event Action<PlaybackTile, bool>? Dragging;
 
     /// <summary>The video area (below the header): the hover tool bar sits along its bottom edge.</summary>
     public FrameworkElement VideoSurface => VideoArea;
@@ -165,8 +181,7 @@ public partial class PlaybackTile : UserControl
         set
         {
             _focused = value;
-            // Resource reference (not a brush value) so the frame follows a theme switch.
-            Frame.SetResourceReference(Border.BorderBrushProperty, value ? "Accent" : "TileBorder");
+            UpdateFrame();
             if (_player is not null)
             {
                 _player.Audio.Mute = !value; // only the focused camera is heard
@@ -183,6 +198,38 @@ public partial class PlaybackTile : UserControl
             _compact = value;
             HeaderRow.Height = new GridLength(value ? CompactHeaderHeight : HeaderHeight);
             CameraName.FontSize = (double)FindResource(value ? "FontSizeSmall" : "FontSizeTile");
+        }
+    }
+
+    /// <summary>
+    /// Set by the view while a camera (list) or a tile is dragged: the accent frame then marks the tile under the pointer
+    /// (where the drop goes) instead of the focused one; afterwards the focus frame is back.
+    /// </summary>
+    public bool DragActive
+    {
+        get => _dragActive;
+        set
+        {
+            _dragActive = value;
+            _dropTarget &= value;
+            UpdateFrame();
+        }
+    }
+
+    /// <summary>Accent frame: the drop target during a drag, otherwise the focused tile. Resource references follow a theme switch.</summary>
+    void UpdateFrame()
+    {
+        var accent = _dropTarget || (_focused && !_dragActive);
+        Frame.SetResourceReference(Border.BorderBrushProperty, accent ? "Accent" : "TileBorder");
+        EmptyOutline.SetResourceReference(System.Windows.Shapes.Shape.StrokeProperty, _dropTarget ? "Accent" : "WallLine");
+    }
+
+    void SetDropTarget(bool value)
+    {
+        if (value != _dropTarget)
+        {
+            _dropTarget = value;
+            UpdateFrame();
         }
     }
 
@@ -1185,14 +1232,26 @@ public partial class PlaybackTile : UserControl
         if (_surface is not null)
         {
             _surface.MouseLeftButtonDown -= Surface_MouseLeftButtonDown;
+            _surface.MouseMove -= Surface_MouseMove;
+            _surface.DragEnter -= Tile_DragOver;
+            _surface.DragOver -= Tile_DragOver;
+            _surface.DragLeave -= Tile_DragLeave;
+            _surface.Drop -= Tile_Drop;
         }
         _surface = surface;
+        surface.AllowDrop = true;
         surface.MouseLeftButtonDown += Surface_MouseLeftButtonDown;
+        surface.MouseMove += Surface_MouseMove;
+        surface.DragEnter += Tile_DragOver;
+        surface.DragOver += Tile_DragOver;
+        surface.DragLeave += Tile_DragLeave;
+        surface.Drop += Tile_Drop;
     }
 
     void Tile_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         Activate();
+        _dragOrigin = null;
         if (e.ClickCount == 2)
         {
             _panFrom = null;
@@ -1203,14 +1262,96 @@ public partial class PlaybackTile : UserControl
             _panFrom = CursorPixels(); // drag moves the zoomed picture
             Mouse.OverrideCursor = Cursors.SizeAll;
         }
+        else if (!_zoom.Mode)
+        {
+            _dragOrigin = e.GetPosition(this); // a drag past the system threshold moves the tile (zoom mode: never)
+            _dragOriginElement = this;
+        }
     }
 
     void Surface_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         Activate();
+        _dragOrigin = null;
         if (e.ClickCount == 2)
         {
             RaiseDoubleClick();
+        }
+        else
+        {
+            _dragOrigin = e.GetPosition((IInputElement)sender); // Flyleaf tiles have no zoom mode
+            _dragOriginElement = (IInputElement)sender;
+        }
+    }
+
+    void Surface_MouseMove(object sender, MouseEventArgs e) => PointerMove(e, (IInputElement)sender);
+
+    /// <summary>
+    /// Dragging a tile with a camera onto another tile swaps the two (handled by the view), like the live wall: same
+    /// system drag threshold, same data (<see cref="VideoTile.DragFormat"/> + the tile). Never in zoom mode or while a
+    /// zoomed picture is being moved (that drag is the pan).
+    /// </summary>
+    void PointerMove(MouseEventArgs e, IInputElement relativeTo)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            _dragOrigin = null;
+            return;
+        }
+        if (_dragOrigin is not { } origin || !ReferenceEquals(relativeTo, _dragOriginElement) || Source is not { } source ||
+            _zoom.Mode || _panFrom is not null)
+        {
+            return;
+        }
+        var delta = e.GetPosition(relativeTo) - origin;
+        if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+        _dragOrigin = null;
+        var data = new DataObject(VideoTile.DragFormat, source);
+        data.SetData(TileDragFormat, this);
+        Dragging?.Invoke(this, true);
+        try
+        {
+            DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
+        }
+        finally
+        {
+            Dragging?.Invoke(this, false);
+        }
+    }
+
+    void Tile_DragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = e.Data.GetDataPresent(TileDragFormat)
+            ? (ReferenceEquals(e.Data.GetData(TileDragFormat), this) ? DragDropEffects.None : DragDropEffects.Move)
+            : e.Data.GetDataPresent(VideoTile.DragFormat) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Handled = true;
+        SetDropTarget(e.Effects != DragDropEffects.None);
+    }
+
+    /// <summary>
+    /// Also raised when the pointer only moves between the tile's own parts (or onto the Flyleaf surface); the DragEnter
+    /// of the next part follows in the same pass and marks the tile again, so nothing flickers.
+    /// </summary>
+    void Tile_DragLeave(object sender, DragEventArgs e) => SetDropTarget(false);
+
+    void Tile_Drop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        SetDropTarget(false);
+        if (e.Data.GetData(TileDragFormat) is PlaybackTile from)
+        {
+            if (from != this)
+            {
+                TileDropped?.Invoke(from, this);
+            }
+        }
+        else if (e.Data.GetData(VideoTile.DragFormat) is CameraRef source)
+        {
+            CameraDropped?.Invoke(this, source);
         }
     }
 
@@ -1326,6 +1467,11 @@ public partial class PlaybackTile : UserControl
 
     void Tile_MouseMove(object sender, MouseEventArgs e)
     {
+        if (_panFrom is null)
+        {
+            PointerMove(e, this); // not panning: a drag may move the tile
+            return;
+        }
         if (_panFrom is not { } from || e.LeftButton != MouseButtonState.Pressed || VideoArea.ActualWidth < 1)
         {
             return;
@@ -1349,6 +1495,7 @@ public partial class PlaybackTile : UserControl
 
     void Tile_MouseLeftButtonUp(object sender, MouseButtonEventArgs e)
     {
+        _dragOrigin = null;
         if (_panFrom is not null || IsMouseCaptured) // also after a double click that started as a drag
         {
             _panFrom = null;

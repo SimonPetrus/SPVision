@@ -3,15 +3,16 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:fl="clr-namespace:FlyleafLib.Controls.WPF;assembly=FlyleafLib"
              xmlns:local="clr-namespace:SPVision.Controls"
-             Focusable="True" FocusVisualStyle="{x:Null}"
-             MouseLeftButtonDown="Tile_MouseLeftButtonDown">
+             Focusable="True" FocusVisualStyle="{x:Null}" AllowDrop="True"
+             MouseLeftButtonDown="Tile_MouseLeftButtonDown"
+             DragEnter="Tile_DragOver" DragOver="Tile_DragOver" DragLeave="Tile_DragLeave" Drop="Tile_Drop">
     <!-- Same chrome as the live tile (VideoTile): 2 px margin here + 2 px around the grid = 4 px gutter and gaps. -->
     <Grid x:Name="LayoutRoot" Margin="2" Background="{StaticResource HitTestBg}">
-        <!-- Empty tile: dashed outline on the (always dark) wall. -->
+        <!-- Empty tile: dashed outline on the (always dark) wall; accent while a camera is dragged over it. -->
         <Grid x:Name="EmptyFrame">
-            <Rectangle RadiusX="3" RadiusY="3" StrokeThickness="1" StrokeDashArray="4 3"
+            <Rectangle x:Name="EmptyOutline" RadiusX="3" RadiusY="3" StrokeThickness="1" StrokeDashArray="4 3"
                        Stroke="{DynamicResource WallLine}" SnapsToDevicePixels="True" />
-            <TextBlock Text="Listeden kamera seçin" HorizontalAlignment="Center" VerticalAlignment="Center"
+            <TextBlock Text="Kamera seçin ya da sürükleyin" HorizontalAlignment="Center" VerticalAlignment="Center"
                        Foreground="{DynamicResource WallText}" FontSize="{StaticResource FontSizeStatus}"
                        TextTrimming="CharacterEllipsis" Margin="8,0" />
         </Grid>

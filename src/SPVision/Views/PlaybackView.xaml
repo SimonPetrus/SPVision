@@ -47,7 +47,8 @@
                 </Grid>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False"
                               Padding="0,0,0,6" AutomationProperties.Name="Oynatılacak kameralar">
-                    <StackPanel x:Name="CameraList" />
+                    <StackPanel x:Name="CameraList" PreviewMouseLeftButtonDown="CameraList_PreviewMouseLeftButtonDown"
+                                PreviewMouseMove="CameraList_PreviewMouseMove" />
                 </ScrollViewer>
             </DockPanel>
         </Border>

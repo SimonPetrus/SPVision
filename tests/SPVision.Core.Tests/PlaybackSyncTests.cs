@@ -180,6 +180,165 @@ public class PlaybackSyncTests
         Assert.Equal(1, slots.Focus);
     }
 
+    // ---- Drag and drop ----
+
+    /// <summary>The first tiles hold these channels (picked in order), the rest are empty.</summary>
+    static PlaybackSlots Filled(int tileCount, params int[] channels)
+    {
+        var slots = new PlaybackSlots(tileCount);
+        foreach (var channel in channels)
+        {
+            slots.Pick(Cam(channel));
+        }
+        return slots;
+    }
+
+    [Fact]
+    public void DroppingANewCameraOnAnEmptyTileFillsItAndFocusesIt()
+    {
+        var slots = Filled(4, 1, 2);
+
+        var drop = slots.Place(3, Cam(7));
+
+        Assert.Equal(new SlotDrop(SlotDropKind.Placed, 3), drop);
+        Assert.Equal(new CameraRef?[] { Cam(1), Cam(2), null, Cam(7) }, slots.Slots);
+        Assert.Equal(3, slots.Focus);
+    }
+
+    [Fact]
+    public void DroppingANewCameraOnAFilledTileReplacesItsCamera()
+    {
+        var slots = Filled(4, 1, 2, 3);
+        slots.SetFocus(0);
+
+        var drop = slots.Place(1, Cam(7));
+
+        Assert.Equal(SlotDropKind.Placed, drop.Kind);
+        Assert.Equal(Cam(2), drop.Removed); // left the grid (its row is unchecked)
+        Assert.Equal(new CameraRef?[] { Cam(1), Cam(7), Cam(3), null }, slots.Slots);
+        Assert.Equal(1, slots.Focus);
+        Assert.Equal(-1, slots.IndexOf(Cam(2)));
+    }
+
+    [Fact]
+    public void DroppingACameraThatIsInAnotherTileSwapsTheTiles()
+    {
+        var slots = Filled(4, 1, 2, 3);
+
+        var drop = slots.Place(0, Cam(3));
+
+        Assert.Equal(new SlotDrop(SlotDropKind.Swapped, 0, 2), drop);
+        Assert.Equal(new CameraRef?[] { Cam(3), Cam(2), Cam(1), null }, slots.Slots);
+        Assert.Equal(0, slots.Focus);
+    }
+
+    [Fact]
+    public void DroppingACameraOfTheGridOnAnEmptyTileMovesIt()
+    {
+        var slots = Filled(4, 1, 2);
+
+        var drop = slots.Place(3, Cam(1));
+
+        Assert.Equal(new SlotDrop(SlotDropKind.Swapped, 3, 0), drop);
+        Assert.Equal(new CameraRef?[] { null, Cam(2), null, Cam(1) }, slots.Slots);
+        Assert.Equal(3, slots.Focus);
+    }
+
+    [Fact]
+    public void ACameraNeverShowsTwiceAfterAnyDrop()
+    {
+        var slots = Filled(9, 1, 2, 3, 4);
+        var random = new Random(7);
+        for (var i = 0; i < 500; i++)
+        {
+            if (random.Next(2) == 0)
+            {
+                slots.Place(random.Next(9), Cam(random.Next(1, 8)));
+            }
+            else
+            {
+                slots.Swap(random.Next(9), random.Next(9));
+            }
+            var cameras = slots.Slots.OfType<CameraRef>().ToList();
+            Assert.Equal(cameras.Count, cameras.Distinct().Count());
+            Assert.True(slots.Focused is not null || slots.Count == 0);
+        }
+    }
+
+    [Fact]
+    public void DroppingACameraOnItsOwnTileChangesNothingButTheFocus()
+    {
+        var slots = Filled(4, 1, 2);
+        slots.SetFocus(0);
+
+        Assert.Equal(SlotDropKind.None, slots.Place(1, Cam(2)).Kind);
+
+        Assert.Equal(new CameraRef?[] { Cam(1), Cam(2), null, null }, slots.Slots);
+        Assert.Equal(1, slots.Focus);
+    }
+
+    [Fact]
+    public void DropsOutsideTheGridAreIgnored()
+    {
+        var slots = Filled(4, 1);
+
+        Assert.Equal(SlotDrop.None, slots.Place(4, Cam(2)));
+        Assert.Equal(SlotDrop.None, slots.Place(-1, Cam(2)));
+        Assert.False(slots.Swap(0, 4));
+        Assert.False(slots.Swap(-1, 0));
+
+        Assert.Equal(new CameraRef?[] { Cam(1), null, null, null }, slots.Slots);
+        Assert.Equal(0, slots.Focus);
+    }
+
+    [Fact]
+    public void DraggingATileOntoAnotherSwapsThemAndTheFocusFollowsTheDraggedCamera()
+    {
+        var slots = Filled(4, 1, 2, 3);
+        slots.SetFocus(0);
+
+        Assert.True(slots.Swap(0, 2));
+
+        Assert.Equal(new CameraRef?[] { Cam(3), Cam(2), Cam(1), null }, slots.Slots);
+        Assert.Equal(2, slots.Focus);
+        Assert.Equal(Cam(1), slots.Focused);
+    }
+
+    [Fact]
+    public void DraggingATileOntoAnEmptyTileMovesIt()
+    {
+        var slots = Filled(4, 1, 2);
+
+        Assert.True(slots.Swap(1, 3));
+
+        Assert.Equal(new CameraRef?[] { Cam(1), null, null, Cam(2) }, slots.Slots);
+        Assert.Equal(3, slots.Focus);
+    }
+
+    [Fact]
+    public void SwappingAnEmptyTileWithAFilledOneKeepsTheFocusOnACamera()
+    {
+        var slots = Filled(4, 1, 2);
+        slots.SetFocus(1);
+
+        Assert.True(slots.Swap(3, 1)); // the empty tile 3 "dragged" onto tile 1: camera 2 moves to 3
+
+        Assert.Equal(new CameraRef?[] { Cam(1), null, null, Cam(2) }, slots.Slots);
+        Assert.Equal(3, slots.Focus);
+        Assert.Equal(Cam(2), slots.Focused);
+    }
+
+    [Fact]
+    public void SwapOfTheSameTileOrTwoEmptyTilesDoesNothing()
+    {
+        var slots = Filled(4, 1);
+
+        Assert.False(slots.Swap(0, 0));
+        Assert.False(slots.Swap(2, 3));
+
+        Assert.Equal(new CameraRef?[] { Cam(1), null, null, null }, slots.Slots);
+    }
+
     // ---- Jump target resolution ----
 
     static readonly RecordingSegment[] Recordings =

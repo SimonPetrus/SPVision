@@ -93,6 +93,10 @@ public partial class PlaybackView : UserControl
             tile.DoubleClicked += ToggleMaximize;
             tile.StateChanged += _ => UpdateUi(); // header, clip button, status bar
             tile.Notice += (_, text) => Message?.Invoke(text);
+            // Deferred: the grid is re-arranged outside the drag-and-drop loop (and outside Flyleaf's surface window event).
+            tile.CameraDropped += (target, source) => Dispatcher.BeginInvoke(() => DropCamera(target, source));
+            tile.TileDropped += (from, to) => Dispatcher.BeginInvoke(() => DropTile(from, to));
+            tile.Dragging += (_, on) => SetDragging(on);
             _tiles.Add(tile);
             TileGrid.Children.Add(tile); // always children: layout changes only move/hide them (no unload = no reopen)
         }
@@ -1225,6 +1229,136 @@ public partial class PlaybackView : UserControl
         SaveState();
     }
 
+    // ---- Drag and drop (like the live wall) ----
+
+    Point? _listDragOrigin;
+    bool _dragging; // a camera or a tile is being dragged: drop targets are highlighted, the hover bar stays away
+
+    void CameraList_PreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e) => _listDragOrigin = e.GetPosition(CameraList);
+
+    /// <summary>
+    /// A camera row dragged past the system threshold (a click stays a click: <see cref="PickCamera"/>) carries its camera
+    /// to a tile, with the live list's data format and effect.
+    /// </summary>
+    void CameraList_PreviewMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            _listDragOrigin = null; // a button pressed elsewhere and dragged in starts nothing
+            return;
+        }
+        if (_listDragOrigin is not { } origin)
+        {
+            return;
+        }
+        var delta = e.GetPosition(CameraList) - origin;
+        if (Math.Abs(delta.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(delta.Y) < SystemParameters.MinimumVerticalDragDistance)
+        {
+            return;
+        }
+        _listDragOrigin = null;
+        if (RowOf(e.OriginalSource as DependencyObject) is not { } row)
+        {
+            return;
+        }
+        SetDragging(true);
+        try
+        {
+            DragDrop.DoDragDrop(row.Button, new DataObject(VideoTile.DragFormat, row.Source), DragDropEffects.Copy);
+        }
+        finally
+        {
+            SetDragging(false);
+            UpdateRows(); // the pressed row was never clicked: its check mark stays what the slots say
+        }
+    }
+
+    CameraRow? RowOf(DependencyObject? node)
+    {
+        while (node is not null)
+        {
+            if (node is ToggleButton button && _rows.FirstOrDefault(r => ReferenceEquals(r.Button, button)) is { } row)
+            {
+                return row;
+            }
+            node = node is Visual ? VisualTreeHelper.GetParent(node) : LogicalTreeHelper.GetParent(node);
+        }
+        return null;
+    }
+
+    void SetDragging(bool on)
+    {
+        _dragging = on;
+        foreach (var tile in _tiles)
+        {
+            tile.DragActive = on;
+        }
+        if (on)
+        {
+            HideTileBar(); // the bar is a separate window: it would be in the way of a drop on the tile's lower edge
+        }
+    }
+
+    /// <summary>
+    /// A camera of the list dropped onto a tile: in another tile already → the two tiles trade places (their streams keep
+    /// running: same moment, clip and zoom go along); otherwise it fills the tile or replaces its camera, opens there and
+    /// joins the shared time like a clicked camera (<see cref="LoadAndJoinAsync"/>: <see cref="LeadFor"/>, speed, pause,
+    /// Stop). The tile takes the focus.
+    /// </summary>
+    void DropCamera(PlaybackTile tile, CameraRef source)
+    {
+        var index = _tiles.IndexOf(tile);
+        if (index < 0 || index >= _layout.TileCount || FindCamera(source) is null)
+        {
+            return;
+        }
+        var drop = _slots.Place(index, source);
+        if (drop.Kind == SlotDropKind.Swapped)
+        {
+            SwapTiles(drop.Tile, drop.Other);
+        }
+        else if (drop.Kind == SlotDropKind.Placed)
+        {
+            _awaitUser = false; // adding a camera starts playback as before (only a restore waits)
+        }
+        SyncTilesToSlots();
+        UpdateFocus();
+        SaveState();
+    }
+
+    /// <summary>A tile dragged onto another: the two trade places (onto an empty tile = a move), nothing reopens.</summary>
+    void DropTile(PlaybackTile from, PlaybackTile to)
+    {
+        var a = _tiles.IndexOf(from);
+        var b = _tiles.IndexOf(to);
+        if (a < 0 || b < 0 || a >= _layout.TileCount || b >= _layout.TileCount || from.Source is null || !_slots.Swap(a, b))
+        {
+            return;
+        }
+        SwapTiles(a, b);
+        SyncTilesToSlots(); // nothing to reopen: rows, numbers and the download panel's order follow
+        UpdateFocus();
+        SaveState();
+    }
+
+    /// <summary>
+    /// The tile objects trade cells, so each keeps its camera, stream, time, clip and zoom (the tiles' order is the slots'
+    /// order). A maximized cell stays maximized and shows what its slot holds now.
+    /// </summary>
+    void SwapTiles(int a, int b)
+    {
+        var maximized = _maximized is null ? -1 : _tiles.IndexOf(_maximized);
+        RestoreMaximized();
+        (_tiles[a], _tiles[b]) = (_tiles[b], _tiles[a]);
+        ArrangeTiles();
+        HideTileBar(); // placed again on the next hover tick
+        if (maximized >= 0 && _tiles[maximized].Camera is not null)
+        {
+            ToggleMaximize(_tiles[maximized]);
+        }
+    }
+
     /// <summary>Check box, tile number and focus highlight of every camera row.</summary>
     void UpdateRows()
     {
@@ -1529,11 +1663,12 @@ public partial class PlaybackView : UserControl
     /// <summary>
     /// Every 100 ms while the view is shown: the cursor (GetCursorPos — the video HWNDs take the mouse messages) over a
     /// tile's video area shows the bar there; it lingers <see cref="Core.TileToolBar.HideDelay"/> after the mouse left. It
-    /// hides at once when the window is minimized or not in the foreground (another app on top), or the view is hidden.
+    /// hides at once when the window is minimized or not in the foreground (another app on top), the view is hidden or a
+    /// drag is in progress.
     /// </summary>
     void HoverTick()
     {
-        if (!_active || !IsVisible || _window is not { WindowState: not WindowState.Minimized } window || !IsForeground(window))
+        if (!_active || _dragging || !IsVisible || _window is not { WindowState: not WindowState.Minimized } window || !IsForeground(window))
         {
             HideTileBar();
             return;

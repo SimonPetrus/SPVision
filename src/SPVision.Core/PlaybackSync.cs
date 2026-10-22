@@ -7,7 +7,8 @@ namespace SPVision.Core;
 /// (its recordings drive the timeline). Clicking a camera in the list:
 /// it is already in the grid → it is removed; otherwise it goes into the first empty tile;
 /// if the grid is full it replaces the camera of the focused tile. Removing a camera leaves its tile
-/// empty, so the other tiles keep playing undisturbed.
+/// empty, so the other tiles keep playing undisturbed. Drag and drop (<see cref="Place"/>, <see cref="Swap"/>)
+/// never puts a camera in two tiles.
 /// </summary>
 public sealed class PlaybackSlots
 {
@@ -66,6 +67,51 @@ public sealed class PlaybackSlots
         }
         _slots[Focus] = camera;
         return Focus;
+    }
+
+    /// <summary>
+    /// A camera dragged from the list onto tile <paramref name="tile"/> (like the live wall's drop). Already in another
+    /// tile → the two tiles trade places (an empty target simply takes it), so a camera never shows twice; otherwise it
+    /// fills the tile or replaces its camera (which leaves the grid: its row is unchecked). The tile takes the focus.
+    /// </summary>
+    public SlotDrop Place(int tile, CameraRef camera)
+    {
+        if (tile < 0 || tile >= _slots.Count)
+        {
+            return SlotDrop.None;
+        }
+        var existing = _slots.IndexOf(camera);
+        if (existing == tile)
+        {
+            Focus = tile;
+            return SlotDrop.None; // dropped on its own tile
+        }
+        if (existing >= 0)
+        {
+            (_slots[existing], _slots[tile]) = (_slots[tile], _slots[existing]);
+            Focus = tile;
+            return new SlotDrop(SlotDropKind.Swapped, tile, existing);
+        }
+        var removed = _slots[tile];
+        _slots[tile] = camera;
+        Focus = tile;
+        return new SlotDrop(SlotDropKind.Placed, tile, -1, removed);
+    }
+
+    /// <summary>
+    /// A tile dragged onto another: the two trade places (onto an empty tile = a move). The focus goes with the dragged
+    /// camera. False when nothing changes (same tile, out of range, both empty).
+    /// </summary>
+    public bool Swap(int from, int to)
+    {
+        if (from == to || from < 0 || to < 0 || from >= _slots.Count || to >= _slots.Count ||
+            (_slots[from] is null && _slots[to] is null))
+        {
+            return false;
+        }
+        (_slots[from], _slots[to]) = (_slots[to], _slots[from]);
+        Focus = _slots[to] is not null ? to : Focus == to ? from : Focus;
+        return true;
     }
 
     /// <summary>Removes a camera wherever it is (e.g. its device was deleted).</summary>
@@ -127,6 +173,26 @@ public sealed class PlaybackSlots
         }
         return null;
     }
+}
+
+public enum SlotDropKind
+{
+    /// <summary>Nothing moved (dropped on its own tile, or outside the grid).</summary>
+    None,
+
+    /// <summary>The camera went into the tile (empty, or its camera replaced): that tile opens it.</summary>
+    Placed,
+
+    /// <summary>The camera was in another tile: the two tiles traded places (their streams keep running).</summary>
+    Swapped,
+}
+
+/// <param name="Tile">The drop target.</param>
+/// <param name="Other">Swapped: the tile the camera came from (it now holds the target's camera, or nothing).</param>
+/// <param name="Removed">Placed: the camera the target showed before (it left the grid).</param>
+public readonly record struct SlotDrop(SlotDropKind Kind, int Tile, int Other = -1, CameraRef? Removed = null)
+{
+    public static SlotDrop None => new(SlotDropKind.None, -1);
 }
 
 public enum JumpKind
