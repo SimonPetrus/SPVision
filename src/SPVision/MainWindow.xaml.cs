@@ -89,6 +89,7 @@ public partial class MainWindow : Window
         SettingsPanel.QualitySelected += quality => Live.SelectQuality(quality);
         SettingsPanel.HardwareDecodingChanged += SetHardwareDecoding;
         _disks.Changed += UpdateDiskWarning;
+        InitEvents();
         MotionToggle.IsChecked = App.Settings.ShowMotionBoxes;
         UpdateController.Changed += UpdateBannerState;
         UpdateController.Message += ShowMessage;
@@ -142,6 +143,7 @@ public partial class MainWindow : Window
             ToggleFullScreen();
         }
         _disks.Start(App.Settings.Devices); // first disk read after 5 s, then every 5 min
+        StartEvents(); // recorders' alert streams (read only)
     }
 
     /// <summary>Streams and recordings get this long to finish before the app exits anyway (the watchdog allows 8 s in all).</summary>
@@ -177,6 +179,7 @@ public partial class MainWindow : Window
         }
         _closeStarted = true;
         _disks.Stop();
+        StopEvents();
         _idleTimer.Stop();
         App.StartExitWatchdog();
         App.LogShutdown("Kapanış başladı");
@@ -756,6 +759,7 @@ public partial class MainWindow : Window
         Live.ReloadDevice(device);
         Playback.ReloadDevice(device);
         _disks.Restart(device); // address or login may have changed: read its disks again now
+        EventsDeviceSaved(device);
         if (App.Settings.Devices.Count == 1 && wallWasEmpty)
         {
             ShowLive(device); // first device (e.g. first run): show its cameras right away
@@ -768,6 +772,7 @@ public partial class MainWindow : Window
         Playback.RemoveDevice(device.Id);
         HikSession.Find(device.Id)?.Dispose();
         _disks.Remove(device.Id);
+        EventsDeviceRemoved(device.Id);
         DevicesChanged();
     }
 
@@ -844,6 +849,7 @@ public partial class MainWindow : Window
         UpdateCameraRows();
         UpdateStatusBar();
         UpdatePageControl();
+        CheckTileDrops(); // a playing camera that lost its stream: "Kamera bağlantısı koptu"
         foreach (var id in Live.VisibleTiles.Where(t => t.State == TileState.Playing && t.Device is not null)
                      .Select(t => t.Device!.Id).Distinct())
         {
@@ -1018,6 +1024,7 @@ public partial class MainWindow : Window
         LiveTab.IsChecked = section == MainSection.Live;
         PlaybackTab.IsChecked = section == MainSection.Playback;
         SettingsButton.IsChecked = section == MainSection.Settings;
+        EventsBell.Margin = new Thickness(section == MainSection.Settings ? 0 : 12, 0, 0, 0); // 12 px after the page tools
         LiveTools.Visibility = section == MainSection.Live ? Visibility.Visible : Visibility.Collapsed;
         PlaybackTools.Visibility = section == MainSection.Playback ? Visibility.Visible : Visibility.Collapsed;
         SidePanel.Visibility = section != MainSection.Live || _fullScreen ? Visibility.Collapsed : Visibility.Visible;
@@ -1050,6 +1057,7 @@ public partial class MainWindow : Window
         Header.Visibility = StatusBar.Visibility = _fullScreen ? Visibility.Collapsed : Visibility.Visible;
         SidePanel.Visibility = _fullScreen || _section != MainSection.Live ? Visibility.Collapsed : Visibility.Visible;
         Playback.SidebarVisible = !_fullScreen;
+        ApplyEventsPanel(); // hidden in full screen with the bell
         if (_fullScreen)
         {
             _stateBeforeFullScreen = WindowState;

@@ -32,6 +32,9 @@ sealed class DiskMonitor
     /// <summary>The warning or its text changed.</summary>
     public event Action? Changed;
 
+    /// <summary>A successful read of a recorder, with its problems now (empty: healthy). The events panel's "Disk sorunu".</summary>
+    public event Action<Device, IReadOnlyList<DiskProblem>>? DisksRead;
+
     /// <summary>Starts a loop for every device that has none.</summary>
     public void Start(IEnumerable<Device> devices)
     {
@@ -109,6 +112,10 @@ sealed class DiskMonitor
                 if (read is not null && Watch.Update(loop.Device.Id, loop.Device.Name, read))
                 {
                     Changed?.Invoke();
+                }
+                if (read is { Ok: true })
+                {
+                    DisksRead?.Invoke(loop.Device, Watch.ProblemsFor(loop.Device.Id));
                 }
                 await WaitAsync(loop, Interval, ct);
             }

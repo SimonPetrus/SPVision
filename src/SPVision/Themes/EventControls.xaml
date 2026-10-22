@@ -1,0 +1,68 @@
+<!--
+    Events panel and event pop-up (onaylı tasarım "Olay bildirimleri"): icons and the few control sizes only these two use.
+    Merged by Views/EventPanel.xaml, Views/EventToast.xaml and the main window (bell). Colours come from the theme
+    (DynamicResource), like Themes/Controls.xaml.
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ===== Icons (24×24 line icons, GlyphIcon) ===== -->
+    <StreamGeometry x:Key="IconBell">M18,8 A6,6 0 0 0 6,8 C6,15 3,17 3,17 H21 C21,17 18,15 18,8 Z M13.73,21 A2,2 0 0 1 10.27,21</StreamGeometry>
+    <StreamGeometry x:Key="IconEventMotion">M3,7 V5 A2,2 0 0 1 5,3 H7 M17,3 H19 A2,2 0 0 1 21,5 V7 M21,17 V19 A2,2 0 0 1 19,21 H17 M7,21 H5 A2,2 0 0 1 3,19 V17 M8,8 H16 V16 H8 Z</StreamGeometry>
+    <StreamGeometry x:Key="IconEventOffline">M1,1 L23,23 M16.72,11.06 A10.94,10.94 0 0 1 19,12.55 M5,12.55 A10.94,10.94 0 0 1 10.17,10.16 M10.71,5.05 A16,16 0 0 1 22.58,9 M1.42,9 A15.91,15.91 0 0 1 6.12,6.12 M8.53,16.11 A6,6 0 0 1 15.48,16.11 M12,20 H12.01</StreamGeometry>
+    <StreamGeometry x:Key="IconEventDisk">M22,12 H2 M5.45,5.11 L2,12 V18 A2,2 0 0 0 4,20 H20 A2,2 0 0 0 22,18 V12 L18.55,5.11 A2,2 0 0 0 16.76,4 H7.24 A2,2 0 0 0 5.45,5.11 Z M6,16 H6.01 M10,16 H10.01</StreamGeometry>
+    <StreamGeometry x:Key="IconEventSmart">M3,12 H21 M12,3 V21 M7,7 L17,17</StreamGeometry>
+    <StreamGeometry x:Key="IconEventTamper">M17.94,17.94 A10.07,10.07 0 0 1 12,20 C5,20 1,12 1,12 A18.45,18.45 0 0 1 6.06,6.06 M9.9,4.24 A9.12,9.12 0 0 1 12,4 C19,4 23,12 23,12 A18.5,18.5 0 0 1 20.84,15.19 M14.12,14.12 A3,3 0 1 1 9.88,9.88 M1,1 L23,23</StreamGeometry>
+
+    <!-- 30×30 icon toggle of the panel header ("Bildirim ayarları"): IconToggleButton, smaller. -->
+    <Style x:Key="EventHeaderToggle" TargetType="ToggleButton" BasedOn="{StaticResource IconToggleButton}">
+        <Setter Property="Width" Value="30" />
+        <Setter Property="Height" Value="30" />
+    </Style>
+
+    <!-- 30×30 icon button of the panel header (close): IconButton, smaller. -->
+    <Style x:Key="EventHeaderButton" TargetType="Button" BasedOn="{StaticResource IconButton}">
+        <Setter Property="Width" Value="30" />
+        <Setter Property="Height" Value="30" />
+    </Style>
+
+    <!-- Segment of the panel's filter (4 equal) and interval (3 equal) groups: 26 px, font 11.5, stretched to its cell. -->
+    <Style x:Key="EventSegmentButton" TargetType="ToggleButton" BasedOn="{StaticResource SegmentButton}">
+        <Setter Property="MinWidth" Value="0" />
+        <Setter Property="Height" Value="26" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+
+    <!-- Frame of those groups: 1 px border + 2 px padding around the 26 px segments = 32 px. -->
+    <Style x:Key="EventSegmentGroup" TargetType="Border" BasedOn="{StaticResource SegmentGroup}">
+        <Setter Property="Height" Value="32" />
+    </Style>
+
+    <!-- "Canlı izle" / "Kaydı oynat" of a row: two equal 24 px buttons, radius 4, font 11.5. -->
+    <Style x:Key="EventRowButton" TargetType="Button" BasedOn="{StaticResource SettingsButton}">
+        <Setter Property="Width" Value="NaN" />
+        <Setter Property="Height" Value="24" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="FontSize" Value="11.5" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+    </Style>
+
+    <!-- Pop-up buttons: two equal 30 px buttons, radius 4, font 12 (accent: "Canlı izle"). -->
+    <Style x:Key="EventToastButton" TargetType="Button" BasedOn="{StaticResource SettingsButton}">
+        <Setter Property="Width" Value="NaN" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="Focusable" Value="False" />
+    </Style>
+    <Style x:Key="EventToastAccentButton" TargetType="Button" BasedOn="{StaticResource SettingsAccentButton}">
+        <Setter Property="Width" Value="NaN" />
+        <Setter Property="HorizontalAlignment" Value="Stretch" />
+        <Setter Property="Focusable" Value="False" />
+    </Style>
+
+    <!-- Section caption of the settings view: "HANGİ OLAYLAR", "NASIL". -->
+    <Style x:Key="EventCaption" TargetType="TextBlock" BasedOn="{StaticResource CaptionText}">
+        <Setter Property="Margin" Value="14,12,14,6" />
+    </Style>
+</ResourceDictionary>

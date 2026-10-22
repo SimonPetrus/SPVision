@@ -1,0 +1,88 @@
+<Window x:Class="SPVision.Views.EventToast"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:c="clr-namespace:SPVision.Controls"
+        Title="SPVision olay bildirimi" Width="412" SizeToContent="Height"
+        WindowStyle="None" AllowsTransparency="True" Background="Transparent" ResizeMode="NoResize"
+        ShowInTaskbar="False" ShowActivated="False" Topmost="True" Focusable="False"
+        FontFamily="{StaticResource UiFont}" FontSize="{StaticResource FontSizeBase}" Foreground="{DynamicResource TextFg}"
+        AutomationProperties.AutomationId="EventToast">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/SPVision;component/Themes/EventControls.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
+    <!-- 364 px card; 24 px around it holds the shadow (window 412 wide), so the card's own edges are where EventToasts
+         places them: 16 px from the work area's right and bottom edge. -->
+    <Grid Margin="24,16,24,32">
+        <!-- Shadow on its own layer: an effect on the card would render its text through a bitmap. -->
+        <Border CornerRadius="8" Background="{DynamicResource CardBg}">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="40" ShadowDepth="16" Direction="270" Opacity="0.32" Color="Black" />
+            </Border.Effect>
+        </Border>
+        <!-- 14 px above, 16 px at the sides and below; rows 10 px apart. -->
+        <Border CornerRadius="8" BorderThickness="1" Padding="16,14,16,16" SnapsToDevicePixels="True"
+                Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource InputBorder}">
+            <StackPanel>
+                <!-- App icon · "SPVision" · close (24×24). -->
+                <Grid Height="24">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Image Source="{StaticResource AppLogo}" Width="16" Height="16" VerticalAlignment="Center" Stretch="Fill" UseLayoutRounding="True" />
+                    <TextBlock Grid.Column="1" Text="SPVision" Margin="8,0,0,0" VerticalAlignment="Center"
+                               FontSize="{StaticResource FontSizeStatus}" Foreground="{DynamicResource TextSecondary}" />
+                    <Button x:Name="CloseButton" Grid.Column="2" Style="{StaticResource GhostIconButton}" Width="24" Height="24" Focusable="False"
+                            Click="Close_Click" ToolTip="Bildirimi kapat" AutomationProperties.Name="Bildirimi kapat"
+                            AutomationProperties.AutomationId="EventToastClose">
+                        <c:GlyphIcon Data="{StaticResource IconClose}" Size="12" StrokeThickness="2.4" />
+                    </Button>
+                </Grid>
+
+                <!-- 96×54 picture (or the kind's icon on the dark tile colour while there is none) · title, "camera · time". -->
+                <Grid Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="96" />
+                        <ColumnDefinition Width="12" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Border Width="96" Height="54" CornerRadius="4" Background="{DynamicResource TileBg}">
+                        <Grid>
+                            <c:GlyphIcon x:Name="KindIcon" Size="20" Foreground="{DynamicResource WallText}"
+                                         HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            <Border x:Name="PictureFrame" CornerRadius="4" Visibility="Collapsed">
+                                <Border.Background>
+                                    <ImageBrush x:Name="Picture" Stretch="UniformToFill" />
+                                </Border.Background>
+                            </Border>
+                        </Grid>
+                    </Border>
+                    <StackPanel Grid.Column="2" VerticalAlignment="Center">
+                        <TextBlock x:Name="TitleText" FontSize="13" FontWeight="SemiBold" Foreground="{DynamicResource TextStrong}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock x:Name="PlaceText" Margin="0,2,0,0" FontSize="{StaticResource FontSizeTile}"
+                                   Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- Two equal 30 px buttons, 8 px apart. -->
+                <Grid x:Name="Buttons" Margin="0,10,0,0">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="8" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="LiveButton" Content="Canlı izle" Style="{StaticResource EventToastAccentButton}" Click="Live_Click"
+                            AutomationProperties.AutomationId="EventToastLive" />
+                    <Button x:Name="PlaybackButton" Grid.Column="2" Content="Kaydı oynat" Style="{StaticResource EventToastButton}"
+                            Click="Playback_Click" AutomationProperties.AutomationId="EventToastPlayback" />
+                </Grid>
+            </StackPanel>
+        </Border>
+    </Grid>
+</Window>

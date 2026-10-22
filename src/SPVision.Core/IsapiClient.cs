@@ -266,9 +266,10 @@ public sealed partial class IsapiClient : IDisposable
         return await ReadXmlAsync(response, ct);
     }
 
-    async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct)
+    async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken ct,
+        HttpCompletionOption completion = HttpCompletionOption.ResponseContentRead)
     {
-        var response = await SendRawAsync(request, ct);
+        var response = await SendRawAsync(request, ct, completion);
         if (!response.IsSuccessStatusCode)
         {
             var status = response.StatusCode;
@@ -307,22 +308,24 @@ public sealed partial class IsapiClient : IDisposable
     }
 
     /// <summary>
-    /// One request, body buffered (at most <see cref="MaxResponseLength"/>). Transport failures, an over-long answer
+    /// One request, body buffered (at most <see cref="MaxResponseLength"/>; only the alert stream asks for the headers alone,
+    /// <see cref="OpenAlertStreamAsync"/>, and caps its parts itself). Transport failures, an over-long answer
     /// and any redirect (never followed: see the handler) throw <see cref="IsapiException"/>; other statuses are
     /// the caller's. HTTPS: a certificate that is not the pinned one throws <see cref="CertificateChangedException"/>
     /// unless the user trusts it (<see cref="CertificateTrust.ResolveMismatchAsync"/>, one question for all requests),
     /// in which case the request is sent once more.
     /// </summary>
-    async Task<HttpResponseMessage> SendRawAsync(HttpRequestMessage request, CancellationToken ct)
+    async Task<HttpResponseMessage> SendRawAsync(HttpRequestMessage request, CancellationToken ct,
+        HttpCompletionOption completion = HttpCompletionOption.ResponseContentRead)
     {
         if (_pinned is null || _trust is null)
         {
-            return await SendOnceAsync(request, ct);
+            return await SendOnceAsync(request, ct, completion);
         }
         using var retry = await CloneAsync(request, ct); // a sent HttpRequestMessage cannot be sent again
         try
         {
-            return await SendOnceAsync(request, ct);
+            return await SendOnceAsync(request, ct, completion);
         }
         catch (CertificateChangedException e)
         {
@@ -333,7 +336,7 @@ public sealed partial class IsapiClient : IDisposable
             }
             try
             {
-                return await SendOnceAsync(retry, ct);
+                return await SendOnceAsync(retry, ct, completion);
             }
             catch (CertificateChangedException)
             {
@@ -362,12 +365,12 @@ public sealed partial class IsapiClient : IDisposable
         return copy;
     }
 
-    async Task<HttpResponseMessage> SendOnceAsync(HttpRequestMessage request, CancellationToken ct)
+    async Task<HttpResponseMessage> SendOnceAsync(HttpRequestMessage request, CancellationToken ct, HttpCompletionOption completion)
     {
         HttpResponseMessage response;
         try
         {
-            response = await _http.SendAsync(request, ct);
+            response = await _http.SendAsync(request, completion, ct);
         }
         catch (HttpRequestException e) when (e.HttpRequestError == HttpRequestError.ConfigurationLimitExceeded)
         {

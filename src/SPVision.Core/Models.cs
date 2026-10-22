@@ -159,6 +159,9 @@ public sealed class AppSettings
 
     /// <summary>Ayarlar › Güvenlik › "Uygulama kilidi": PIN hash (DPAPI on disk), idle minutes, wrong-PIN count and lockout.</summary>
     public AppLockSettings AppLock { get; set; } = new();
+
+    /// <summary>Events panel ("Bildirim ayarları"): which recorder / SPVision events are collected, pop-up, sound, interval.</summary>
+    public EventNotificationSettings Notifications { get; set; } = new();
 }
 
 /// <summary>HCNetSDK log level rule (NET_DVR_SetLogToFile: 0 off, 1 errors, 2 errors + debug, 3 all).</summary>

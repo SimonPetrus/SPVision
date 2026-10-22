@@ -1,0 +1,120 @@
+<UserControl x:Class="SPVision.Views.EventPanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:SPVision.Controls"
+             Width="320" Background="{DynamicResource BarBg}"
+             AutomationProperties.AutomationId="EventPanel" AutomationProperties.Name="Olaylar">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/SPVision;component/Themes/EventControls.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </UserControl.Resources>
+
+    <!-- 320 px column right of the video wall (a real layout column: the tiles narrow, nothing is drawn over video).
+         1 px line on the left like the sidebars' on their inner edge. -->
+    <Border BorderBrush="{DynamicResource Border}" BorderThickness="1,0,0,0">
+        <DockPanel>
+            <!-- Header: 44 px + 1 px line, so the 30 px buttons have 7 px above and below. Title 14 px from the left, buttons
+                 10 px from the right, 4 px apart. -->
+            <Border DockPanel.Dock="Top" Height="45" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" Padding="14,0,10,0">
+                <Grid>
+                    <TextBlock x:Name="TitleText" Text="OLAYLAR" Style="{StaticResource CaptionText}" VerticalAlignment="Center" />
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                        <c:ClickToggleButton x:Name="SettingsToggle" Style="{StaticResource EventHeaderToggle}" Click="SettingsToggle_Click"
+                                             ToolTip="Bildirim ayarları" AutomationProperties.Name="Bildirim ayarları"
+                                             AutomationProperties.AutomationId="EventSettingsToggle">
+                            <c:GlyphIcon Data="{StaticResource IconSliders}" Size="15" />
+                        </c:ClickToggleButton>
+                        <Button x:Name="CloseButton" Style="{StaticResource EventHeaderButton}" Margin="4,0,0,0" Click="Close_Click"
+                                ToolTip="Paneli kapat" AutomationProperties.Name="Paneli kapat" AutomationProperties.AutomationId="EventPanelClose">
+                            <c:GlyphIcon Data="{StaticResource IconClose}" Size="14" StrokeThickness="2.2" />
+                        </Button>
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <Grid>
+                <!-- ===== List: filter · events (newest first) · "Tümünü okundu say" ===== -->
+                <DockPanel x:Name="ListPane">
+                    <!-- Filter: four equal segments, 10 px from the sides. -->
+                    <Border DockPanel.Dock="Top" Padding="10,10,10,8" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+                        <Border Style="{StaticResource EventSegmentGroup}" AutomationProperties.Name="Olay türü">
+                            <Grid x:Name="FilterGrid">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="2" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="2" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="2" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <c:ClickToggleButton x:Name="FilterAll" Content="Tümü" Style="{StaticResource EventSegmentButton}" Click="Filter_Click"
+                                                     AutomationProperties.Name="Tüm olaylar" />
+                                <c:ClickToggleButton x:Name="FilterMotion" Grid.Column="2" Content="Hareket" Style="{StaticResource EventSegmentButton}"
+                                                     Click="Filter_Click" ToolTip="Hareket, çizgi geçme / alan ihlali, görüntü kapatma"
+                                                     AutomationProperties.Name="Hareket olayları" />
+                                <c:ClickToggleButton x:Name="FilterConnection" Grid.Column="4" Content="Bağlantı" Style="{StaticResource EventSegmentButton}"
+                                                     Click="Filter_Click" AutomationProperties.Name="Bağlantı olayları" />
+                                <c:ClickToggleButton x:Name="FilterDisk" Grid.Column="6" Content="Disk" Style="{StaticResource EventSegmentButton}"
+                                                     Click="Filter_Click" AutomationProperties.Name="Disk olayları" />
+                            </Grid>
+                        </Border>
+                    </Border>
+
+                    <!-- Footer: one 160×28 button, centred, 10 px around. -->
+                    <Border DockPanel.Dock="Bottom" Padding="10" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0">
+                        <Button x:Name="MarkReadButton" Content="Tümünü okundu say" Style="{StaticResource SettingsButton}" Width="160" Height="28"
+                                HorizontalAlignment="Center" Click="MarkRead_Click" AutomationProperties.AutomationId="EventMarkAllRead" />
+                    </Border>
+
+                    <Grid>
+                        <ScrollViewer x:Name="ListScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                            <StackPanel x:Name="EventList" AutomationProperties.Name="Olay listesi" AutomationProperties.AutomationId="EventList" />
+                        </ScrollViewer>
+                        <TextBlock x:Name="EmptyText" Margin="14,16,14,0" HorizontalAlignment="Center" VerticalAlignment="Top" TextAlignment="Center"
+                                   TextWrapping="Wrap" FontSize="{StaticResource FontSizeTile}" Foreground="{DynamicResource TextSecondary}" />
+                    </Grid>
+                </DockPanel>
+
+                <!-- ===== Settings: which events · how · interval · note ===== -->
+                <ScrollViewer x:Name="SettingsPane" Visibility="Collapsed" VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                    <StackPanel>
+                        <TextBlock Text="HANGİ OLAYLAR" Style="{StaticResource EventCaption}" />
+                        <StackPanel x:Name="KindRows" />
+                        <TextBlock Text="NASIL" Style="{StaticResource EventCaption}" Margin="14,14,14,6" />
+                        <StackPanel x:Name="HowRows" />
+                        <Border Padding="14,12" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+                            <StackPanel>
+                                <TextBlock Text="Aynı kameradan en sık" FontSize="{StaticResource FontSizeList}" Foreground="{DynamicResource TextFg}" />
+                                <Border Style="{StaticResource EventSegmentGroup}" Margin="0,8,0,0" AutomationProperties.Name="Bildirim sıklığı">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="2" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="2" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <c:ClickToggleButton x:Name="Rate30" Content="30 sn" Style="{StaticResource EventSegmentButton}" Click="Rate_Click"
+                                                             Tag="30" AutomationProperties.Name="En sık 30 saniyede bir" />
+                                        <c:ClickToggleButton x:Name="Rate60" Grid.Column="2" Content="1 dk" Style="{StaticResource EventSegmentButton}"
+                                                             Click="Rate_Click" Tag="60" AutomationProperties.Name="En sık dakikada bir" />
+                                        <c:ClickToggleButton x:Name="Rate300" Grid.Column="4" Content="5 dk" Style="{StaticResource EventSegmentButton}"
+                                                             Click="Rate_Click" Tag="300" AutomationProperties.Name="En sık 5 dakikada bir" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                        <TextBlock Margin="14,12" TextWrapping="Wrap" FontSize="{StaticResource FontSizeStatus}" LineHeight="17"
+                                   Foreground="{DynamicResource TextSecondary}"
+                                   Text="Olaylar kayıt cihazından yalnızca okunur; cihaz ayarları değişmez. Hareket ve akıllı olaylar için kamerada bu algılamanın açık olması gerekir." />
+                    </StackPanel>
+                </ScrollViewer>
+            </Grid>
+        </DockPanel>
+    </Border>
+</UserControl>
