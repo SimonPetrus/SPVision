@@ -286,6 +286,77 @@
                         </StackPanel>
                     </Border>
 
+                    <!-- Güvenlik: "Uygulama kilidi" (SettingsView.Security.cs, AppLock). Switch | 4-way idle segment filling the 240 px
+                         column (1 + 2 + 4 × 57 + 3 × 2 + 2 + 1) | 120×30 button; the last two rows are dimmed and disabled while the
+                         lock is off. -->
+                    <Border Style="{StaticResource Card}" Margin="0,16,0,0" AutomationProperties.AutomationId="SecurityCard">
+                        <StackPanel>
+                            <Border Padding="16,14" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+                                <TextBlock Text="Güvenlik" Style="{StaticResource CardTitle}" />
+                            </Border>
+                            <Border Padding="16,10" MinHeight="60" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="240" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Uygulama kilidi" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Style="{StaticResource RowHelp}"
+                                                   Text="Açılışta 6 haneli PIN sorulur. Bu bilgisayarı kullanan başkaları kameraları izleyemez." />
+                                    </StackPanel>
+                                    <CheckBox x:Name="AppLockSwitch" Grid.Column="1" Style="{StaticResource ToggleSwitch}" HorizontalAlignment="Right"
+                                              Checked="AppLockSwitch_Changed" Unchecked="AppLockSwitch_Changed"
+                                              AutomationProperties.AutomationId="AppLockToggle" AutomationProperties.Name="Uygulama kilidi" />
+                                </Grid>
+                            </Border>
+                            <StackPanel x:Name="LockOptions">
+                                <Border Padding="16,10" MinHeight="60" BorderBrush="{DynamicResource Divider}" BorderThickness="0,0,0,1">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="240" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel x:Name="IdleLabel" Margin="0,0,24,0" VerticalAlignment="Center">
+                                            <TextBlock Text="İşlem yapılmazsa kilitle" Style="{StaticResource RowLabel}" />
+                                            <TextBlock Style="{StaticResource RowHelp}"
+                                                       Text="Belirtilen süre fare veya klavye kullanılmazsa uygulama kilitlenir. Görüntüler kilitliyken gizlenir." />
+                                        </StackPanel>
+                                        <Border x:Name="IdleGroup" Grid.Column="1" Style="{StaticResource SegmentGroup}" HorizontalAlignment="Right"
+                                                AutomationProperties.Name="İşlem yapılmazsa kilitle">
+                                            <StackPanel Orientation="Horizontal">
+                                                <c:ClickToggleButton x:Name="IdleOff" Content="Kapalı" Width="57" Style="{StaticResource SegmentButton}" Click="Idle_Click"
+                                                              AutomationProperties.Name="Kendiliğinden kilitleme kapalı" />
+                                                <c:ClickToggleButton x:Name="Idle5" Content="5 dk" Width="57" Style="{StaticResource SegmentButton}" Click="Idle_Click"
+                                                              Margin="2,0,0,0" AutomationProperties.Name="5 dakika sonra kilitle" />
+                                                <c:ClickToggleButton x:Name="Idle10" Content="10 dk" Width="57" Style="{StaticResource SegmentButton}" Click="Idle_Click"
+                                                              Margin="2,0,0,0" AutomationProperties.Name="10 dakika sonra kilitle" />
+                                                <c:ClickToggleButton x:Name="Idle30" Content="30 dk" Width="57" Style="{StaticResource SegmentButton}" Click="Idle_Click"
+                                                              Margin="2,0,0,0" AutomationProperties.Name="30 dakika sonra kilitle" />
+                                            </StackPanel>
+                                        </Border>
+                                    </Grid>
+                                </Border>
+                                <Border Padding="16,10" MinHeight="60">
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="240" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel x:Name="ChangePinLabel" Margin="0,0,24,0" VerticalAlignment="Center">
+                                            <TextBlock Text="PIN'i değiştir" Style="{StaticResource RowLabel}" />
+                                            <TextBlock Style="{StaticResource RowHelp}"
+                                                       Text="PIN unutulursa kilit ekranından uygulama sıfırlanır: kayıtlı cihazlar silinir, yeniden eklenir." />
+                                        </StackPanel>
+                                        <Button x:Name="ChangePinButton" Grid.Column="1" Content="Değiştir…" Style="{StaticResource SettingsButton}"
+                                                HorizontalAlignment="Right" VerticalAlignment="Center" Click="ChangePin_Click"
+                                                AutomationProperties.AutomationId="ChangePinButton" AutomationProperties.Name="PIN'i değiştir" />
+                                    </Grid>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
                     <!-- Güncellemeler (in-app updater, Updates/UpdateController). Row 1: installed version + last check | Denetle.
                          Row 2: status + detail | [Neler yeni] [Güncelle] (while downloading: [Neler yeni] [progress 120] [İptal]);
                          same 120×30 buttons with 8 px gaps, right edges aligned with the rows above. -->

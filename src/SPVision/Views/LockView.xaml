@@ -1,0 +1,88 @@
+<UserControl x:Class="SPVision.Views.LockView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:SPVision.Controls"
+             AutomationProperties.AutomationId="LockScreen" AutomationProperties.Name="Kilit ekranı">
+    <UserControl.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!-- SettingsDangerFillButton ("Sıfırla"), the same as Bakım › Tam sıfırla… -->
+                <ResourceDictionary Source="/SPVision;component/Themes/RecorderControls.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <!-- "PIN'i unuttum": accent text, no border, 30 px like the buttons; hover as every settings button. -->
+            <Style x:Key="LockTextButton" TargetType="Button" BasedOn="{StaticResource SettingsButton}">
+                <Setter Property="Width" Value="Auto" />
+                <Setter Property="Padding" Value="10,0" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+                <Setter Property="Foreground" Value="{DynamicResource Accent}" />
+                <Setter Property="HorizontalAlignment" Value="Center" />
+            </Style>
+        </ResourceDictionary>
+    </UserControl.Resources>
+    <!-- Lock screen ("Uygulama kilidi"): covers the whole window over the collapsed app (no video window can draw over it).
+         One centred 400 px card, 32 px inside, 18 px between the parts: logo 56, title + hint (6 px apart), then either the
+         PIN entry (six 40×48 boxes, error line 16 px, "Kilidi aç" 160×30, "PIN'i unuttum") or the red reset question with two
+         equal buttons. Every click on the card puts the keyboard back in the PIN input. -->
+    <ScrollViewer Background="{DynamicResource WindowBg}" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                  Focusable="False">
+        <Grid Width="400" Margin="24" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <!-- Shadow on its own layer, so the card's text is not rendered through the effect (stays crisp). -->
+            <Border Background="{DynamicResource CardBg}" CornerRadius="12" IsHitTestVisible="False">
+                <Border.Effect>
+                    <DropShadowEffect BlurRadius="32" ShadowDepth="8" Direction="270" Opacity="0.08" Color="Black" />
+                </Border.Effect>
+            </Border>
+            <Border x:Name="Card" Padding="32" Background="{DynamicResource CardBg}" BorderBrush="{DynamicResource Border}" BorderThickness="1"
+                    CornerRadius="12" SnapsToDevicePixels="True" AutomationProperties.AutomationId="LockCard" AutomationProperties.Name="SPVision kilitli">
+                <StackPanel>
+                    <Image Source="{StaticResource AppLogo}" Width="56" Height="56" Stretch="Fill" HorizontalAlignment="Center"
+                           UseLayoutRounding="True" />
+                    <TextBlock Margin="0,18,0,0" HorizontalAlignment="Center" FontSize="20" FontWeight="Bold"
+                               Foreground="{DynamicResource TextStrong}"><Run Text="SP" Foreground="{DynamicResource Accent}" /><Run Text="Vision kilitli" /></TextBlock>
+                    <TextBlock x:Name="HintText" Margin="0,6,0,0" HorizontalAlignment="Center" TextAlignment="Center" TextWrapping="Wrap"
+                               FontSize="{StaticResource FontSizeBase}" Foreground="{DynamicResource TextSecondary}"
+                               Text="PIN'inizi klavyeden yazın." />
+
+                    <!-- PIN entry -->
+                    <StackPanel x:Name="EntryPanel" Margin="0,18,0,0">
+                        <c:PinBox x:Name="Pin" />
+                        <TextBlock x:Name="ErrorText" Margin="0,18,0,0" Height="16" HorizontalAlignment="Center" TextAlignment="Center"
+                                   FontSize="{StaticResource FontSizeTile}" Foreground="{DynamicResource DangerText}"
+                                   AutomationProperties.AutomationId="LockError" AutomationProperties.LiveSetting="Assertive" />
+                        <Button x:Name="UnlockButton" Margin="0,18,0,0" Width="160" Content="Kilidi aç" Style="{StaticResource SettingsAccentButton}"
+                                HorizontalAlignment="Center" Click="Unlock_Click" AutomationProperties.AutomationId="UnlockButton"
+                                AutomationProperties.Name="Kilidi aç" />
+                        <Button x:Name="ForgotButton" Margin="0,18,0,0" Content="PIN'i unuttum" Style="{StaticResource LockTextButton}"
+                                Click="Forgot_Click" AutomationProperties.AutomationId="ForgotPinButton" AutomationProperties.Name="PIN'i unuttum" />
+                    </StackPanel>
+
+                    <!-- PIN'i unuttum: reset question -->
+                    <StackPanel x:Name="ResetPanel" Margin="0,18,0,0" Visibility="Collapsed">
+                        <Border Padding="14,12" CornerRadius="6" Background="{DynamicResource DangerSoftBg}"
+                                AutomationProperties.AutomationId="ResetWarning" AutomationProperties.Name="Uygulama sıfırlansın mı?">
+                            <StackPanel>
+                                <TextBlock Text="Uygulama sıfırlansın mı?" FontSize="{StaticResource FontSizeList}" FontWeight="SemiBold"
+                                           Foreground="{DynamicResource DangerText}" TextWrapping="Wrap" />
+                                <TextBlock Margin="0,8,0,0" FontSize="{StaticResource FontSizeTile}" LineHeight="18" Foreground="{DynamicResource DangerText}"
+                                           TextWrapping="Wrap"
+                                           Text="PIN bilinmeden kilit açılamaz. Sıfırlarsanız bu bilgisayardaki kayıtlı cihazlar, şifreleri, gruplar ve PIN silinir; uygulama ilk açılış ekranına döner. Kayıt cihazındaki kayıtlar ve ayarlar etkilenmez." />
+                            </StackPanel>
+                        </Border>
+                        <!-- Two equal buttons over the full width: (334 − 8) / 2 each. -->
+                        <Grid Margin="0,18,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="8" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Button x:Name="ResetCancelButton" Content="Vazgeç" Style="{StaticResource SettingsButton}" Width="Auto" IsCancel="True"
+                                    Click="ResetCancel_Click" AutomationProperties.AutomationId="ResetCancelButton" AutomationProperties.Name="Vazgeç" />
+                            <Button x:Name="ResetButton" Grid.Column="2" Content="Sıfırla" Style="{StaticResource SettingsDangerFillButton}" Width="Auto"
+                                    Click="Reset_Click" AutomationProperties.AutomationId="ResetButton" AutomationProperties.Name="Sıfırla" />
+                        </Grid>
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+        </Grid>
+    </ScrollViewer>
+</UserControl>

@@ -49,6 +49,18 @@ public partial class MainWindow : Window
     /// <summary>Recorder disk check (read only) behind the status bar's red disk warning.</summary>
     readonly DiskMonitor _disks = new();
 
+    /// <summary>"Uygulama kilidi": the lock screen over the collapsed app; null while unlocked.</summary>
+    LockView? _lock;
+
+    /// <summary>
+    /// The lock was on at startup: live streams, disk checks, the first-run screen and "Tam ekranda aç" wait for the PIN
+    /// (<see cref="StartApp"/>), so nothing connects to a device before it.
+    /// </summary>
+    bool _startHeld;
+
+    /// <summary>"İşlem yapılmazsa kilitle": system-wide idle time checked once a second.</summary>
+    readonly DispatcherTimer _idleTimer = new() { Interval = TimeSpan.FromSeconds(1) };
+
     public MainWindow()
     {
         InitializeComponent();
@@ -98,19 +110,38 @@ public partial class MainWindow : Window
         UpdateStatusBar();
 
         Closing += OnClosing;
+        _idleTimer.Tick += (_, _) => LockWhenIdle();
+        if (AppLock.Enabled)
+        {
+            // Lock screen first: the live view does not restore its streams and nothing reads a device until the PIN.
+            _startHeld = true;
+            Live.StartHeld = true;
+            ShowLock();
+        }
         Loaded += (_, _) =>
         {
-            if (App.Settings.Devices.Count == 0)
+            if (!_startHeld)
             {
-                ShowFirstRun(); // welcome card: online devices + compact form instead of an empty live view
-            }
-            else if (App.Settings.StartFullScreen && !_fullScreen)
-            {
-                ToggleFullScreen();
+                StartApp();
             }
             UpdateController.Start(); // remembered mandatory update now, automatic check after 15 s
-            _disks.Start(App.Settings.Devices); // first disk read after 5 s, then every 5 min
+            _idleTimer.Start();
         };
+    }
+
+    /// <summary>Startup after the window loaded, or after the PIN when the lock held it back (<see cref="_startHeld"/>).</summary>
+    void StartApp()
+    {
+        Live.Start(); // a held live view restores its layout and opens its streams now
+        if (App.Settings.Devices.Count == 0)
+        {
+            ShowFirstRun(); // welcome card: online devices + compact form instead of an empty live view
+        }
+        else if (App.Settings.StartFullScreen && !_fullScreen)
+        {
+            ToggleFullScreen();
+        }
+        _disks.Start(App.Settings.Devices); // first disk read after 5 s, then every 5 min
     }
 
     /// <summary>Streams and recordings get this long to finish before the app exits anyway (the watchdog allows 8 s in all).</summary>
@@ -146,6 +177,7 @@ public partial class MainWindow : Window
         }
         _closeStarted = true;
         _disks.Stop();
+        _idleTimer.Stop();
         App.StartExitWatchdog();
         App.LogShutdown("Kapanış başladı");
         _statusTimer.Stop();
@@ -574,6 +606,129 @@ public partial class MainWindow : Window
         RootGrid.Children.Add(view);
     }
 
+    // ---- App lock ("Uygulama kilidi"; AppLock, Core AppLockSettings) ----
+
+    /// <summary>
+    /// The lock screen covers the window. The app behind it is collapsed — like under the first-run screen — so no SDK or
+    /// Flyleaf video window can draw over it; streams, recordings and downloads go on unseen. Popups (their own windows) are
+    /// closed; keyboard shortcuts are off while it shows.
+    /// </summary>
+    void ShowLock()
+    {
+        if (_lock is not null || _closeStarted)
+        {
+            return;
+        }
+        var view = new LockView();
+        view.Unlocked += Unlock;
+        view.ResetConfirmed += ResetApp;
+        _lock = view;
+        ClosePopups();
+        AppShell.Visibility = Visibility.Collapsed;
+        if (_firstRun is not null)
+        {
+            _firstRun.Visibility = Visibility.Collapsed;
+        }
+        RootGrid.Children.Add(view);
+        AppLock.SetLocked(true);
+    }
+
+    /// <summary>The right PIN: the app (or the first-run screen) is shown again; a held startup goes on now.</summary>
+    void Unlock()
+    {
+        if (_lock is null)
+        {
+            return;
+        }
+        RootGrid.Children.Remove(_lock);
+        _lock = null;
+        if (_firstRun is not null)
+        {
+            _firstRun.Visibility = Visibility.Visible;
+        }
+        else
+        {
+            AppShell.Visibility = Visibility.Visible;
+        }
+        AppLock.SetLocked(false);
+        if (_startHeld)
+        {
+            _startHeld = false;
+            StartApp();
+        }
+    }
+
+    /// <summary>
+    /// Kilit ekranı › "PIN'i unuttum" › Sıfırla: the saved devices with their passwords, stream keys and certificate pins,
+    /// saved views, camera groups and the PIN are forgotten (Core <see cref="AppReset"/>, through the settings store); app
+    /// preferences stay. Their streams stop and SDK sessions close, downloads go on; then the first-run screen. Nothing is
+    /// sent to a recorder.
+    /// </summary>
+    void ResetApp()
+    {
+        if (_lock is null)
+        {
+            return;
+        }
+        var devices = App.Settings.Devices.ToList();
+        AppReset.ForgetDevices(App.Settings);
+        App.SaveSettings();
+        foreach (var device in devices)
+        {
+            DeviceRemoved(device); // tiles release their streams, SDK session closed, disk checks stop
+        }
+        // Removing the devices saved the (now empty) live and playback views again: forget those too.
+        AppReset.ForgetDevices(App.Settings);
+        App.SaveSettings();
+        SettingsPanel.RefreshAppSettings();
+
+        RootGrid.Children.Remove(_lock);
+        _lock = null;
+        if (_fullScreen)
+        {
+            ToggleFullScreen();
+        }
+        if (_startHeld)
+        {
+            _startHeld = false;
+            Live.Start(); // nothing left to open; the live view is ready for the first device
+        }
+        if (_firstRun is not null)
+        {
+            RootGrid.Children.Remove(_firstRun);
+            _firstRun = null;
+        }
+        ShowFirstRun();
+        AppLock.SetLocked(false);
+    }
+
+    void LockWhenIdle()
+    {
+        if (_lock is null && !_closeStarted && AppLock.IdleMinutes > 0 &&
+            IdleLock.IsDue(AppLock.SystemIdleTime(), AppLock.IdleMinutes))
+        {
+            ShowLock();
+        }
+    }
+
+    /// <summary>Closes every open Popup of the app (layout picker, "Saate git", the playback tile bar…): they are windows.</summary>
+    void ClosePopups()
+    {
+        var pending = new Stack<DependencyObject>([AppShell]);
+        while (pending.Count > 0)
+        {
+            var node = pending.Pop();
+            if (node is Popup { IsOpen: true } popup)
+            {
+                popup.IsOpen = false;
+            }
+            for (var i = VisualTreeHelper.GetChildrenCount(node) - 1; i >= 0; i--)
+            {
+                pending.Push(VisualTreeHelper.GetChild(node, i));
+            }
+        }
+    }
+
     void CloseFirstRun()
     {
         if (_firstRun is null)
@@ -911,9 +1066,9 @@ public partial class MainWindow : Window
 
     void Window_KeyDown(object sender, KeyEventArgs e)
     {
-        if (_firstRun is not null)
+        if (_firstRun is not null || _lock is not null)
         {
-            return; // the welcome screen has no camera wall to show full screen
+            return; // the welcome and lock screens have no camera wall to show full screen
         }
         if (e.Key == Key.F11 || (e.Key == Key.Escape && _fullScreen))
         {
@@ -928,7 +1083,7 @@ public partial class MainWindow : Window
     /// </summary>
     void Window_PreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key is not (Key.PageUp or Key.PageDown) || Keyboard.Modifiers != ModifierKeys.None ||
+        if (e.Key is not (Key.PageUp or Key.PageDown) || Keyboard.Modifiers != ModifierKeys.None || _lock is not null ||
             _section != MainSection.Live || Live.PageCount <= 1 ||
             Keyboard.FocusedElement is TextBoxBase or PasswordBox)
         {
@@ -941,6 +1096,7 @@ public partial class MainWindow : Window
     /// <summary>
     /// A second SPVision was started (App, Core SingleInstance): this window comes to the front, restored if minimized
     /// (to maximized if it was). False while closing, so the newcomer waits for this process to end and takes over.
+    /// While locked the lock screen stays over the app; the activation gives its PIN boxes the keyboard.
     /// </summary>
     public bool BringToFront()
     {
