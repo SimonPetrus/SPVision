@@ -1229,6 +1229,54 @@ public partial class PlaybackView : UserControl
         SaveState();
     }
 
+    /// <summary>
+    /// "Kaydı oynat" of an event: the camera joins the tiles if it is not on one (like a click in the camera list), gets the
+    /// focus, its day is selected and every tile plays from <paramref name="time"/> (the event minus 10 s). Called before the
+    /// view is shown (<see cref="Activate"/> then seeks there) or while it plays (seeks at once, like the timeline).
+    /// </summary>
+    public void ShowEventRecording(CameraRef source, DateTime time)
+    {
+        if (FindCamera(source) is null)
+        {
+            ShowMessage(PlaybackText.SelectCameraFirst);
+            return;
+        }
+        RestoreCameras(); // the last session's cameras first, so they do not land on top of this one later
+        _awaitUser = false;
+        var day = time.Date > DateTime.Today ? DateTime.Today : time.Date;
+        if (new DateTime(day.Year, day.Month, 1) != _month)
+        {
+            _month = new DateTime(day.Year, day.Month, 1);
+            BuildCalendar();
+        }
+        SelectDay(day); // another day: every tile searches it again
+        var target = ClampDay(time);
+        _anchor = target;
+        _seekFloor = target;
+        _hasTime = true;
+        _stopped = false;
+        _holding = false;
+        _paused = false;
+        _startFromMidnight = false;
+        if (_slots.IndexOf(source) < 0)
+        {
+            _slots.Pick(source);
+        }
+        RestoreMaximized();
+        _slots.SetFocus(_slots.IndexOf(source));
+        SyncTilesToSlots();
+        UpdateFocus();
+        SaveState();
+        if (_active)
+        {
+            StartAt(target);
+        }
+        else
+        {
+            UpdateUi();
+        }
+    }
+
     // ---- Drag and drop (like the live wall) ----
 
     Point? _listDragOrigin;

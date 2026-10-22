@@ -113,4 +113,6 @@
     <SolidColorBrush x:Key="OkBorder" Color="#9FD89F" />
     <SolidColorBrush x:Key="OkText" Color="#0E5A0E" />
     <SolidColorBrush x:Key="WarningSoftBorder" Color="#F0D58A" />
+    <!-- Events panel: unread rows (a shade lighter than the panel, BarBg) -->
+    <SolidColorBrush x:Key="UnreadRowBg" Color="#FFFFFF" />
 </ResourceDictionary>

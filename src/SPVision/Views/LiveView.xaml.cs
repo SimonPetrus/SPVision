@@ -189,6 +189,20 @@ public partial class LiveView : UserControl
         DropCamera(target, source);
     }
 
+    /// <summary>
+    /// "Canlı izle" of an event: the camera is shown like a sidebar double-click (<see cref="ShowCamera"/>), then its tile is
+    /// maximized (as a double-click on the tile does; the other tiles keep streaming, hidden).
+    /// </summary>
+    public void ShowCameraAlone(CameraRef source)
+    {
+        ShowCamera(source);
+        if (_selected is { } tile && tile.Source == source && _maximized != tile)
+        {
+            RestoreMaximized();
+            ToggleMaximize(tile);
+        }
+    }
+
     /// <summary>Device row double-click: its cameras first, in channel order, from the first page (the layout stays).</summary>
     public void ShowDevice(Device device)
     {

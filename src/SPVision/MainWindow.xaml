@@ -7,6 +7,13 @@
         WindowStartupLocation="CenterScreen" Background="{DynamicResource WindowBg}" Foreground="{DynamicResource TextFg}"
         FontFamily="{StaticResource UiFont}" FontSize="{StaticResource FontSizeBase}"
         KeyDown="Window_KeyDown" PreviewKeyDown="Window_PreviewKeyDown">
+    <Window.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <ResourceDictionary Source="/SPVision;component/Themes/EventControls.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+        </ResourceDictionary>
+    </Window.Resources>
     <!-- Root: the app (AppShell) and, on first run (no saved device), the welcome screen over it (FirstRunView, added in code;
          AppShell is collapsed meanwhile so no video window can draw over it). -->
     <Grid x:Name="RootGrid">
@@ -67,13 +74,27 @@
                                     ToolTip="Tam ekran (F11)" AutomationProperties.Name="Tam ekran (F11)">
                                 <c:GlyphIcon Data="{StaticResource IconFullScreen}" />
                             </Button>
-                            <Rectangle Width="1" Height="24" Margin="12,0" Fill="{DynamicResource Border}" VerticalAlignment="Center" />
                         </StackPanel>
                         <!-- Playback: layout picker limited to 16 tiles (synchronous playback). -->
                         <StackPanel x:Name="PlaybackTools" Orientation="Horizontal" Visibility="Collapsed">
                             <c:LayoutPicker x:Name="PlaybackPicker" />
-                            <Rectangle Width="1" Height="24" Margin="12,0" Fill="{DynamicResource Border}" VerticalAlignment="Center" />
                         </StackPanel>
+                        <!-- Events bell (every view): toggles the 320 px OLAYLAR panel; red unread count on its corner, 6 px out
+                             (2 px ring of the bar colour). 12 px after the page tools, then the one separator before the gear. -->
+                        <Grid x:Name="EventsBell" Margin="12,0,0,0" VerticalAlignment="Center">
+                            <c:ClickToggleButton x:Name="EventsButton" Style="{StaticResource IconToggleButton}" Click="EventsButton_Click"
+                                                 ToolTip="Olaylar" AutomationProperties.Name="Olaylar" AutomationProperties.AutomationId="EventsButton">
+                                <c:GlyphIcon Data="{StaticResource IconBell}" />
+                            </c:ClickToggleButton>
+                            <Border x:Name="EventsBadge" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,-6,-6,0" MinWidth="18" Height="18"
+                                    CornerRadius="9" Padding="3,0" BorderThickness="2" Background="{DynamicResource DangerIcon}"
+                                    BorderBrush="{DynamicResource BarBg}" IsHitTestVisible="False" Visibility="Collapsed"
+                                    AutomationProperties.AutomationId="EventsBadge">
+                                <TextBlock x:Name="EventsBadgeText" FontSize="10.5" FontWeight="Bold" Foreground="{DynamicResource OnDanger}"
+                                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+                            </Border>
+                        </Grid>
+                        <Rectangle Width="1" Height="24" Margin="12,0" Fill="{DynamicResource Border}" VerticalAlignment="Center" />
                         <c:ClickToggleButton x:Name="SettingsButton" Style="{StaticResource IconToggleButton}" Click="Settings_Click"
                                       ToolTip="Ayarlar" AutomationProperties.Name="Ayarlar">
                             <c:GlyphIcon Data="{StaticResource IconSettings}" />
@@ -229,6 +250,9 @@
                 </ScrollViewer>
             </DockPanel>
         </Border>
+
+        <!-- ===== Events panel (bell), 320 px right of the view; hidden in full screen. ===== -->
+        <v:EventPanel x:Name="EventsPanel" DockPanel.Dock="Right" Visibility="Collapsed" />
 
         <Grid>
             <v:LiveView x:Name="Live" />

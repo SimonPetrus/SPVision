@@ -63,6 +63,9 @@ public sealed class DiskWatch
     /// <summary>Whether a successful read of this recorder has been seen (the monitor reads sooner until then).</summary>
     public bool Knows(Guid deviceId) => _known.ContainsKey(deviceId);
 
+    /// <summary>Problems of one recorder's last successful read (empty: healthy or not read).</summary>
+    public IReadOnlyList<DiskProblem> ProblemsFor(Guid deviceId) => _known.TryGetValue(deviceId, out var problems) ? problems : [];
+
     /// <summary>All problems, recorders in the order they were first read.</summary>
     public IReadOnlyList<DiskProblem> Problems => _order.SelectMany(id => _known[id]).ToList();
 
