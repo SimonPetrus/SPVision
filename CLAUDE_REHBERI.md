@@ -4,6 +4,7 @@
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
 > 1459/1459 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> (Canlı izlemede kamera grupları — §15 — kod + testlerle hazır, arayüz elle denenmedi.)
 > (Tek örnek, `logs\crash.log` + "Sorunu bildir…" zip'i ve durum çubuğundaki disk uyarısı — §14 — kod + testlerle hazır, uygulamada elle denenmedi.)
 > (Çevrim içi cihazlar / SADP keşfi ve yeni ilk açılış ekranı — §13 — kod + testlerle hazır; ayrıştırma gerçek ağda iki salt okuma
 > `inquiry` sondasıyla doğrulandı, arayüz uygulamada elle denenmedi.)
@@ -534,6 +535,7 @@ dotnet run --project src\SPVision
 | `Views/DeviceDraft.cs` | Düzenleyici ile ekleme formunun ortak taslağı (`DeviceDraft`: kameralar, ayrıntılar, sertifika pini, Kaydet = Core `DeviceForm.Apply`), `IDeviceFormHost`, `DeviceReads.RunAsync` (ISAPI GET okuması + "HTTP ile dene" sorusu) |
 | `Views/CertificateDialog.cs` | `CertificateTrustUi` (`App.OnStartup`'ta `Register`: Core `CertificateTrust.Shared.Prompt` = soru penceresi, `PinChanged` = ayarları kaydet; düzenleyici taslağının pini aynı HTTPS adresli kayıtlı cihaza aktarılır) ve `CertificateDialog` ("Kayıt cihazının güvenlik sertifikası değişti": uyarı bandı, KAYITLI / CİHAZIN SUNDUĞU parmak izi + geçerlilik, eşit 168 px düğmeler "Bağlanma" (odak, Esc) · "Yeni sertifikaya güven"; Enter güvenmez) |
 | `Controls/RoundedClip.cs` | Yuvarlak köşeli kartın içindeki satır arka planlarını köşeden taşırmadan kırpar |
+| `MainWindow.Groups.cs`, `Views/GroupDialog.cs` | Kenar çubuğundaki GRUPLAR bölümü (satırlar, ⋯ menüsü) ve "Grup kaydet" / "Yeniden adlandır" penceresi (§15) |
 | `Views/LiveView.xaml(.cs)` | 1–36 kareli ızgara (düzen tanımı: Core `GridLayout`; kayıtlı 32 → 36), sayfalar (Core `LivePages`, `Sync`), sürükle-bırak/kare takası, düzeni + sayfayı kaydet/geri yükle; durumu `StateChanged`/`Message` ile ana pencereye bildirir |
 | `Controls/VideoTile.xaml(.cs)` | Tek kamera karesi — **çift yol** (Flyleaf/SDK), başlık şeridi + video alanı (Popup yok), yeniden bağlanma (3/10/30 sn), kayıt + anlık görüntü |
 | `Views/PlaybackView.xaml(.cs)` | Eş zamanlı kayıt oynatma — takvim + kamera listesi, bilgi çubuğu, ≤16 `PlaybackTile`, kontrol çubuğu (oynat/durdur/anlık görüntü/klip · 30 sn geri/ileri + "Saate git" · hız), zaman çizelgesi; eşitleme döngüsü |
@@ -1266,3 +1268,38 @@ rozetiyle gösterilir; seçilince "önce Hikvision'ın SADP aracı ya da web say
   1 MB dönme, hiç istisna atmama), `ProblemReportTests` (dosya adı, dahil edilen adlar, zip içeriği + settings.json / sdk / pin dışarıda,
   açık dosya, büyük dosyanın sonu, sistem.txt'te adres/şifre/ad yok), `DiskHealthTests` (durum eşlemesi, ağ hatası durumu korur, iyileşince
   kaybolur, birden çok cihaz).
+
+## 15. Canlı izlemede kamera grupları (22.10.2026 — kod + testler hazır, arayüz elle denenmedi)
+
+Kullanıcı: "4'lü düzeni seçerim, istediğim 4 kamerayı açarım, Kaydet'e basarım; sonra gruba tıklayınca aynen geri gelir."
+Cihaza hiçbir istek gitmez; gruplar yalnız ayarlardadır.
+
+- **Saklama** (Core [`CameraGroups.cs`](src/SPVision.Core/CameraGroups.cs)): `AppSettings.Groups` = `CameraGroup` listesi (kenar çubuğu
+  sırası): `Id` (Guid), `Name`, `Layout` (kare sayısı, `SavedView.Layout` gibi; 32 → 36 vb. `GridLayout.ForSavedView` ile), `Tiles`
+  (kare başına `CameraRef` = cihaz Id + ISAPI kanalı, boş kare null). `AppSettings.ActiveGroup` = ekrandaki grubun Id'si (null = "Tüm kameralar").
+- **Kurallar** (birim testli): ad boş olamaz, en çok 40 karakter, denetim karakteri yok, başka grubun ya da "Tüm kameralar"ın adı olamaz —
+  büyük/küçük harf duyarsız, Türkçe ve değişmez kültür birlikte ("GİRİŞ", "GIRIŞ", "giriş" aynı ad); varsayılan "Yeni grup", alınmışsa
+  "Yeni grup 2"… `Capture`/`Overwrite`: ekrandaki sayfanın her karesi (düzenin kare sayısı kadar, tekrar eden kamera ilk karesinde).
+  `Slots`: grubun kareleri şimdiki listeyle — silinen cihazın / kameranın ya da "Listede göster" kapalı kameranın karesi **boş kalır**,
+  diğerleri yerinden oynamaz (cihaz silmek grupları bozmaz; sayaç yalnız var olan kameraları sayar).
+- **Uygulama** (`LiveView.ShowGroup`): düzen + yuvalar `LivePages.Load(..., group: true)` ile yüklenir; **grup kipi** (`LivePages.IsGroup`):
+  uzlaştırma boşlukları doldurmaz, yeni kamera eklemez, kaybolan kamera delik bırakır (kaydırma yok). Sonra normal `Sync`: kamerayı zaten
+  gösteren kare yalnız taşınır (akış yeniden açılmaz). Grup açıkken sürükle-bırak, takas, kare kapatma, düzen değişimi çalışır ama gruba
+  yazılmaz ("Ekrandaki düzenle güncelle" yazar). "Tüm kameralar" = varsayılan düzen (25) + liste sırası + 1. sayfa (normal kip); cihaz
+  satırına çift tık da normal kipe döner. Kayıt: `LastView` her zamanki gibi ekranı saklar; "Açılışta son görünümü geri yükle" açıksa
+  açılışta etkin grup `LastView` ile **bırakıldığı gibi** grup kipinde gelir (grup silinmişse ya da ayar kapalıysa "Tüm kameralar").
+- **Arayüz** (onaylı tasarım, `MainWindow.Groups.cs` + `Views/GroupDialog.cs`, stiller `Controls.xaml` "Camera groups"): kenar çubuğunda
+  arama kutusuyla cihaz satırı arasında **GRUPLAR**: 36 px başlık (başlık · 104×24 "+ Grup kaydet"), grup başına 32 px satır (2 px ara,
+  kenarlardan 6 px): 22×16 mini düzen (`LayoutDiagram`, düzen seçicinin çizimi; etkin satırda vurgu renkli) · ad (etkinde yarı kalın,
+  satır `HoverBg`) · kamera sayısı · 28 px ⋯. İlk satır "Tüm kameralar": ⋯ yok (yeri boş kalır, sayılar hizalı), silinmez/adlandırılmaz.
+  7 satırdan fazlası kayar. ⋯ menüsü (200 px, sağ kenarı satırın sağ kenarında, hemen altında): "Ekrandaki düzenle güncelle",
+  "Yeniden adlandır…", "Sil" (`DangerText`, kısa onay; ekrandaki grup silinirse "Tüm kameralar" gelir). "Grup kaydet" penceresi 400 px:
+  "Grup adı" (dolu ve seçili) · önizleme (40×28 mini düzen + "Ekrandaki N kareli ızgara ve M kameranın yeri kaydedilir. Grubu seçince
+  aynen geri gelir.") · İptal / Kaydet (120×30, sağda); hata kutunun altında kırmızı. Kaydedilen grup hemen etkin olur. Durum çubuğunda
+  (yalnız canlıda) bağlantının sağında "Grup: <ad>" ("Grup: Tüm kameralar"), sonra "n / m kamera ekranda".
+  AutomationId'ler: `GroupSave`, `GroupAll`, `Group{n}`, `GroupMenu{n}`, `GroupMenuUpdate/Rename/Delete`, `GroupName`, `GroupNameError`,
+  `GroupPreview`, `GroupDialogSave`, `GroupDialogCancel`, `GroupStatus`.
+- **Testler** (+35, `CameraGroupsTests`): ad kuralları (boş, uzun, denetim karakteri, Türkçe/değişmez büyük-küçük harf, yerleşik ad,
+  yeniden adlandırmada kendi adı), varsayılan adın sayması, yakalama (delikler, kare sayısı, tekrar), güncellemede Id/ad korunur,
+  eksik kamera = boş kare, eski/bilinmeyen düzen, grup kipindeki sayfalar (delik kalır, yeni kamera katılmaz, kapatılan kare boş kalır,
+  bırak/takas, `Reset`/normal `Load` kipten çıkar, düzen değişimi), ayarlara yazılıp okunma, eski ayar dosyası.
