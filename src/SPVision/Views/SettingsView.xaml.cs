@@ -163,6 +163,14 @@ public partial class SettingsView : UserControl
         ProbeDevices(device);
     }
 
+    /// <summary>Status bar disk warning: Cihaz ayarları › Sistem (Diskler) of <paramref name="device"/>. Reads only.</summary>
+    public void ShowRecorderDisks(Device device)
+    {
+        RecorderPage.ShowDisks(device);
+        NavRecorder.IsChecked = true; // Nav_Checked opens the page (reads this device first)
+        ShowPage(SettingsPage.Recorder);
+    }
+
     /// <summary>The top bar changed a setting that this view also shows.</summary>
     public void RefreshAppSettings() => LoadAppSettings();
 
@@ -617,6 +625,20 @@ public partial class SettingsView : UserControl
         else
         {
             (Window.GetWindow(this) as MainWindow)?.InstallUpdate();
+        }
+    }
+
+    /// <summary>Destek › "Sorunu bildir…": save dialog, zip of the scrubbed logs + sistem.txt, then "Klasörü aç".</summary>
+    async void Report_Click(object sender, RoutedEventArgs e)
+    {
+        ReportButton.IsEnabled = false;
+        try
+        {
+            await ProblemReportExport.RunAsync(Window.GetWindow(this), text => Message?.Invoke(text));
+        }
+        finally
+        {
+            ReportButton.IsEnabled = true;
         }
     }
 

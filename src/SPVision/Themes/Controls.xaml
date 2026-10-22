@@ -191,6 +191,19 @@
         <Setter Property="Foreground" Value="{DynamicResource IconFg}" />
     </Style>
 
+    <!-- Borderless text button of the status bar (disk warning): 23 px tall like StatusIconButton (2 px above and below
+         inside the bar), 6 px inside left and right, status bar font. Needs AutomationProperties.Name. -->
+    <Style x:Key="StatusTextButton" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Height" Value="23" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Padding" Value="6,0" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="BorderBrush" Value="Transparent" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeStatus}" />
+        <Setter Property="FontWeight" Value="Normal" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+    </Style>
+
     <!-- ===== Toggle buttons ===== -->
     <Style TargetType="ToggleButton">
         <Setter Property="Foreground" Value="{DynamicResource TextFg}" />

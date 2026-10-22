@@ -212,22 +212,30 @@ public sealed record HddInfo(int Id, string Name, string Type, string Status, lo
                 long.TryParse(IsapiXml.Get(e, "freeSpace"), CultureInfo.InvariantCulture, out var f) ? f : 0))
             .ToList();
 
-    public bool Healthy => Status.ToLowerInvariant() is "ok" or "idle" or "sleeping" or "standby";
+    /// <summary>Recording works: ok / normal, or spun down (idle, sleeping, standby). Anything else is a problem (DiskHealth).</summary>
+    public bool Healthy => IsHealthy(Status);
+
+    public static bool IsHealthy(string status) => status.Trim().ToLowerInvariant() is "ok" or "normal" or "idle" or "sleeping" or "standby";
 
     public string StatusText => StatusTextOf(Status);
 
-    public static string StatusTextOf(string status) => status.ToLowerInvariant() switch
+    public static string StatusTextOf(string status) => status.Trim().ToLowerInvariant() switch
     {
-        "ok" => "Normal",
+        "ok" or "normal" => "Normal",
         "idle" or "standby" => "Beklemede",
         "sleeping" => "Uykuda",
         "unformatted" => "Biçimlenmemiş",
-        "formatting" => "Biçimlendiriliyor",
-        "error" => "Hata",
+        "formatting" or "formating" => "Biçimlendiriliyor",
+        "error" or "exception" => "Hata",
         "smartfailed" => "SMART hatası",
         "mismatch" => "Uyumsuz",
         "offline" => "Çevrimdışı",
         "abnormal" => "Arızalı",
+        "notexist" or "notexisted" => "Takılı değil",
+        "repairing" or "reparing" => "Onarılıyor",
+        "unrecordhostformatted" => "Başka cihazda biçimlendirilmiş",
+        "lowspeed" => "Yavaş",
+        "noready" or "notready" => "Hazır değil",
         "" => "—",
         _ => status,
     };
