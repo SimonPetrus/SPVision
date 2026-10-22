@@ -26,9 +26,7 @@ public partial class LockView : UserControl
         Pin.PinChanged += Pin_Changed;
         Pin.Submitted += Submit;
         _countdown.Tick += (_, _) => UpdateLockout();
-        // A click anywhere (card, background, a button) gives the keyboard back to the PIN input. On mouse-up, not down: a
-        // button that loses the keyboard focus while pressed releases the mouse and never raises Click.
-        PreviewMouseUp += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Input, FocusPin);
+        // Digits typed anywhere in the window reach the boxes (Pin.ListenTo), so clicks never matter for typing.
         IsVisibleChanged += (_, _) => FocusPin();
         Loaded += (_, _) =>
         {
@@ -36,6 +34,7 @@ public partial class LockView : UserControl
             if (_window is not null)
             {
                 _window.Activated += Window_Activated;
+                Pin.ListenTo(_window);
             }
             UpdateLockout();
             FocusPin();
@@ -46,6 +45,7 @@ public partial class LockView : UserControl
             if (_window is not null)
             {
                 _window.Activated -= Window_Activated;
+                Pin.StopListening(_window);
                 _window = null;
             }
         };

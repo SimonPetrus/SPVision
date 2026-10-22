@@ -151,6 +151,58 @@ sealed class PinBox : Grid
         }
     }
 
+    /// <summary>
+    /// Takes digits, Backspace and Enter typed anywhere in <paramref name="window"/> while the boxes are shown, whatever has
+    /// the keyboard focus (a button clicked last, the window itself…): the PIN never depends on where the mouse went.
+    /// Enter on a focused button stays that button's.
+    /// </summary>
+    public void ListenTo(Window window)
+    {
+        window.PreviewTextInput += Window_PreviewTextInput;
+        window.PreviewKeyDown += Window_PreviewKeyDown;
+    }
+
+    public void StopListening(Window window)
+    {
+        window.PreviewTextInput -= Window_PreviewTextInput;
+        window.PreviewKeyDown -= Window_PreviewKeyDown;
+    }
+
+    void Window_PreviewTextInput(object sender, TextCompositionEventArgs e)
+    {
+        if (!IsVisible || _input.IsKeyboardFocusWithin || e.Text.Length == 0 || !e.Text.All(char.IsAsciiDigit))
+        {
+            return; // the input handles its own keys
+        }
+        e.Handled = true;
+        var digits = _acceptsInput ? PinRules.Digits(e.Text, PinRules.Length - _input.Password.Length) : "";
+        if (digits.Length > 0)
+        {
+            _input.Password += digits;
+        }
+    }
+
+    void Window_PreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (!IsVisible || _input.IsKeyboardFocusWithin)
+        {
+            return;
+        }
+        if (e.Key == Key.Back)
+        {
+            e.Handled = true;
+            if (_acceptsInput && _input.Password.Length > 0)
+            {
+                _input.Password = _input.Password[..^1];
+            }
+        }
+        else if (e.Key == Key.Enter && e.OriginalSource is not System.Windows.Controls.Primitives.ButtonBase)
+        {
+            e.Handled = true;
+            Submitted?.Invoke();
+        }
+    }
+
     void Input_PreviewTextInput(object sender, TextCompositionEventArgs e)
     {
         // Only digits; typed full-width digits are not converted here (the IME is off), pasted ones are.
@@ -195,7 +247,7 @@ sealed class PinBox : Grid
     {
         var length = _input.Password.Length;
         var active = Math.Min(length, PinRules.Length - 1);
-        var focused = _input.IsKeyboardFocused && _acceptsInput;
+        var focused = _acceptsInput; // keys reach the boxes wherever the focus is (ListenTo), so the caret always shows
         for (var i = 0; i < PinRules.Length; i++)
         {
             _dots[i].Visibility = i < length ? Visibility.Visible : Visibility.Hidden;

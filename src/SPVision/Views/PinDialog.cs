@@ -85,11 +85,10 @@ sealed class PinDialog
         _pin.PinChanged += Pin_Changed;
         _pin.Submitted += Next;
         _countdown.Tick += (_, _) => UpdateLockout();
-        // The keyboard always types into the boxes: on open, on activation and after any click on the dialog.
+        // The keyboard always types into the boxes: digits anywhere in the dialog reach them (ListenTo), whatever was clicked.
+        _pin.ListenTo(_dialog);
         _dialog.Loaded += (_, _) => _pin.FocusInput();
         _dialog.Activated += (_, _) => _dialog.Dispatcher.BeginInvoke(DispatcherPriority.Input, _pin.FocusInput);
-        // Mouse-up, not down: a pressed button that loses the keyboard focus releases the mouse and never raises Click.
-        _dialog.PreviewMouseUp += (_, _) => _dialog.Dispatcher.BeginInvoke(DispatcherPriority.Input, _pin.FocusInput);
         _dialog.Closed += (_, _) => _countdown.Stop();
 
         Show(mode == Mode.Set ? Step.New : Step.Current);
