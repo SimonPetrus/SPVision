@@ -109,12 +109,20 @@ jobs:
           & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" /Qp "/DAppVersion=$env:VERSION" "/DPublishDir=$pwd\out\publish" "/DOutputDir=$pwd\out\release" installer\SPVision.iss
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
-      - uses: actions/upload-artifact@v4
+      # Jobs hand files over through the Actions cache, not artifacts: artifact storage is an account-wide quota that other
+      # repositories can fill up (22.10.2026: "Artifact storage quota has been hit"); the cache has its own per-repo limit.
+      - name: Aktarım klasörü (kurulum dosyası)
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force handoff | Out-Null
+          Copy-Item out/release/SPVision-Kurulum-*.exe handoff/
+          if (-not (Get-ChildItem handoff -Filter SPVision-Kurulum-*.exe)) { Write-Error "Kurulum dosyası yok."; exit 1 }
+
+      - uses: actions/cache/save@v4
         with:
-          name: installer
-          path: out/release/SPVision-Kurulum-*.exe
-          retention-days: 1
-          if-no-files-found: error
+          path: handoff
+          key: spvision-release-${{ github.run_id }}-installer
+          enableCrossOsArchive: true
 
   sign:
     needs: build
@@ -132,10 +140,12 @@ jobs:
         with:
           dotnet-version: '10.0.x'
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/cache/restore@v4
         with:
-          name: installer
-          path: out
+          path: handoff
+          key: spvision-release-${{ github.run_id }}-installer
+          enableCrossOsArchive: true
+          fail-on-cache-miss: true
 
       # manifest.json is signed with UPDATE_SIGNING_KEY and checked against the public key compiled into the app
       # (src/SPVision.Core/Updates/UpdateTrust.cs); a mismatch stops here, before anything is published.
@@ -146,22 +156,24 @@ jobs:
           set -euo pipefail
           if [ -z "${UPDATE_SIGNING_KEY}" ]; then echo "::error::UPDATE_SIGNING_KEY secret tanımlı değil — imzasız sürüm yayınlanmaz."; exit 1; fi
           version="${TAG#v}"
+          mkdir -p out
+          cp "handoff/SPVision-Kurulum-${version}.exe" out/
           installer="out/SPVision-Kurulum-${version}.exe"
           signer=tools/release/UpdateSigner/UpdateSigner.csproj
           dotnet run --project "$signer" -c Release -- manifest --installer "$installer" --notes "release-notes/${TAG}.md" --version "$version" --out out/manifest.json --notes-out out/notes.md
           dotnet run --project "$signer" -c Release -- sign --manifest out/manifest.json --key-env UPDATE_SIGNING_KEY
           dotnet run --project "$signer" -c Release -- verify --manifest out/manifest.json --installer "$installer"
 
-      - uses: actions/upload-artifact@v4
+      - name: Aktarım klasörü (yayın dosyaları)
+        run: |
+          set -euo pipefail
+          mkdir -p handoff2
+          cp out/SPVision-Kurulum-*.exe out/manifest.json out/manifest.json.sig out/notes.md handoff2/
+
+      - uses: actions/cache/save@v4
         with:
-          name: release-files
-          path: |
-            out/SPVision-Kurulum-*.exe
-            out/manifest.json
-            out/manifest.json.sig
-            out/notes.md
-          retention-days: 1
-          if-no-files-found: error
+          path: handoff2
+          key: spvision-release-${{ github.run_id }}-files
 
   publish:
     needs: sign
@@ -170,10 +182,17 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/cache/restore@v4
         with:
-          name: release-files
-          path: out
+          path: handoff2
+          key: spvision-release-${{ github.run_id }}-files
+          fail-on-cache-miss: true
+
+      - name: Yayın dosyaları
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp handoff2/* out/
 
       - name: GitHub sürümü
         env:
