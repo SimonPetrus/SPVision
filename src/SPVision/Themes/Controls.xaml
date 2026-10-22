@@ -736,6 +736,43 @@
         </Setter>
     </Style>
 
+    <!-- Row of the "Çevrim içi cihazlar" list (AddDevicePanel): 36 px including its 1 px bottom divider; 1 px focus border +
+         11 px padding = the 12 px content inset of the list's header row. Picked row: RangeBg, as in the approved mockup. -->
+    <Style x:Key="DiscoveryRow" TargetType="ToggleButton">
+        <Setter Property="Height" Value="36" />
+        <Setter Property="Padding" Value="11,0" />
+        <Setter Property="Margin" Value="0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{DynamicResource TextFg}" />
+        <Setter Property="FontSize" Value="{StaticResource FontSizeList}" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ToggleButton">
+                    <Border x:Name="Row" Background="{TemplateBinding Background}" BorderBrush="{DynamicResource Divider}"
+                            BorderThickness="0,0,0,1" SnapsToDevicePixels="True">
+                        <Border x:Name="Bd" BorderBrush="Transparent" BorderThickness="1" Padding="{TemplateBinding Padding}">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}" />
+                        </Border>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Row" Property="Background" Value="{DynamicResource HoverBg}" />
+                        </Trigger>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="Row" Property="Background" Value="{DynamicResource RangeBg}" />
+                        </Trigger>
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource Accent}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
     <!-- ===== Settings pages ===== -->
     <Style x:Key="Card" TargetType="Border">
         <Setter Property="Background" Value="{DynamicResource CardBg}" />

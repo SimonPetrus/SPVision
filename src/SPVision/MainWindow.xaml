@@ -7,7 +7,10 @@
         WindowStartupLocation="CenterScreen" Background="{DynamicResource WindowBg}" Foreground="{DynamicResource TextFg}"
         FontFamily="{StaticResource UiFont}" FontSize="{StaticResource FontSizeBase}"
         KeyDown="Window_KeyDown" PreviewKeyDown="Window_PreviewKeyDown">
-    <DockPanel>
+    <!-- Root: the app (AppShell) and, on first run (no saved device), the welcome screen over it (FirstRunView, added in code;
+         AppShell is collapsed meanwhile so no video window can draw over it). -->
+    <Grid x:Name="RootGrid">
+    <DockPanel x:Name="AppShell">
         <!-- ===== Top bar, 52 px: wordmark · tabs · (live) layout picker, quality, actions / (playback) layout picker · settings (gear = third view) ===== -->
         <Border x:Name="Header" DockPanel.Dock="Top" Height="52" Background="{DynamicResource BarBg}"
                 BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" Padding="12,0">
@@ -198,4 +201,5 @@
             <v:SettingsView x:Name="SettingsPanel" Visibility="Collapsed" />
         </Grid>
     </DockPanel>
+    </Grid>
 </Window>

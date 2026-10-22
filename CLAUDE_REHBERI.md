@@ -3,7 +3,9 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 1258/1258 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 1329/1329 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> (Çevrim içi cihazlar / SADP keşfi ve yeni ilk açılış ekranı — §13 — kod + testlerle hazır; ayrıştırma gerçek ağda iki salt okuma
+> `inquiry` sondasıyla doğrulandı, arayüz uygulamada elle denenmedi.)
 > (HTTPS sertifika sabitleme — §8 "HTTPS sertifika sabitleme" — ve Kameralar sekmesindeki tarih/saat biçimi — §9 "Tarih biçimi" — kod + testlerle hazır;
 > sabitleme gerçek cihaza salt okuma sondasıyla doğrulandı, uygulamada elle denenmedi; tarih biçimini cihaza ilk kez sahibi yazar.)
 > (21.10.2026'daki düzen seçici + eş zamanlı çoklu oynatma değişikliği ile cihaz düzenleyicideki HTTPS varsayılanı / HTTP'ye düşme sorusu henüz cihazda denenmedi; bkz. §4, §5.)
@@ -31,7 +33,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
 | `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SPVision.Core.Tests/` | 1258 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
+| `tests/SPVision.Core.Tests/` | 1329 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -45,7 +47,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ```powershell
 cd SPVision
 dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1258/1258 geçer
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1329/1329 geçer
 dotnet run --project src\SPVision
 ```
 
@@ -505,8 +507,8 @@ dotnet run --project src\SPVision
 | `DarkTitleBar.cs` | DWM yerel başlık çubuğu: koyu temada 1, açıkta 0; geçişte tüm pencerelere yeniden uygulanır |
 | `WindowsStartup.cs` | "Windows ile birlikte başlat": `HKCU\…\Run` altında `SPVision` = tırnaklı exe yolu |
 | `Controls/GlyphIcon.cs` | 24×24 çizgi ikonları (`Icon*` geometrileri) ön plan rengiyle çizer; emoji kullanılmaz |
-| `MainWindow.xaml(.cs)` | Üç görünüm (`MainSection`: Canlı İzleme, Kayıt Oynatma, Ayarlar). Üst çubuk (SPVision yazısı, sekmeler, düzen seçici (`LayoutPicker`; oynatmada ≤16 kareli ikinci seçici), kalite Oto/HD/SD, hareket kutuları, anlık görüntü/kayıt/tam ekran (F11), Ayarlar dişlisi = seçili durumlu ToggleButton), kenar çubuğu (arama, cihaz satırı, kamera listesi — "listede göster" kapalı kameralar hariç — + kare no, sürükle-bırak), durum çubuğu. Cihaz yoksa ilk açılışta Ayarlar › Cihaz yönetimi yeni satır açık halde gelir |
-| `Views/SettingsView.xaml(.cs)` | **Ayarlar**: sol menü (260 px, kenar çubuğuyla aynı). *Cihaz yönetimi*: cihaz listesi (DURUM, CİHAZ ADI, ADRES, TÜR, KAMERA; durum için sayfa açılınca ISAPI deviceInfo GET), satır tıklanınca / Enter / Boşluk ile altında düzenleme paneli açılır (akordeon, bir seferde bir tane). *Uygulama ayarları*: tema, hareket kutuları, varsayılan kalite, **Donanım hızlandırma** (`HardwareDecodingToggle`; §12 — anında uygulanır, açık akışlar yeniden açılır), klasörler (`OpenFolderDialog`), son görünüm, Windows ile başlat, tam ekranda aç. *Cihaz ayarları*: [`RecorderSettingsView`](src/SPVision/Views/RecorderSettingsView.xaml.cs) (§9) |
+| `MainWindow.xaml(.cs)` | Üç görünüm (`MainSection`: Canlı İzleme, Kayıt Oynatma, Ayarlar). Üst çubuk (SPVision yazısı, sekmeler, düzen seçici (`LayoutPicker`; oynatmada ≤16 kareli ikinci seçici), kalite Oto/HD/SD, hareket kutuları, anlık görüntü/kayıt/tam ekran (F11), Ayarlar dişlisi = seçili durumlu ToggleButton), kenar çubuğu (arama, cihaz satırı, kamera listesi — "listede göster" kapalı kameralar hariç — + kare no, sürükle-bırak), durum çubuğu. Kök `RootGrid` = `AppShell` (uygulama) + cihaz yoksa ilk açılışta üstünde `FirstRunView` (§13; bu sırada `AppShell` gizli, F11 çalışmaz) |
+| `Views/SettingsView.xaml(.cs)` | **Ayarlar**: sol menü (260 px, kenar çubuğuyla aynı). *Cihaz yönetimi*: cihaz listesi (DURUM, CİHAZ ADI, ADRES, TÜR, KAMERA; durum için sayfa açılınca ISAPI deviceInfo GET), satır tıklanınca / Enter / Boşluk ile altında düzenleme paneli açılır (akordeon, bir seferde bir tane); "Cihaz ekle" listenin altında vurgu çerçeveli **Yeni cihaz** kartını açar (`AddDevicePanel`, §13; satır açılınca kapanır). *Uygulama ayarları*: tema, hareket kutuları, varsayılan kalite, **Donanım hızlandırma** (`HardwareDecodingToggle`; §12 — anında uygulanır, açık akışlar yeniden açılır), klasörler (`OpenFolderDialog`), son görünüm, Windows ile başlat, tam ekranda aç. *Cihaz ayarları*: [`RecorderSettingsView`](src/SPVision/Views/RecorderSettingsView.xaml.cs) (§9) |
 | `Views/RecorderSettingsView.xaml(.cs)`, `Themes/RecorderControls.xaml` | **Cihaz ayarları** sayfası (§9): cihaz seçici + "Web arayüzünü aç" (180×32), 9 eşit sekme; kartlar (başlık + açıklama · Geri al / Cihaza uygula), satırlar (etiket + yardım · 240 px denetim). Sayfanın kendi stilleri (temalı ComboBox, `SettingsToggleButton`, sekme şeridi, rozet) `RecorderControls.xaml`'da, yalnız bu sayfada birleştirilir. Rozet zeminleri `OnlineSoftBg` / `WarningSoftBg` (Light/Dark) |
 | `Views/ConfirmDialog.cs` | Adlandırılmış düğmeli tema uyumlu soru; liste aşırı yüklemesi değişiklikleri satır satır (başlıklı bölümler: UYGULANDI / UYGULANMADI) kaydırmalı kutuda gösterir; `cancel` null = tek düğme |
 | `Views/RecorderSettingsView.{Events,Network,Users,Risky}.cs` | Cihaz ayarları 2. aşama (§9 "2. aşama"): Olaylar, Ağ (adres + portlar), Kullanıcılar sekmeleri; riskli işlemler (`RunRiskyAsync`, yeniden başlat, disk biçimlendir); `DeviceUpdated` olayı (adres / şifre değişince SettingsView kaydeder + yeniden bağlar) |
@@ -515,6 +517,9 @@ dotnet run --project src\SPVision
 | `Hik/HikFirmware.cs` | Yalnız yazılım güncellemesinin SDK çağrıları (`NET_DVR_Upgrade_V50` + `ENUM_UPGRADE_DVR`, `NET_DVR_StartRemoteConfig` + `NET_DVR_UPGRADE_IPC`); `HikNative`'den bilerek ayrı. Yalnız onaydan çıkan `FirmwareJob` kabul eder |
 | `Views/UserFormDialog.cs` | Kullanıcı ekle / şifre değiştir formu: ad, yetki (Operatör/İzleyici), şifre ×2, SPVision hesabının şifresi (onay; kayıtlı şifreyle karşılaştırılır, yanlışsa cihaza gitmez) |
 | `Views/DeviceEditor.xaml(.cs)` | Satır altı düzenleme paneli (eski DeviceDialog'un yerine): Bağlantı (iki eşit sütun; şifre/anahtar kutusu kayıtlı değeri göstermez, boş bırakılırsa değişmez), "Bağlantıyı test et", "Cihazdan oku", **HTTPS kullan** (ipucu: ayar/bilgi trafiğini şifreler, görüntü akışını etkilemez; yeni cihaz HTTPS + 443 ile açılır, kayıtlı cihaz kendi değerleriyle; işaretleyince 80→443, kaldırınca 443→80, özel port değişmez — Core `HttpsPort.Follow`; HTTPS açıkken cihaza TCP/TLS düzeyinde hiç ulaşılamazsa (`IsapiException.ConnectionFailed`, 401 vb. yanıtlar hariç) "HTTP ile dene / İptal" sorulur ([`ConfirmDialog`](src/SPVision/Views/ConfirmDialog.cs)), kabul edilirse forma HTTP (443 ise 80) yazılır ve bir kez yeniden denenir — sessiz düşürme yok), sertifika satırı (test satırıyla aynı düzen: **Sertifikayı sıfırla** 120×30 + "Sertifika parmak izi: AB:CD:… (ilk bağlantıda kaydedildi)", ipucunda tam SPKI/sertifika SHA-256, konu, geçerlilik; AutomationId `CertificateReset`, `CertificateFingerprint`; §8 "HTTPS sertifika sabitleme"), Kameralar tablosu (LİSTEDE GÖSTER anahtarı), alt satır Cihazı kaldır · Kameraları yenile · İptal · Kaydet. Taslakla çalışır; Kaydet ayarı yazar, giriş bilgisi değiştiyse SDK oturumunu kapatır ve cihazın karelerini yeniden bağlar |
+| `Views/AddDevicePanel.xaml(.cs)` | Cihaz ekleme (§13): "Çevrim içi cihazlar" listesi (SADP inquiry) + 576 px sıkı form; Ayarlar ve ilk açılışta **aynı** denetim (`AddDeviceMode`) |
+| `Views/FirstRunView.xaml(.cs)` | İlk açılış karşılama kartı (880 px, ortada): logo, "SPVision'a hoş geldiniz", `AddDevicePanel` (FirstRun) |
+| `Views/DeviceDraft.cs` | Düzenleyici ile ekleme formunun ortak taslağı (`DeviceDraft`: kameralar, ayrıntılar, sertifika pini, Kaydet = Core `DeviceForm.Apply`), `IDeviceFormHost`, `DeviceReads.RunAsync` (ISAPI GET okuması + "HTTP ile dene" sorusu) |
 | `Views/CertificateDialog.cs` | `CertificateTrustUi` (`App.OnStartup`'ta `Register`: Core `CertificateTrust.Shared.Prompt` = soru penceresi, `PinChanged` = ayarları kaydet; düzenleyici taslağının pini aynı HTTPS adresli kayıtlı cihaza aktarılır) ve `CertificateDialog` ("Kayıt cihazının güvenlik sertifikası değişti": uyarı bandı, KAYITLI / CİHAZIN SUNDUĞU parmak izi + geçerlilik, eşit 168 px düğmeler "Bağlanma" (odak, Esc) · "Yeni sertifikaya güven"; Enter güvenmez) |
 | `Controls/RoundedClip.cs` | Yuvarlak köşeli kartın içindeki satır arka planlarını köşeden taşırmadan kırpar |
 | `Views/LiveView.xaml(.cs)` | 1–36 kareli ızgara (düzen tanımı: Core `GridLayout`; kayıtlı 32 → 36), sayfalar (Core `LivePages`, `Sync`), sürükle-bırak/kare takası, düzeni + sayfayı kaydet/geri yükle; durumu `StateChanged`/`Message` ile ana pencereye bildirir |
@@ -550,7 +555,9 @@ kamera anahtarı yoksa cihaz anahtarını kullanır), [`SettingsStore`](src/SPVi
 (yenilenen kamera listesinde anahtarı ve "listede göster" seçimini korur), [`DeviceKind`](src/SPVision.Core/DeviceKind.cs)
 ("NVR · 32 kanal" metni), [`AutoStart`](src/SPVision.Core/AutoStart.cs) (Run değeri), [`AutoStreamQuality`](src/SPVision.Core/AutoStreamQuality.cs) (Oto kalite kuralı), [`VideoPathText`](src/SPVision.Core/VideoPathText.cs) (durum çubuğundaki video yolu + gerçek GPU/CPU çözme metni), `SdkLog` (Models.cs; SDK log seviyesi kuralı),
 [`PlaybackRestore`](src/SPVision.Core/PlaybackRestore.cs) (son oynatma düzeni + kameraları), [`HttpsPort`](src/SPVision.Core/HttpsPort.cs) (HTTPS kutusu ↔ 80/443 portu, HTTP'ye düşme sorusunun kuralı) ve
-[`CertificatePinning.cs`](src/SPVision.Core/CertificatePinning.cs) (`CertificatePin`, `CertificateFingerprint`, `CertificateText`, `CertificateChangedException`, `CertificateTrust` — HTTPS sertifika sabitleme, §8).
+[`CertificatePinning.cs`](src/SPVision.Core/CertificatePinning.cs) (`CertificatePin`, `CertificateFingerprint`, `CertificateText`, `CertificateChangedException`, `CertificateTrust` — HTTPS sertifika sabitleme, §8),
+[`DeviceForm.cs`](src/SPVision.Core/DeviceForm.cs) (cihaz formlarının doğrulaması + Kaydet), [`Discovery.cs`](src/SPVision.Core/Discovery.cs) ve
+[`SadpScanner.cs`](src/SPVision.Core/SadpScanner.cs) (SADP keşfi, §13).
 Kayıt (§4 "Kayıt ve klip biçimi"): `Recording/` — `Mp4VideoWriter` (FFmpeg H.264 → MP4; Core bu yüzden `Flyleaf.FFmpeg.ABI`
 9.0.0'a ve `AllowUnsafeBlocks`'a bağlıdır), `VideoRecorder` (kuyruk + kodlayıcı iş parçacığı + doğrulama, `RecordingResult`,
 `RecordingText`, `Recordings`), `FrameClock`, `Mp4Inspector`, `RecordingDownload.cs` (`DownloadRange`, `DownloadNaming`, `DownloadParts`,
@@ -661,6 +668,9 @@ Hedef: çift tıklayınca çalışan, kurulum gerektirmeyen bir klasör/exe.
     edilir, `ResponseStatus` kontrol edilir, yeniden okunup doğrulanır; istekler tek tek gider, ilk hatada durulur. Ayrıntı §9.
   - 2. aşama riskli işlemleri **yalnız tam yol** olarak ekledi; kalıcı yasak liste genişledi, hiç kısalmadı. Yeni bir riskli uç nokta
     gerekiyorsa `RiskyOperation` + `RiskyPatterns` + `RiskyWrites` kurucusu + testleri birlikte eklenir.
+  - **SADP keşfi salt okumadır (§13):** SPVision yalnız `<Types>inquiry</Types>` sorgusunu gönderir (`SadpProbe.Inquiry`, tek kurucu).
+    Etkinleştirme (activate), ağ ayarı değiştirme (update/modify), şifre sıfırlama ya da başka hiçbir SADP türü **eklenmez**;
+    etkinleştirilmemiş cihaz yalnız "Aktif değil" diye gösterilir.
   - Başka hiçbir yerde ISAPI PUT/POST/DELETE ekleme (kayıt arama `POST ContentMgmt/search` ve takvim `POST …/dailyDistribution` salt
     okuma isteğidir, istisnadır).
   - **Claude (geliştirici) cihaza hiçbir şey yazmaz:** deneme sondaları yalnız ISAPI GET ve SDK `Login_V40` / `Get*` / `Logout` / `Cleanup`
@@ -965,7 +975,7 @@ SPVision (C:\Program Files\SPVision)        Cloudflare Worker "spvision-update" 
 | `src/SPVision/Views/UpdateDialog.cs` | "Neler yeni" (Kapat / Güncelle) ve **zorunlu** iletişim kutusu (Çıkış / Güncelle, ilerleme çubuğu); 520 px, `DialogChrome` |
 | `MainWindow.xaml(.cs)` | Üst çubuğun altında **güncelleme bandı** (41 px = 40 + 1 px alt çizgi, 30 px düğmelerin üstünde/altında 5'er px; sağda üç 120×30 yuva, 8 px ara: Neler yeni · Sonra/ilerleme · Güncelle/İptal; tam ekranda gizli; yeni fırça `InfoSoftBg` Light/Dark) |
 | `Views/SettingsView.xaml(.cs)` | Uygulama ayarları › **Güncellemeler** kartı: "Yüklü sürüm: SPVision X" + "Son denetim …" · **Denetle** (120×30, `IconRefresh`; erişilebilir ad "Güncellemeleri denetle" — tam metin 120 px'e sığmaz, Bakım'daki "Denetle" düğmeleriyle aynı); durum satırı + ayrıntı · Neler yeni / Güncelle (indirirken ilerleme 120 px + İptal) |
-| `installer/SPVision.iss` | Inno Setup 6: `{autopf}\SPVision`, sabit `AppId` (**değiştirmeyin**), `PrivilegesRequired=admin`, `CloseApplications=yes`, `RestartApplications=no`, Türkçe, masaüstü simgesi isteğe bağlı, kaldırmada HKCU Run değeri silinir; `Permissions: users-modify` YOK |
+| `installer/SPVision.iss` | Inno Setup 6: `{autopf}\SPVision`, sabit `AppId` (**değiştirmeyin**), `PrivilegesRequired=admin`, `CloseApplications=yes`, `RestartApplications=no`, Türkçe, masaüstü simgesi isteğe bağlı, kaldırmada HKCU Run değeri silinir; `Permissions: users-modify` YOK; SADP keşfi için gelen UDP 37020 güvenlik duvarı kuralı (yalnız SPVision.exe, yerel alt ağ; kaldırmada silinir — §13) |
 | `tools/release/UpdateSigner/` | .NET aracı (`Updates/*.cs`'i bağlantıyla derler → biçim ve açık anahtar uygulamayla birebir; `SPVision.slnx`'te): `keygen`, `manifest`, `sign`, `verify` |
 | `tools/release/new-signing-key.ps1` | Bir kerelik anahtar çifti (aşağıda). **Claude çalıştırmaz** |
 | `tools/release/release.ps1` | Yerel yayın (yedek yol; asıl yol GitHub CI, aşağıda) |
@@ -1157,3 +1167,50 @@ anlık görüntü (canlı/oynatma), canlı kayıt ve oynatma klibi (h264_nvenc, 
 (önce 1,3–1,6). **Bilinen bedel:** oynatmada NVDEC kod çözücüsünün açılması/4× yakalama 16 karede görünmeyi ~1,5 sn geciktiriyor
 (yakalama 2,1–3,1 → 3,4–4,6 sn); 4 karede ~0,3 sn. Sondanın pencereleri DWM'de gizli olduğu için ekrana çizme maliyeti
 uygulamadakinden düşük çıkabilir; uygulamadaki toplam sayılar (`measure.ps1`) sahibin elle ölçümüyle doğrulanmalı.
+
+## 13. Cihaz ekleme: Çevrim içi cihazlar (SADP keşfi) ve ilk açılış ekranı (22.10.2026 — kod + testler hazır, arayüz elle denenmedi)
+
+**Kesin kural: keşif SALT OKUMADIR.** SPVision Hikvision SADP protokolünde yalnız şu sorguyu gönderir
+(`SadpProbe.Inquiry`, `239.255.255.250:37020`, her etkin IPv4 arabirimine bir kez):
+`<?xml version="1.0" encoding="utf-8"?><Probe><Uuid>{GUID büyük harf}</Uuid><Types>inquiry</Types></Probe>`.
+Etkinleştirme, ağ ayarı değiştirme (update/modify), şifre sıfırlama ya da başka hiçbir SADP türü yoktur ve **eklenmez**
+(`DiscoveryTests.ProbeIsAnInquiryAndNothingElse` / `ScannerSendsNoOtherSadpType` korur). Etkinleştirilmemiş cihaz "Aktif değil"
+rozetiyle gösterilir; seçilince "önce Hikvision'ın SADP aracı ya da web sayfasıyla etkinleştirin" ipucu çıkar.
+
+- **Core** [`Discovery.cs`](src/SPVision.Core/Discovery.cs): `SadpProbe`; `SadpReply.Parse` (≤ 16 KB datagram, katı UTF-8,
+  `IsapiXml.Parse` = DTD yasak / çözümleyici yok; kök `ProbeMatch`, `Types` varsa `inquiry`, katı noktalı IPv4 — 0.0.0.0,
+  yayın, çok noktaya yayın reddedilir; alanlar denetim karaktersiz, en çok 128 karakter; bozuk paket = null, istisna yok);
+  `DiscoveredDevice` (model = DeviceDescription, HttpPort, HttpsPort, CommandPort, SoftwareVersion, Activated, MAC, DeviceSN,
+  Digital/AnalogChannelNum); `RecorderClassifier` ("Sadece kayıt cihazları": DS-7/8/9…, iDS-7…, "NVR"/"DVR", HWN-/HWD- → kayıt
+  cihazı; DS-2…, IPC-, HWI- → kamera; diğerleri kanal sayısı > 1 ise); `DiscoveredDeviceSet` (MAC → seri no → adres ile tekilleştirme,
+  sonraki yanıt kazanır, en çok 512, adres sırası); `DiscoveryRules` (form doldurma, rozet, sütun metinleri).
+  [`SadpScanner.cs`](src/SPVision.Core/SadpScanner.cs): UDP 37020'ye `ReuseAddress` ile bağlanır (port doluysa geçici porta, uyarıyla),
+  her arabirimde gruba katılır, sorguyu gönderir, **3 sn** dinler; iptal edilebilir; UI `Task.Run` ile çağırır.
+- **Form doldurma kuralı** (`DiscoveryRules.Fill`): IP, HTTP portu, SDK portu (CommandPort, yoksa 8000), RTSP **554** (SADP vermez).
+  **HTTPS kullan** yalnız cihaz `HttpsPort` bildirirse (o port kullanılır) ya da HttpPort 443 ise işaretlenir; aksi halde HTTP + bildirilen
+  port. Cihaz adı boşsa (ya da önceki seçimin modeliyse) model yazılır. Başka cihaza geçilince taslak (kameralar, anahtar, pin) sıfırlanır.
+  Gerçek DS-8632NI-I8 (V4.61.025) yalnız `HttpPort` 80 bildirir (`SDKOverTLSPort` 8443, `HttpsPort` yok) → HTTP 80 / 8000 ile dolar.
+- **Rozetler:** Aktif değil (Activated=false; önce gelir) · Eklendi (adres kayıtlı bir cihazın Host'u) · Aktif. Bayrak hiç yoksa aktif sayılır.
+- **Arayüz** — tek denetim [`AddDevicePanel`](src/SPVision/Views/AddDevicePanel.xaml.cs), iki yerde:
+  - Ayarlar › Cihaz yönetimi › **Cihaz ekle**: listenin altında vurgu çerçeveli "Yeni cihaz" kartı (52 px başlık, 16 px iç boşluk).
+    Eski "Yeni cihaz" liste satırı + `DeviceEditor(isNew)` akışı kullanılmıyor; düzenleyici yalnız kayıtlı cihazlar için.
+  - İlk açılış ([`FirstRunView`](src/SPVision/Views/FirstRunView.xaml)): cihaz yoksa pencerenin tamamını kaplayan 880 px kart (logo 56,
+    "SPVision'a hoş geldiniz", alt yazı); **Sonra ekle** normal boş uygulamaya döner, **Bağlan ve devam et** önce test eder, yanıt
+    gelirse kaydeder ve canlı izlemeye geçer (`MainWindow.DeviceSaved` → `ShowLive`).
+  - Düzen: başlık satırı (* | "Sadece kayıt cihazları" 200 | Yenile 120×30, 12 px ara); tablo MODEL 210 · IP ADRESİ 150 · PORT (HTTP / SDK)
+    170 · YAZILIM * · DURUM 120, satır 36 px, 5 satır (184 px) sonra kaydırma; açılınca tarama hemen başlar ("Yerel ağ taranıyor…", dönen
+    simge). Boş: "Cihaz bulunamadı — IP adresini elle girebilirsiniz" (filtre gizlediyse ayrı metin). Form 576 px sütun (Ayarlar'da solda,
+    ilk açılışta ortada): Cihaz adı | IP · HTTP | RTSP | SDK (eşit) · Kullanıcı adı | Şifre · HTTPS kullan … Bağlantıyı test et · sonuç
+    satırı · ayraç · İptal / Kaydet (120×30) ya da Sonra ekle / Bağlan ve devam et (160×30), sağa yaslı. Kutular 30 px (`MinHeight` 0).
+  - Mantık düzenleyiciyle **ortak**: `DeviceDraft` + `DeviceReads.RunAsync` (Views/DeviceDraft.cs) ve Core [`DeviceForm`](src/SPVision.Core/DeviceForm.cs)
+    (doğrulama, Kaydet; saklama ve DPAPI aynı). Test yalnız GET: deviceInfo, kamera listesi ve — formda anahtar kutusu olmadığı için,
+    düzenleyicideki "Cihazdan oku" ile aynı — akış anahtarı (`GetStreamEncryptionAsync`; okunamazsa sessizce geçilir, Cihaz yönetimi'nden girilir).
+- **Güvenlik duvarı:** yanıtlar gelen UDP 37020'dir; kural yoksa Windows düşürebilir → liste boş kalır, uygulama elle girişle çalışır.
+  Kurulum (`installer/SPVision.iss`) `[Run]`'da `netsh advfirewall firewall add rule name="SPVision SADP discovery" dir=in action=allow
+  program="{app}\SPVision.exe" protocol=UDP localport=37020 remoteip=localsubnet profile=any` ekler (önce aynı adlı kuralı siler),
+  `[UninstallRun]` siler. Geliştirme makinesinde `netsh` çalıştırılmadı; kurulum derlenip denenmedi.
+- **Gerçek ağ (22.10.2026, iki salt okuma sondası):** DS-8632NI-I8 192.168.1.2, HTTP 80, SDK 8000, Activated true, 32 dijital kanal,
+  "V4.61.025build 220905" (listede "V4.61.025 build 220905"); ayrıca bir alarm paneli (DS-PWA64-L-WE) ve bir geçiş terminali
+  (DS-K1A802AMF) yanıt verdi, filtre ikisini gizler. Cihazlar her yanıtı iki kez gönderir (tekilleştirme gerekli). Bu geliştirme
+  makinesinde yanıtlar alındı (güvenlik duvarı durumu incelenmedi).
+- Not: LAN'daki biri sahte `ProbeMatch` gönderebilir; bu yalnız formu doldurur — şifre kullanıcıdan gelir, Digest + sertifika pini (§8) aynen geçerlidir.

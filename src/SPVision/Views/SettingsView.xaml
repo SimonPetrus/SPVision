@@ -65,6 +65,18 @@
                             <StackPanel x:Name="DeviceRows" />
                         </StackPanel>
                     </Border>
+
+                    <!-- "Cihaz ekle": Çevrim içi cihazlar + compact form (AddDevicePanel), in its own accent-framed card under
+                         the list; 52 px header, 16 px inset like the rows. One open form at a time (an expanded row closes it). -->
+                    <Border x:Name="NewDeviceCard" Style="{StaticResource Card}" BorderBrush="{DynamicResource Accent}" Margin="0,16,0,0"
+                            Visibility="Collapsed" AutomationProperties.AutomationId="NewDeviceCard" AutomationProperties.Name="Yeni cihaz">
+                        <StackPanel>
+                            <Border Height="52" Padding="16,0" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+                                <TextBlock Text="Yeni cihaz" Style="{StaticResource CardTitle}" VerticalAlignment="Center" />
+                            </Border>
+                            <ContentControl x:Name="NewDeviceHost" Margin="16" Focusable="False" />
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
 

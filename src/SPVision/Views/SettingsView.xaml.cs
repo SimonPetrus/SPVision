@@ -56,7 +56,7 @@ public partial class SettingsView : UserControl
     readonly Dictionary<Guid, Reach> _reach = [];
     readonly List<DeviceBlock> _blocks = [];
     DeviceEditor? _editor;
-    Device? _newDevice;          // "Cihaz ekle": not in the settings until Kaydet
+    AddDevicePanel? _addPanel;   // "Cihaz ekle": the new device is not in the settings until Kaydet
     CancellationTokenSource? _probeCts;
     bool _loadingSwitches;
 
@@ -107,38 +107,60 @@ public partial class SettingsView : UserControl
         ShowPage(page);
         LoadAppSettings();
         CloseEditor();
-        _newDevice = null;
+        CloseAddDevice();
         BuildDeviceList();
         ProbeDevices();
     }
 
-    /// <summary>Called when the view is hidden: drops an unsaved draft and stops probing.</summary>
+    /// <summary>Called when the view is hidden: drops an unsaved draft, stops discovery and probing.</summary>
     public void Close()
     {
         _probeCts?.Cancel();
         RecorderPage.Close();
         RecorderPage.Visibility = Visibility.Collapsed; // the next Open reads the device again
         CloseEditor();
-        if (_newDevice is not null)
-        {
-            _newDevice = null;
-            BuildDeviceList();
-        }
+        CloseAddDevice();
     }
 
-    /// <summary>"Cihaz ekle": a new, already expanded row at the end of the list.</summary>
+    /// <summary>
+    /// "Cihaz ekle": the "Yeni cihaz" card under the list — online devices (SADP inquiry, scanned at once) and the
+    /// compact form. An expanded device row is closed (one form at a time).
+    /// </summary>
     public void BeginAddDevice()
     {
         NavDevices.IsChecked = true;
         ShowPage(SettingsPage.Devices);
         CloseEditor();
-        _newDevice = new Device();
-        BuildDeviceList();
-        if (_blocks.LastOrDefault() is { } block && block.Device == _newDevice)
+        CloseAddDevice();
+        var panel = new AddDevicePanel(AddDeviceMode.Settings);
+        panel.Saved += AddPanel_Saved;
+        panel.Cancelled += CloseAddDevice;
+        _addPanel = panel;
+        NewDeviceHost.Content = panel;
+        NewDeviceCard.Visibility = Visibility.Visible;
+        panel.Loaded += (_, _) => NewDeviceCard.BringIntoView();
+    }
+
+    void CloseAddDevice()
+    {
+        if (_addPanel is null)
         {
-            Expand(block);
-            block.Row.BringIntoView();
+            return;
         }
+        NewDeviceHost.Content = null; // Unloaded: the panel stops its scan
+        NewDeviceCard.Visibility = Visibility.Collapsed;
+        _addPanel = null;
+    }
+
+    void AddPanel_Saved(Device device)
+    {
+        App.Settings.Devices.Add(device);
+        App.SaveSettings();
+        CloseAddDevice();
+        BuildDeviceList();
+        DeviceSaved?.Invoke(device, true);
+        Message?.Invoke($"Kaydedildi: {device.Name}");
+        ProbeDevices(device);
     }
 
     /// <summary>The top bar changed a setting that this view also shows.</summary>
@@ -211,10 +233,6 @@ public partial class SettingsView : UserControl
         DeviceRows.Children.Clear();
         _blocks.Clear();
         var devices = App.Settings.Devices.ToList();
-        if (_newDevice is not null)
-        {
-            devices.Add(_newDevice);
-        }
         if (devices.Count == 0)
         {
             var empty = Cell("Henüz cihaz yok. Sağ üstteki “Cihaz ekle” ile ekleyin.", 0);
@@ -233,7 +251,6 @@ public partial class SettingsView : UserControl
 
     DeviceBlock DeviceRow(Device device, bool last)
     {
-        var isNew = device == _newDevice;
         var grid = ListGrid();
 
         var rotate = new RotateTransform(0);
@@ -257,13 +274,13 @@ public partial class SettingsView : UserControl
         Grid.SetColumn(status, 2);
         grid.Children.Add(status);
 
-        var name = Cell(isNew ? "Yeni cihaz" : device.Name, 4);
+        var name = Cell(device.Name, 4);
         name.FontWeight = FontWeights.SemiBold;
         name.FontSize = (double)FindResource("FontSizeList");
-        name.ToolTip = isNew ? null : device.Name;
+        name.ToolTip = device.Name;
         grid.Children.Add(name);
 
-        var address = Cell(isNew ? "—" : device.Host, 6);
+        var address = Cell(device.Host, 6);
         grid.Children.Add(address);
         var type = Cell("", 8);
         grid.Children.Add(type);
@@ -272,7 +289,7 @@ public partial class SettingsView : UserControl
 
         var row = new ClickToggleButton { Content = grid };
         row.SetResourceReference(StyleProperty, "ListRowToggle");
-        System.Windows.Automation.AutomationProperties.SetName(row, isNew ? "Yeni cihaz" : $"{device.Name}, {device.Host}");
+        System.Windows.Automation.AutomationProperties.SetName(row, $"{device.Name}, {device.Host}");
 
         var body = new StackPanel();
         body.Children.Add(row);
@@ -308,14 +325,7 @@ public partial class SettingsView : UserControl
     void UpdateRow(DeviceBlock block)
     {
         var device = block.Device;
-        if (device == _newDevice)
-        {
-            SetStatus(block, "Offline", "Kaydedilmedi");
-            block.Type.Text = "—";
-            block.Count.Text = "—";
-            return;
-        }
-        var live = LiveStateOf?.Invoke(device.Id);
+        var live =LiveStateOf?.Invoke(device.Id);
         var reach = _reach.GetValueOrDefault(device.Id, Reach.Probing);
         if (live == TileState.Playing || reach == Reach.Online)
         {
@@ -353,20 +363,12 @@ public partial class SettingsView : UserControl
         }
     }
 
-    /// <summary>Accordion: one editor at a time; opening another row drops the other draft.</summary>
+    /// <summary>Accordion: one editor at a time; opening a row drops the other draft and an unsaved "Yeni cihaz" form.</summary>
     void Expand(DeviceBlock block)
     {
-        var dropNew = _newDevice is not null && block.Device != _newDevice;
         CloseEditor();
-        if (dropNew)
-        {
-            // Another row opened while a new device was unsaved: forget the new row.
-            var device = block.Device;
-            _newDevice = null;
-            BuildDeviceList();
-            block = _blocks.First(b => b.Device == device);
-        }
-        var editor = new DeviceEditor(block.Device, isNew: block.Device == _newDevice);
+        CloseAddDevice();
+        var editor = new DeviceEditor(block.Device, isNew: false);
         editor.Saved += Editor_Saved;
         editor.Cancelled += _ => CancelEdit();
         editor.RemoveRequested += Editor_RemoveRequested;
@@ -381,11 +383,6 @@ public partial class SettingsView : UserControl
         if (_editor is not null && block.Body.Children.Contains(_editor))
         {
             CloseEditor();
-            if (block.Device == _newDevice)
-            {
-                _newDevice = null;
-                BuildDeviceList();
-            }
         }
         block.Row.IsChecked = false;
         block.Chevron.Angle = 0;
@@ -406,26 +403,12 @@ public partial class SettingsView : UserControl
         _editor = null;
     }
 
-    void CancelEdit()
-    {
-        var wasNew = _editor?.IsNew == true;
-        CloseEditor();
-        if (wasNew)
-        {
-            _newDevice = null;
-            BuildDeviceList();
-        }
-    }
+    void CancelEdit() => CloseEditor();
 
     void Editor_Saved(DeviceEditor editor, bool loginChanged)
     {
         var device = editor.Device;
-        if (editor.IsNew)
-        {
-            App.Settings.Devices.Add(device);
-        }
         App.SaveSettings();
-        _newDevice = null;
         CloseEditor();
         BuildDeviceList();
         DeviceSaved?.Invoke(device, loginChanged);
@@ -439,10 +422,6 @@ public partial class SettingsView : UserControl
     /// </summary>
     void RecorderPage_DeviceUpdated(Device device, bool loginChanged)
     {
-        if (_editor?.IsNew == true)
-        {
-            _newDevice = null;
-        }
         CloseEditor(); // an open editor holds a draft of the old values
         App.SaveSettings();
         BuildDeviceList();
