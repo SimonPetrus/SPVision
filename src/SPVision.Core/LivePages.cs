@@ -35,6 +35,12 @@ public sealed class LivePages
     /// <summary>Position in the global order of a tile of the current page.</summary>
     public int SlotOf(int tile) => Page * PageSize + tile;
 
+    /// <summary>
+    /// A camera group is shown (<see cref="CameraGroups"/>): only its cameras, each in its saved tile. Empty tiles stay
+    /// empty and cameras that are not in the group are not added; a camera that disappears leaves a hole (nothing moves up).
+    /// </summary>
+    public bool IsGroup { get; private set; }
+
     /// <summary>Global position of the camera, or -1 when it is in no slot.</summary>
     public int IndexOf(CameraRef camera) => _slots.IndexOf(camera);
 
@@ -124,39 +130,54 @@ public sealed class LivePages
 
     /// <summary>
     /// Startup: the saved order (or none), brought up to date with the cameras listed now, and the saved
-    /// page, clamped to what exists.
+    /// page, clamped to what exists. <paramref name="group"/>: the slots are a camera group's (<see cref="IsGroup"/>).
     /// </summary>
-    public void Load(IEnumerable<CameraRef?> saved, IReadOnlyList<CameraRef> listed, int page, int pageSize)
+    public void Load(IEnumerable<CameraRef?> saved, IReadOnlyList<CameraRef> listed, int page, int pageSize, bool group = false)
     {
         ArgumentOutOfRangeException.ThrowIfLessThan(pageSize, 1);
         _slots.Clear();
         _slots.AddRange(saved);
         PageSize = pageSize;
         Page = page;
+        IsGroup = group;
         Reconcile(listed);
     }
 
     /// <summary>
     /// "Show all cameras of a device": these cameras come first in this order, the other listed ones
-    /// follow in list order; back to the first page.
+    /// follow in list order; back to the first page. Leaves a shown group.
     /// </summary>
     public void Reset(IEnumerable<CameraRef> first, IReadOnlyList<CameraRef> listed)
     {
         _slots.Clear();
         _slots.AddRange(first.Distinct());
         Page = 0;
+        IsGroup = false;
         Reconcile(listed);
     }
 
     /// <summary>
     /// The camera list changed (or was loaded): cameras that are no longer listed (removed, hidden) leave
     /// the order and the cameras behind them move up; duplicates are dropped; listed cameras that are
-    /// missing fill the holes first (in list order), the rest go to the end.
+    /// missing fill the holes first (in list order), the rest go to the end. A group (<see cref="IsGroup"/>)
+    /// keeps its tiles: unlisted and repeated cameras become holes, nothing moves and nothing is added.
     /// </summary>
     public void Reconcile(IReadOnlyList<CameraRef> listed)
     {
         var allowed = listed.ToHashSet();
         var seen = new HashSet<CameraRef>();
+        if (IsGroup)
+        {
+            for (var i = 0; i < _slots.Count; i++)
+            {
+                if (_slots[i] is { } camera && (!allowed.Contains(camera) || !seen.Add(camera)))
+                {
+                    _slots[i] = null;
+                }
+            }
+            Normalize();
+            return;
+        }
         for (var i = _slots.Count - 1; i >= 0; i--)
         {
             if (_slots[i] is { } camera && !allowed.Contains(camera))

@@ -107,6 +107,15 @@ public sealed class AppSettings
     /// </summary>
     public SavedView? LastPlaybackView { get; set; }
 
+    /// <summary>Canlı İzleme › GRUPLAR: saved layouts with the camera of every tile (<see cref="CameraGroups"/>), in sidebar order.</summary>
+    public List<CameraGroup> Groups { get; set; } = [];
+
+    /// <summary>
+    /// Id of the group on screen; null = "Tüm kameralar". Restored with <see cref="LastView"/> when <see cref="RestoreLastView"/>
+    /// is on (then <see cref="LastView"/> holds the group's tiles as left on screen).
+    /// </summary>
+    public Guid? ActiveGroup { get; set; }
+
     public string SnapshotFolder { get; set; } = AppPaths.DefaultSnapshotFolder;
 
     public string RecordingFolder { get; set; } = AppPaths.DefaultRecordingFolder;

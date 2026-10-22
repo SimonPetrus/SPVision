@@ -143,6 +143,8 @@
                         <Ellipse x:Name="ConnectionDot" Style="{StaticResource StatusDot}" Fill="{DynamicResource Offline}" Margin="0,0,6,0" />
                         <TextBlock x:Name="ConnectionText" Foreground="{DynamicResource TextSecondary}" />
                     </StackPanel>
+                    <TextBlock x:Name="GroupText" DockPanel.Dock="Left" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}"
+                               AutomationProperties.AutomationId="GroupStatus" />
                     <TextBlock x:Name="OnScreenText" DockPanel.Dock="Left" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}" />
                     <StackPanel x:Name="ReconnectPanel" DockPanel.Dock="Left" Orientation="Horizontal" Margin="18,0,0,0" VerticalAlignment="Center" Visibility="Collapsed">
                         <Ellipse Style="{StaticResource StatusDot}" Fill="{DynamicResource Warning}" Margin="0,0,6,0" />
@@ -197,6 +199,27 @@
                              AutomationProperties.Name="Kamera ara" ToolTip="Kamera adına göre süz"
                              TextChanged="SearchBox_TextChanged" />
                 </StackPanel>
+                <!-- GRUPLAR (MainWindow.Groups.cs, Core CameraGroups): 36 px header (caption · 104×24 "Grup kaydet", 10 px
+                     insets like the search above), then one 32 px row per group with 2 px gaps, 6 px from the sidebar edges
+                     and 8 px above the device row. First row "Tüm kameralar" (built in, no ⋯ menu). Many groups scroll. -->
+                <Border DockPanel.Dock="Top" BorderBrush="{DynamicResource Border}" BorderThickness="0,1,0,0">
+                    <StackPanel>
+                        <Grid Height="36" Margin="10,0">
+                            <TextBlock Text="GRUPLAR" Style="{StaticResource CaptionText}" VerticalAlignment="Center" />
+                            <Button x:Name="SaveGroupButton" Style="{StaticResource GroupSaveButton}" HorizontalAlignment="Right"
+                                    Click="SaveGroup_Click" ToolTip="Ekrandaki ızgarayı ve kameraları grup olarak kaydet"
+                                    AutomationProperties.Name="Grup kaydet" AutomationProperties.AutomationId="GroupSave">
+                                <StackPanel Orientation="Horizontal">
+                                    <c:GlyphIcon Data="{StaticResource IconPlus}" Size="11" StrokeThickness="2.5" Margin="0,0,4,0" />
+                                    <TextBlock Text="Grup kaydet" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                        </Grid>
+                        <ScrollViewer MaxHeight="244" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False">
+                            <StackPanel x:Name="GroupList" Margin="6,0,6,8" AutomationProperties.Name="Kamera grupları" />
+                        </ScrollViewer>
+                    </StackPanel>
+                </Border>
                 <ScrollViewer VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled" Focusable="False"
                               ToolTip="Kamerayı bir kareye sürükleyin ya da çift tıklayın. Cihaz satırına çift tıklamak tüm kameralarını açar."
                               ToolTipService.InitialShowDelay="1200"

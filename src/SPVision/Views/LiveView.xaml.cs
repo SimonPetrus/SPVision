@@ -68,6 +68,39 @@ public partial class LiveView : UserControl
     /// </summary>
     public event Action? StateChanged;
 
+    /// <summary>Another camera group (or "Tüm kameralar") is on screen: the sidebar's GRUPLAR rows and the status bar follow.</summary>
+    public event Action? GroupChanged;
+
+    /// <summary>The camera group on screen; null = "Tüm kameralar" (the normal arrangement of every listed camera).</summary>
+    public CameraGroup? ActiveGroup => CameraGroups.Find(App.Settings.Groups, App.Settings.ActiveGroup);
+
+    /// <summary>Camera of every tile on screen (current page, empty tiles included): what "Grup kaydet" stores.</summary>
+    public IReadOnlyList<CameraRef?> ScreenCameras => _pages.CurrentPage;
+
+    /// <summary>
+    /// GRUPLAR row clicked: the group's layout with each camera in its saved tile (a camera that no longer exists leaves
+    /// its tile empty); null = "Tüm kameralar": the default layout with every listed camera in list order, first page.
+    /// Tiles that already show a wanted camera only move (<see cref="Sync"/>), so their streams keep running.
+    /// </summary>
+    public void ShowGroup(CameraGroup? group)
+    {
+        var listed = ListedCameras();
+        _maximized = null;
+        if (group is null)
+        {
+            _layout = GridLayout.Default;
+            _pages.Load([], listed, 0, _layout.TileCount);
+        }
+        else
+        {
+            _layout = CameraGroups.LayoutOf(group);
+            _pages.Load(CameraGroups.Slots(group, listed), listed, 0, _layout.TileCount, group: true);
+        }
+        SetActiveGroup(group?.Id);
+        Sync();
+        Select(_tiles[0]);
+    }
+
     /// <summary>Current layout (any of <see cref="GridLayout.All"/>).</summary>
     public GridLayout Layout => _layout;
 
@@ -140,9 +173,21 @@ public partial class LiveView : UserControl
             return;
         }
         RestoreMaximized();
-        _pages.Reset(cameras, ListedCameras());
+        _pages.Reset(cameras, ListedCameras()); // every listed camera again: no group is on screen any more
+        SetActiveGroup(null);
         Sync();
         Select(_tiles[0]);
+    }
+
+    /// <summary>Remembers the group on screen (saved with the view) and tells the main window when it changes.</summary>
+    void SetActiveGroup(Guid? id)
+    {
+        if (App.Settings.ActiveGroup == id)
+        {
+            return;
+        }
+        App.Settings.ActiveGroup = id;
+        GroupChanged?.Invoke();
     }
 
     public void StopAll()
@@ -258,7 +303,7 @@ public partial class LiveView : UserControl
     public void SelectQuality(StreamQuality? quality) => SetGlobalQuality(quality);
 
     /// <summary>Every camera of the sidebar list (not hidden in Settings), in list order: what the pages are made of.</summary>
-    static List<CameraRef> ListedCameras() =>
+    internal static List<CameraRef> ListedCameras() =>
         [.. App.Settings.Devices.SelectMany(d => d.ListedCameras().Select(c => new CameraRef(d.Id, c.Channel)))];
 
     /// <summary>Cameras were added, removed or hidden: the order follows the list, the tiles follow the order.</summary>
@@ -531,15 +576,24 @@ public partial class LiveView : UserControl
     /// <summary>
     /// Saved order and page, brought up to date with the camera list (new or unhidden cameras join, closed tiles
     /// are filled again). "Açılışta son görünümü geri yükle" off: default layout, list order, first page.
+    /// A camera group that was on screen comes back with it, as it was left (only its cameras, holes kept);
+    /// a deleted one, or restoring switched off, starts with "Tüm kameralar".
     /// </summary>
     void RestoreLayout()
     {
         SetGlobalQuality(App.Settings.LiveQuality);
         var view = App.Settings.RestoreLastView ? App.Settings.LastView : null;
+        var group = App.Settings.RestoreLastView ? ActiveGroup : null;
+        SetActiveGroup(group?.Id);
+        if (group is not null && view is null)
+        {
+            ShowGroup(group);
+            return;
+        }
         // A saved 32 opens as 36; settings from the 1/4/9/16 era keep their old mapping (GridLayout.ForSavedView).
         _layout = GridLayout.ForSavedView(view);
         _maximized = null;
-        _pages.Load(view?.Tiles ?? [], ListedCameras(), view?.Page ?? 0, _layout.TileCount);
+        _pages.Load(view?.Tiles ?? [], ListedCameras(), view?.Page ?? 0, _layout.TileCount, group: group is not null);
         Sync();
     }
 

@@ -56,6 +56,7 @@ public partial class MainWindow : Window
         _downloads = new DownloadManager(Dispatcher);
         HookDownloads();
         Live.StateChanged += LiveStateChanged;
+        Live.GroupChanged += GroupsChanged;
         Live.Message += ShowMessage;
         LivePicker.LayoutSelected += Live.SelectLayout;
         PlaybackPicker.SetLayouts(GridLayout.PlaybackStandard, GridLayout.PlaybackBigTile);
@@ -81,6 +82,7 @@ public partial class MainWindow : Window
         UpdateController.Message += ShowMessage;
         UpdateController.MandatoryRequired += ShowMandatoryUpdate;
         BuildCameraList();
+        BuildGroupList();
         Playback.RefreshCameras();
 
         _lastCpuTime = _process.TotalProcessorTime;
@@ -615,6 +617,7 @@ public partial class MainWindow : Window
     void DevicesChanged()
     {
         BuildCameraList();
+        BuildGroupList(); // camera counts follow the list
         SearchBox_TextChanged(SearchBox, null!);
         Playback.RefreshCameras();
         UpdateStatusBar();
@@ -727,6 +730,7 @@ public partial class MainWindow : Window
         var viewItems = _section == MainSection.Settings ? Visibility.Collapsed : Visibility.Visible;
         OnScreenText.Visibility = viewItems;
         VideoPathText.Visibility = viewItems;
+        UpdateGroupStatus();
         var tiles = playback
             ? Playback.VisibleTiles.Where(t => t.Device is not null)
                 .Select(t => new TileInfo(t.Device!, t.Source!, t.State, t.UsesSdk, false, t.GpuDecoding)).ToList()
