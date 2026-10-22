@@ -14,7 +14,12 @@ public static class UpdateTrust
     public const string Placeholder = "YER-TUTUCU: tools/release/new-signing-key.ps1 henüz çalıştırılmadı";
 
     // BEGIN UPDATE PUBLIC KEY (tools/release/new-signing-key.ps1 rewrites this block)
-    public const string PublicKeyPem = Placeholder;
+    public const string PublicKeyPem = """
+        -----BEGIN PUBLIC KEY-----
+        MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEZQGiTUwB1SEb84LT2R4rYM6RXFwB
+        GgPlDhFUL0dSMrjELOC9KlBumYsM1kEGJau3QEJgyZ9pzRCMaPYiCXgNuw==
+        -----END PUBLIC KEY-----
+        """;
     // END UPDATE PUBLIC KEY
 
     public static bool IsConfigured => UpdateSignature.IsConfigured(PublicKeyPem);
