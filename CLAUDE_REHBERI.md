@@ -3,13 +3,14 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 1413/1413 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 1459/1459 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
 > (Tek örnek, `logs\crash.log` + "Sorunu bildir…" zip'i ve durum çubuğundaki disk uyarısı — §14 — kod + testlerle hazır, uygulamada elle denenmedi.)
 > (Çevrim içi cihazlar / SADP keşfi ve yeni ilk açılış ekranı — §13 — kod + testlerle hazır; ayrıştırma gerçek ağda iki salt okuma
 > `inquiry` sondasıyla doğrulandı, arayüz uygulamada elle denenmedi.)
 > (HTTPS sertifika sabitleme — §8 "HTTPS sertifika sabitleme" — ve Kameralar sekmesindeki tarih/saat biçimi — §9 "Tarih biçimi" — kod + testlerle hazır;
 > sabitleme gerçek cihaza salt okuma sondasıyla doğrulandı, uygulamada elle denenmedi; tarih biçimini cihaza ilk kez sahibi yazar.)
 > (21.10.2026'daki düzen seçici + eş zamanlı çoklu oynatma değişikliği ile cihaz düzenleyicideki HTTPS varsayılanı / HTTP'ye düşme sorusu henüz cihazda denenmedi; bkz. §4, §5.)
+> (Kayıt oynatmada sürükle-bırak — §4 "Kayıt oynatma: eş zamanlı çoklu kamera" — kod + testlerle hazır, uygulamada elle denenmedi.)
 > (Canlı izlemede sayfalar — §4 "Canlı izlemede sayfalar" — da henüz cihazda denenmedi.)
 > (Uygulama içi güncelleme — §11 — kod + testlerle hazır; anahtar, Worker ve ilk sürüm sahibinin bir kerelik adımlarını bekliyor, gerçek yayınla denenmedi.)
 > (Kayıt oynatmada kare araçları — §4 "Kare araçları, büyütme ve video indirme": çift tıkla büyütme, kare üstü araç çubuğu,
@@ -34,7 +35,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
 | `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SPVision.Core.Tests/` | 1413 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
+| `tests/SPVision.Core.Tests/` | 1459 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -48,7 +49,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ```powershell
 cd SPVision
 dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1413/1413 geçer
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1459/1459 geçer
 dotnet run --project src\SPVision
 ```
 
@@ -208,6 +209,15 @@ dotnet run --project src\SPVision
 - Kamera tıklama kuralı Core [`PlaybackSlots`](src/SPVision.Core/PlaybackSync.cs): ızgarada → çıkar (kare boş kalır,
   diğerleri kesilmez); değilse ilk boş kare; ızgara doluysa odaklı karenin kamerası değişir. Düzen küçülünce taşan
   kameralar boş karelere kayar (önce odaklı kamera).
+- **Sürükle-bırak (22.10.2026, canlıdaki gibi; uygulamada elle denenmedi):** listedeki satır sistem eşiğini geçince sürüklenir
+  (tık eskisi gibi `PickCamera`), canlının veri biçimi (`VideoTile.DragFormat`) ve etkisiyle (Copy / kare → Move). Core
+  `PlaybackSlots.Place` (birim testli): kamera başka karedeyse iki kare **yer değiştirir** (kopya olmaz; boş kareye = taşıma),
+  değilse kareyi doldurur ya da karedeki kamerayı çıkarır (satırının işareti kalkar); hedef kare odak alır. Kare → kare
+  `PlaybackSlots.Swap`, odak sürüklenen kamerayla gider. Yer değiştirmede **kare nesneleri hücre değiştirir** (`_tiles` sırası =
+  yuva sırası): akış, zaman, klip ve yakınlaştırma sürer, yeniden açılış yok; büyütülmüş hücre büyütülmüş kalır. Yeni konan
+  kamera tıklanmış gibi katılır (`LoadAndJoinAsync` → `LeadFor`, hız, duraklatma, Durdur; `_awaitUser` biter). Sürüklerken
+  vurgu: imlecin altındaki kare accent çerçeve (boş karede kesik çizgi accent), odak çerçevesi sürükleme boyunca söner; araç
+  çubuğu gizli. Yakınlaştırma kipinde ya da kaydırırken kare sürüklenmez. Kare dışına / kendi üstüne bırakmak bir şey yapmaz.
 - Her kare bir [`PlaybackTile`](src/SPVision/Controls/PlaybackTile.xaml.cs) (canlı kareyle aynı görünüm): akış anahtarı
   varsa SDK, yoksa Flyleaf (FFmpeg açamazsa bir kez SDK'ya düşer). Kareler hep `TileGrid` çocuğudur; düzen değişince
   yalnız taşınır/gizlenir (yeniden açılmaz).
