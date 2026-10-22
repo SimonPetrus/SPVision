@@ -72,8 +72,17 @@ Name: "{autoprograms}\SPVision"; Filename: "{app}\SPVision.exe"
 Name: "{autodesktop}\SPVision"; Filename: "{app}\SPVision.exe"; Tasks: desktopicon
 
 [Run]
+; "Çevrim içi cihazlar" (SADP keşfi): kayıt cihazlarının yanıtları UDP 37020'ye gelir; Windows Güvenlik Duvarı bunları kural
+; olmadan düşürebilir. Yalnız SPVision.exe için, yalnız gelen UDP 37020, yalnız yerel alt ağdan izin verilir. Önce aynı adlı
+; eski kural silinir (güncellemede çift kural olmasın). Kural eklenemezse kurulum sürer; uygulama boş liste + elle giriş ile çalışır.
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""SPVision SADP discovery"""; Flags: runhidden
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall add rule name=""SPVision SADP discovery"" dir=in action=allow program=""{app}\SPVision.exe"" protocol=UDP localport=37020 remoteip=localsubnet profile=any enable=yes"; Flags: runhidden
 ; Bitiş sayfasında "SPVision'u başlat" kutusu (işaretli gelir): kullanıcının yönetici olmayan kabuğu üzerinden açılır.
 Filename: "{win}\explorer.exe"; Parameters: """{app}\SPVision.exe"""; Description: "{cm:LaunchProgram,SPVision}"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+; Kaldırmada cihaz keşfi güvenlik duvarı kuralı da silinir.
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""SPVision SADP discovery"""; Flags: runhidden; RunOnceId: "DelSadpFirewallRule"
 
 [Code]
 { Uygulama içi güncelleyiciden mi geldi: /FROMAPP=1. }

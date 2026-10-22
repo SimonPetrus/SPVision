@@ -8,61 +8,48 @@ using SPVision.Core;
 namespace SPVision.Views;
 
 /// <summary>
-/// Edit panel of one device (Settings › Cihaz yönetimi, under the expanded row). Works on a draft:
-/// nothing changes until Kaydet. Only ISAPI GET calls are made (device info, cameras, stream key).
-/// Stored password / stream key are never shown; an empty box keeps the stored value.
+/// Edit panel of one device (Settings › Cihaz yönetimi, under the expanded row). Works on a draft
+/// (<see cref="DeviceDraft"/>): nothing changes until Kaydet. Only ISAPI GET calls are made (device info, cameras,
+/// stream key). Stored password / stream key are never shown; an empty box keeps the stored value.
 /// </summary>
-public partial class DeviceEditor : UserControl
+public partial class DeviceEditor : UserControl, IDeviceFormHost
 {
     const string StoredPlaceholder = "Kayıtlı · değiştirmek için yazın";
 
-    readonly Device _device;
-    readonly bool _isNew;
-    List<Camera> _cameras;       // draft copies (name, online, hidden, key)
-    DeviceDetails? _details;
+    readonly DeviceDraft _draft;
     bool _busy;
-
-    /// <summary>
-    /// HTTPS certificate pin of the draft: starts as the saved one; a test read may store (first use) or replace it
-    /// (trusted in the "sertifika değişti" dialog). Kaydet keeps it when it changed (<see cref="_pinChanged"/>).
-    /// </summary>
-    CertificatePin? _pin;
-    bool _pinChanged;
 
     /// <summary>device: the saved device to edit, or a fresh one (isNew) that is added on Kaydet.</summary>
     public DeviceEditor(Device device, bool isNew)
     {
         InitializeComponent();
-        _isNew = isNew;
-        _device = device;
-        _cameras = _device.Cameras.Select(Copy).ToList();
+        _draft = new DeviceDraft(device, isNew);
 
-        NameBox.Text = _device.Name;
-        HostBox.Text = _device.Host;
+        NameBox.Text = device.Name;
+        HostBox.Text = device.Host;
         // A new device starts on HTTPS (443); a saved one shows exactly its stored values.
-        HttpPortBox.Text = (_isNew ? HttpsPort.Https : _device.HttpPort).ToString(CultureInfo.InvariantCulture);
-        RtspPortBox.Text = _device.RtspPort.ToString(CultureInfo.InvariantCulture);
-        SdkPortBox.Text = _device.SdkPort.ToString(CultureInfo.InvariantCulture);
-        UserBox.Text = _device.UserName;
-        HttpsBox.IsChecked = _isNew || _device.UseHttps;
+        HttpPortBox.Text = (isNew ? HttpsPort.Https : device.HttpPort).ToString(CultureInfo.InvariantCulture);
+        RtspPortBox.Text = device.RtspPort.ToString(CultureInfo.InvariantCulture);
+        SdkPortBox.Text = device.SdkPort.ToString(CultureInfo.InvariantCulture);
+        UserBox.Text = device.UserName;
+        HttpsBox.IsChecked = isNew || device.UseHttps;
         // After the stored value is shown: from here on any change (mouse, keyboard, UI Automation) moves the port.
         HttpsBox.Checked += Https_Changed;
         HttpsBox.Unchecked += Https_Changed;
         UpdatePlaceholders();
-        _pin = _device.Certificate;
         UpdateCertificate();
 
         // A new device has nothing to remove; keep the slot so the right-hand buttons do not move.
-        RemoveButton.Visibility = _isNew ? Visibility.Hidden : Visibility.Visible;
-        ResultText.Text = _isNew ? "IP adresi ve kullanıcı bilgilerini girip bağlantıyı test edin." : "";
+        RemoveButton.Visibility = isNew ? Visibility.Hidden : Visibility.Visible;
+        ResultText.Text = isNew ? "IP adresi ve kullanıcı bilgilerini girip bağlantıyı test edin." : "";
         ResultText.ToolTip = ResultText.Text;
         BuildCameraTable();
-        Loaded += (_, _) => (_isNew ? HostBox : NameBox).Focus();
+        Loaded += (_, _) => (isNew ? HostBox : NameBox).Focus();
     }
 
-    public Device Device => _device;
+    public Device Device => _draft.Device;
 
-    public bool IsNew => _isNew;
+    public bool IsNew => _draft.IsNew;
 
     /// <summary>Kaydet: the device (same object for an existing one) and whether login data changed.</summary>
     public event Action<DeviceEditor, bool>? Saved;
@@ -85,11 +72,11 @@ public partial class DeviceEditor : UserControl
     /// <summary>"Sertifika parmak izi: AB:CD:… (ilk bağlantıda kaydedildi)"; full details in the tool tip.</summary>
     void UpdateCertificate()
     {
-        var text = CertificateText.EditorLine(HttpsBox.IsChecked == true, _pin);
+        var text = CertificateText.EditorLine(HttpsBox.IsChecked == true, _draft.Pin);
         CertificateLine.Text = text;
-        CertificateLine.ToolTip = _pin is { } pin ? CertificateText.Details(pin) : text;
+        CertificateLine.ToolTip = _draft.Pin is { } pin ? CertificateText.Details(pin) : text;
         System.Windows.Automation.AutomationProperties.SetName(CertificateLine, text);
-        ResetCertificateButton.IsEnabled = !_busy && _pin is not null;
+        ResetCertificateButton.IsEnabled = !_busy && _draft.Pin is not null;
     }
 
     /// <summary>
@@ -98,154 +85,82 @@ public partial class DeviceEditor : UserControl
     /// </summary>
     void ResetCertificate_Click(object sender, RoutedEventArgs e)
     {
-        if (_busy || _pin is null || !ConfirmDialog.Show(Window.GetWindow(this),
+        if (_busy || _draft.Pin is null || !ConfirmDialog.Show(Window.GetWindow(this),
                 "Kayıtlı sertifika parmak izi unutulsun mu? Bir sonraki HTTPS bağlantısında cihazın o anki sertifikası yeniden kaydedilir. " +
                 "Bunu yalnızca cihazın sertifikasının neden değiştiğini biliyorsanız yapın.", "Sıfırla", "Vazgeç"))
         {
             return;
         }
-        _pin = null;
-        _pinChanged = true;
-        if (!_isNew)
-        {
-            CertificateTrust.Shared.Reset(_device); // saved through CertificateTrustUi
-        }
-        CertificateTrust.Shared.ForgetDeclined(_device.Id);
+        _draft.ResetPin();
         UpdateCertificate();
         ShowResult("Sertifika parmak izi silindi; bir sonraki bağlantıda yeniden kaydedilir.");
     }
 
     void UpdatePlaceholders()
     {
-        PasswordPlaceholder.Text = !_isNew && PasswordBox.Password.Length == 0 && _device.Password.Length > 0 ? StoredPlaceholder : "";
-        StreamKeyPlaceholder.Text = !_isNew && StreamKeyBox.Password.Length == 0 && !string.IsNullOrEmpty(_device.StreamKey) ? StoredPlaceholder : "";
+        var device = _draft.Device;
+        PasswordPlaceholder.Text = !IsNew && PasswordBox.Password.Length == 0 && device.Password.Length > 0 ? StoredPlaceholder : "";
+        StreamKeyPlaceholder.Text = !IsNew && StreamKeyBox.Password.Length == 0 && !string.IsNullOrEmpty(device.StreamKey) ? StoredPlaceholder : "";
     }
 
     /// <summary>Form values on a scratch device (for test calls and for saving); null with a message when invalid.</summary>
-    Device? ReadForm()
+    public Device? ReadForm()
     {
-        if (string.IsNullOrWhiteSpace(HostBox.Text))
+        var form = _draft.Read(new DeviceFormInput(NameBox.Text, HostBox.Text, HttpPortBox.Text, RtspPortBox.Text, SdkPortBox.Text,
+            HttpsBox.IsChecked == true, UserBox.Text, PasswordBox.Password, StreamKeyBox.Password), out var error);
+        if (error is not null)
         {
-            ShowResult("IP adresi gerekli.");
-            return null;
+            ShowResult(error);
         }
-        if (!TryPort(HttpPortBox.Text, out var httpPort) || !TryPort(RtspPortBox.Text, out var rtspPort) ||
-            !TryPort(SdkPortBox.Text, out var sdkPort))
-        {
-            ShowResult("Port numaraları geçersiz (1-65535).");
-            return null;
-        }
-        return new Device
-        {
-            Id = _device.Id,
-            Name = NameBox.Text.Trim(),
-            Host = HostBox.Text.Trim(),
-            HttpPort = httpPort,
-            RtspPort = rtspPort,
-            SdkPort = sdkPort,
-            UseHttps = HttpsBox.IsChecked == true,
-            UserName = UserBox.Text.Trim(),
-            // Empty box = keep what is stored (the stored value is never put into the box).
-            Password = PasswordBox.Password.Length > 0 ? PasswordBox.Password : _device.Password,
-            StreamKey = StreamKeyBox.Password.Length > 0 ? StreamKeyBox.Password : _device.StreamKey,
-            Certificate = _pin,
-        };
+        return form;
     }
 
-    static bool TryPort(string text, out int port) =>
-        int.TryParse(text.Trim(), NumberStyles.None, CultureInfo.InvariantCulture, out port) && port is > 0 and <= 65535;
-
-    void ShowResult(string text)
+    public void ShowResult(string text)
     {
         ResultText.Text = text;
         ResultText.ToolTip = text;
     }
 
-    void SetBusy(bool busy)
+    public void SetBusy(bool busy)
     {
         _busy = busy;
         TestButton.IsEnabled = FetchKeyButton.IsEnabled = RefreshButton.IsEnabled = SaveButton.IsEnabled = RemoveButton.IsEnabled = !busy;
-        ResetCertificateButton.IsEnabled = !busy && _pin is not null;
+        ResetCertificateButton.IsEnabled = !busy && _draft.Pin is not null;
     }
 
-    /// <summary>After a read: the draft's pin as the client left it (stored on first use or replaced after the question).</summary>
-    void TakePin(Device form)
+    void IDeviceFormHost.SwitchToHttp()
     {
-        if (!ReferenceEquals(form.Certificate, _pin))
-        {
-            _pin = form.Certificate;
-            _pinChanged = true;
-        }
+        HttpsBox.IsChecked = false;
+        HttpPortBox.Text = HttpsPort.Follow(HttpPortBox.Text, useHttps: false);
+    }
+
+    void IDeviceFormHost.TakePin(Device form)
+    {
+        _draft.TakePin(form);
         UpdateCertificate();
     }
 
     // ---- Device reads (ISAPI GET only) ----
 
-    /// <summary>
-    /// Runs one device read with the form values. When HTTPS was on and the device could not be reached at all
-    /// (TCP/TLS, not a 401 or other answer), asks before switching the form to HTTP and retries once; never silently.
-    /// A changed certificate is not such a failure (<see cref="CertificateChangedException"/>): it is asked about in the
-    /// certificate dialog, even if it was declined before (the user asks again here).
-    /// </summary>
     async Task ReadDeviceAsync(string progress, Func<IsapiClient, Task> read)
     {
-        if (_busy || ReadForm() is not { } form)
+        if (!_busy)
         {
-            return;
-        }
-        CertificateTrust.Shared.ForgetDeclined(form.Id);
-        SetBusy(true);
-        ShowResult(progress);
-        IsapiClient? isapi = null;
-        try
-        {
-            try
-            {
-                isapi = new IsapiClient(form);
-                await read(isapi);
-            }
-            catch (IsapiException ex) when (HttpsPort.OfferHttpFallback(form.UseHttps, isapi?.Answered == true, ex))
-            {
-                ShowResult($"✗ {ex.Message}");
-                if (!ConfirmDialog.Show(Window.GetWindow(this), "Bu cihazda HTTPS kapalı olabilir. HTTP (port 80) ile denensin mi?",
-                        "HTTP ile dene", "İptal"))
-                {
-                    return;
-                }
-                HttpsBox.IsChecked = false;
-                HttpPortBox.Text = HttpsPort.Follow(HttpPortBox.Text, useHttps: false);
-                if (ReadForm() is not { } http)
-                {
-                    return;
-                }
-                ShowResult(progress);
-                isapi?.Dispose();
-                isapi = new IsapiClient(http);
-                await read(isapi);
-            }
-        }
-        catch (Exception ex)
-        {
-            ShowResult($"✗ {ex.Message}");
-        }
-        finally
-        {
-            isapi?.Dispose();
-            TakePin(form);
-            SetBusy(false);
+            await DeviceReads.RunAsync(this, Window.GetWindow(this), progress, read);
         }
     }
 
     async void Test_Click(object sender, RoutedEventArgs e) =>
         await ReadDeviceAsync("Bağlanılıyor…", async isapi =>
         {
-            _details = await isapi.GetDeviceInfoAsync();
+            var details = await isapi.GetDeviceInfoAsync();
+            _draft.Details = details;
             var cameras = await isapi.GetCamerasAsync();
             TakeCameras(cameras);
-            ShowResult($"✓ {_details.Model ?? _details.Name} · {cameras.Count} kamera ({cameras.Count(c => c.Online)} çevrim içi)");
+            ShowResult($"✓ {details.Model ?? details.Name} · {cameras.Count} kamera ({cameras.Count(c => c.Online)} çevrim içi)");
             if (string.IsNullOrWhiteSpace(NameBox.Text))
             {
-                NameBox.Text = _details.Name;
+                NameBox.Text = details.Name;
             }
         });
 
@@ -279,7 +194,7 @@ public partial class DeviceEditor : UserControl
     /// <summary>Fetched list replaces the draft; per-camera keys and "listede göster" choices are kept.</summary>
     void TakeCameras(List<Camera> fetched)
     {
-        _cameras = CameraList.Merge(_cameras, fetched);
+        _draft.TakeCameras(fetched);
         BuildCameraTable();
     }
 
@@ -291,49 +206,13 @@ public partial class DeviceEditor : UserControl
         {
             return;
         }
-        if (_cameras.Count == 0 &&
+        if (_draft.Cameras.Count == 0 &&
             MessageBox.Show(Window.GetWindow(this)!, "Kamera listesi alınmadı. Yine de kaydedilsin mi?", "SPVision",
                 MessageBoxButton.YesNo, MessageBoxImage.Question) != MessageBoxResult.Yes)
         {
             return;
         }
-        var loginChanged = _isNew ||
-            form.Host != _device.Host || form.HttpPort != _device.HttpPort || form.RtspPort != _device.RtspPort ||
-            form.SdkPort != _device.SdkPort || form.UseHttps != _device.UseHttps || form.UserName != _device.UserName ||
-            form.Password != _device.Password || form.StreamKey != _device.StreamKey;
-
-        _device.Name = string.IsNullOrWhiteSpace(form.Name) ? form.Host : form.Name;
-        _device.Host = form.Host;
-        _device.HttpPort = form.HttpPort;
-        _device.RtspPort = form.RtspPort;
-        _device.SdkPort = form.SdkPort;
-        _device.UseHttps = form.UseHttps;
-        _device.UserName = form.UserName;
-        _device.Password = form.Password;
-        _device.StreamKey = form.StreamKey;
-        if (_isNew || _pinChanged)
-        {
-            _device.Certificate = _pin; // pinned (or reset) while editing; otherwise the saved pin stays as it is now
-        }
-        if (_details is not null)
-        {
-            _device.Model = _details.Model;
-            _device.SerialNumber = _details.SerialNumber;
-            _device.DeviceType = _details.DeviceType ?? _device.DeviceType;
-        }
-
-        // Keep the saved camera objects (open tiles point at them); take name, state and choices from the draft.
-        var saved = _device.Cameras.ToDictionary(c => c.Channel);
-        _device.Cameras = _cameras.Select(draft =>
-        {
-            var camera = saved.TryGetValue(draft.Channel, out var old) ? old : new Camera { Channel = draft.Channel };
-            camera.Name = draft.Name;
-            camera.Online = draft.Online;
-            camera.Hidden = draft.Hidden;
-            camera.StreamKey = draft.StreamKey;
-            return camera;
-        }).ToList();
-
+        var loginChanged = _draft.Save(form);
         Saved?.Invoke(this, loginChanged);
     }
 
@@ -342,15 +221,6 @@ public partial class DeviceEditor : UserControl
     void Remove_Click(object sender, RoutedEventArgs e) => RemoveRequested?.Invoke(this);
 
     // ---- Camera table ----
-
-    static Camera Copy(Camera c) => new()
-    {
-        Channel = c.Channel,
-        Name = c.Name,
-        Online = c.Online,
-        Hidden = c.Hidden,
-        StreamKey = c.StreamKey,
-    };
 
     /// <summary>Columns KANAL 64 | KAMERA ADI * | DURUM 160 | LİSTEDE GÖSTER 136, 16 px gaps and side insets.</summary>
     static Grid TableGrid()
@@ -400,16 +270,16 @@ public partial class DeviceEditor : UserControl
         CameraTable.Children.Add(headerBorder);
 
         var rows = new StackPanel();
-        if (_cameras.Count == 0)
+        if (_draft.Cameras.Count == 0)
         {
             var empty = Cell("Kamera listesi yok: “Bağlantıyı test et” ya da “Kameraları yenile” ile cihazdan okuyun.", 0);
             empty.SetResourceReference(TextBlock.ForegroundProperty, "TextSecondary");
             empty.HorizontalAlignment = HorizontalAlignment.Center;
             rows.Children.Add(new Border { Height = 36, Padding = new Thickness(16, 0, 16, 0), Child = empty });
         }
-        for (var i = 0; i < _cameras.Count; i++)
+        for (var i = 0; i < _draft.Cameras.Count; i++)
         {
-            rows.Children.Add(CameraRow(_cameras[i], last: i == _cameras.Count - 1));
+            rows.Children.Add(CameraRow(_draft.Cameras[i], last: i == _draft.Cameras.Count - 1));
         }
 
         // About 7 rows, then the table scrolls; at its ends the wheel moves the page instead.

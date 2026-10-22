@@ -96,7 +96,7 @@ public partial class MainWindow : Window
         {
             if (App.Settings.Devices.Count == 0)
             {
-                AddDevice(); // first run: Settings > Cihaz yönetimi with a new, expanded row
+                ShowFirstRun(); // welcome card: online devices + compact form instead of an empty live view
             }
             else if (App.Settings.StartFullScreen && !_fullScreen)
             {
@@ -542,11 +542,40 @@ public partial class MainWindow : Window
     void Settings_Click(object sender, RoutedEventArgs e) =>
         SelectSection(_section == MainSection.Settings ? _sectionBeforeSettings : MainSection.Settings);
 
-    /// <summary>Opens Settings > Cihaz yönetimi with a new, already expanded device row.</summary>
-    void AddDevice()
+    FirstRunView? _firstRun;
+
+    /// <summary>
+    /// First run (no saved device): the welcome card covers the window (the app behind it is collapsed, so no video
+    /// window can draw over it). "Sonra ekle" leaves the normal empty app; "Bağlan ve devam et" saves the tested device
+    /// and opens its cameras in live view.
+    /// </summary>
+    void ShowFirstRun()
     {
-        SelectSection(MainSection.Settings);
-        SettingsPanel.BeginAddDevice();
+        var view = new FirstRunView();
+        view.Later += CloseFirstRun;
+        view.Connected += device =>
+        {
+            App.Settings.Devices.Add(device);
+            App.SaveSettings();
+            CloseFirstRun();
+            ShowMessage($"Kaydedildi: {device.Name}");
+            DeviceSaved(device, loginChanged: true); // first device on an empty wall: live view shows it
+        };
+        _firstRun = view;
+        AppShell.Visibility = Visibility.Collapsed;
+        RootGrid.Children.Add(view);
+    }
+
+    void CloseFirstRun()
+    {
+        if (_firstRun is null)
+        {
+            return;
+        }
+        RootGrid.Children.Remove(_firstRun); // Unloaded: its scan stops
+        _firstRun = null;
+        AppShell.Visibility = Visibility.Visible;
+        SelectSection(MainSection.Live);
     }
 
     /// <summary>Kaydet in the device editor: new login data needs a new SDK session, then the tiles reconnect.</summary>
@@ -836,6 +865,10 @@ public partial class MainWindow : Window
 
     void Window_KeyDown(object sender, KeyEventArgs e)
     {
+        if (_firstRun is not null)
+        {
+            return; // the welcome screen has no camera wall to show full screen
+        }
         if (e.Key == Key.F11 || (e.Key == Key.Escape && _fullScreen))
         {
             ToggleFullScreen();

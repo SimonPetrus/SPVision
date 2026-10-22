@@ -1,0 +1,162 @@
+<UserControl x:Class="SPVision.Views.AddDevicePanel"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:c="clr-namespace:SPVision.Controls">
+    <!-- Add a device: "Çevrim içi cihazlar" (SADP inquiry, read-only) above a compact connection form in a 576 px column.
+         Shared by Settings › Cihaz yönetimi › Cihaz ekle (form column on the left, İptal / Kaydet 120×30) and the
+         first-run screen (column centred, Sonra ekle / Bağlan ve devam et 160×30). Every input and button is 30 px high. -->
+    <StackPanel>
+        <!-- ===== List header: caption · count | "Sadece kayıt cihazları" (200) | Yenile (120), 12 px gaps ===== -->
+        <Grid>
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="200" />
+                <ColumnDefinition Width="12" />
+                <ColumnDefinition Width="120" />
+            </Grid.ColumnDefinitions>
+            <TextBlock Style="{StaticResource CaptionText}" VerticalAlignment="Center"
+                       AutomationProperties.AutomationId="DiscoveryCount" AutomationProperties.LiveSetting="Polite"><Run Text="ÇEVRİM İÇİ CİHAZLAR" /><Run x:Name="CountRun" FontWeight="Normal" Text=" · taranıyor" /></TextBlock>
+            <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                <TextBlock Text="Sadece kayıt cihazları" FontSize="{StaticResource FontSizeTile}" Foreground="{DynamicResource TextFg}"
+                           VerticalAlignment="Center" Margin="0,0,8,0" />
+                <CheckBox x:Name="OnlyRecordersSwitch" Style="{StaticResource ToggleSwitch}" IsChecked="True"
+                          AutomationProperties.AutomationId="OnlyRecorders" AutomationProperties.Name="Sadece kayıt cihazları"
+                          ToolTip="Yalnız NVR / DVR kayıt cihazlarını gösterir; kameraları ve diğer cihazları gizler" />
+            </StackPanel>
+            <Button x:Name="RescanButton" Grid.Column="4" Style="{StaticResource SettingsButton}" Click="Rescan_Click"
+                    AutomationProperties.AutomationId="DiscoveryRescan" AutomationProperties.Name="Yerel ağı yeniden tara"
+                    ToolTip="Yerel ağdaki Hikvision cihazlarını yeniden arar (yalnızca sorgu; cihazlara hiçbir şey yazılmaz)">
+                <StackPanel Orientation="Horizontal">
+                    <c:GlyphIcon x:Name="RescanIcon" Data="{StaticResource IconRefresh}" Size="13" StrokeThickness="2.2" Margin="0,0,6,0"
+                                 VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                        <c:GlyphIcon.RenderTransform>
+                            <RotateTransform x:Name="RescanSpin" />
+                        </c:GlyphIcon.RenderTransform>
+                    </c:GlyphIcon>
+                    <TextBlock Text="Yenile" VerticalAlignment="Center" />
+                </StackPanel>
+            </Button>
+        </Grid>
+
+        <!-- ===== List: MODEL 210 | IP ADRESİ 150 | PORT (HTTP / SDK) 170 | YAZILIM * | DURUM 120, 12 px side insets;
+             five 36 px rows visible (184 px), then it scrolls ===== -->
+        <Border Margin="0,8,0,0" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="6" SnapsToDevicePixels="True"
+                Background="{DynamicResource CardBg}">
+            <StackPanel c:RoundedClip.Radius="5">
+                <Border x:Name="ListHeader" Height="32" Padding="12,0" Background="{DynamicResource SubtleBg}"
+                        BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" />
+                <Grid Height="184">
+                    <ScrollViewer x:Name="RowsScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
+                                  Focusable="False" PreviewMouseWheel="Rows_PreviewMouseWheel">
+                        <StackPanel x:Name="Rows" AutomationProperties.Name="Çevrim içi cihazlar" />
+                    </ScrollViewer>
+                    <StackPanel x:Name="EmptyState" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <c:GlyphIcon x:Name="EmptySpinner" Data="{StaticResource IconRefresh}" Size="14" StrokeThickness="2.2" Margin="0,0,8,0"
+                                     Foreground="{DynamicResource TextSecondary}" VerticalAlignment="Center" RenderTransformOrigin="0.5,0.5">
+                            <c:GlyphIcon.RenderTransform>
+                                <RotateTransform x:Name="EmptySpin" />
+                            </c:GlyphIcon.RenderTransform>
+                        </c:GlyphIcon>
+                        <TextBlock x:Name="EmptyText" FontSize="{StaticResource FontSizeTile}" Foreground="{DynamicResource TextSecondary}"
+                                   VerticalAlignment="Center" AutomationProperties.AutomationId="DiscoveryEmpty"
+                                   AutomationProperties.LiveSetting="Polite" />
+                    </StackPanel>
+                </Grid>
+            </StackPanel>
+        </Border>
+        <TextBlock x:Name="ListHint" Margin="0,8,0,0" FontSize="{StaticResource FontSizeStatus}" Foreground="{DynamicResource TextSecondary}"
+                   TextWrapping="Wrap"
+                   Text="Aynı yerel ağdaki Hikvision cihazları listelenir; bir satıra tıklayınca adres ve portlar aşağıya yazılır. Uzaktaki cihazlar için bilgileri elle girin." />
+
+        <Border Height="1" Margin="0,16" Background="{DynamicResource Divider}" SnapsToDevicePixels="True" />
+
+        <!-- ===== Compact form, 576 px: Cihaz adı | IP adresi · HTTP | RTSP | SDK port · Kullanıcı adı | Şifre ·
+             HTTPS kullan … Bağlantıyı test et · result · divider · buttons (right) ===== -->
+        <StackPanel x:Name="FormColumn" Width="576" HorizontalAlignment="Left">
+            <TextBlock Text="BAĞLANTI" Style="{StaticResource CaptionText}" />
+
+            <Grid Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Cihaz adı" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="NameBox" Height="30" MinHeight="0" AutomationProperties.Name="Cihaz adı" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="IP adresi" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="HostBox" Height="30" MinHeight="0" AutomationProperties.Name="IP adresi" />
+                </StackPanel>
+            </Grid>
+
+            <Grid Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="HTTP port" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="HttpPortBox" Height="30" MinHeight="0" AutomationProperties.Name="HTTP port" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="RTSP port" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="RtspPortBox" Height="30" MinHeight="0" AutomationProperties.Name="RTSP port" />
+                </StackPanel>
+                <StackPanel Grid.Column="4">
+                    <TextBlock Text="SDK port" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="SdkPortBox" Height="30" MinHeight="0" AutomationProperties.Name="SDK port" />
+                </StackPanel>
+            </Grid>
+
+            <Grid Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="16" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <StackPanel>
+                    <TextBlock Text="Kullanıcı adı" Style="{StaticResource FieldLabel}" />
+                    <TextBox x:Name="UserBox" Height="30" MinHeight="0" AutomationProperties.Name="Kullanıcı adı" />
+                </StackPanel>
+                <StackPanel Grid.Column="2">
+                    <TextBlock Text="Şifre" Style="{StaticResource FieldLabel}" />
+                    <Grid>
+                        <PasswordBox x:Name="PasswordBox" Height="30" MinHeight="0" PasswordChanged="Password_Changed"
+                                     AutomationProperties.Name="Şifre" />
+                        <TextBlock x:Name="PasswordPlaceholder" Style="{StaticResource InputPlaceholder}" Text="Şifreyi girin" />
+                    </Grid>
+                </StackPanel>
+            </Grid>
+
+            <Grid Margin="0,12,0,0">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <CheckBox x:Name="HttpsBox" Content="HTTPS kullan" VerticalAlignment="Center" HorizontalAlignment="Left"
+                          AutomationProperties.Name="HTTPS kullan"
+                          ToolTip="Cihazla ayar ve bilgi alışverişini şifreler (görüntü akışını etkilemez). Varsayılan port 443." />
+                <Button x:Name="TestButton" Grid.Column="1" Content="Bağlantıyı test et" Style="{StaticResource SettingsButton}"
+                        Click="Test_Click" ToolTip="Cihaz bilgisini, kamera listesini ve akış anahtarını okur (yalnızca okuma)" />
+            </Grid>
+
+            <TextBlock x:Name="ResultText" Margin="0,12,0,0" FontSize="{StaticResource FontSizeTile}" TextWrapping="Wrap"
+                       Foreground="{DynamicResource TextSecondary}" AutomationProperties.AutomationId="AddDeviceResult"
+                       AutomationProperties.LiveSetting="Polite" />
+
+            <Border Height="1" Margin="0,12" Background="{DynamicResource Divider}" SnapsToDevicePixels="True" />
+
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="CancelButton" Content="İptal" Style="{StaticResource SettingsButton}" Click="Cancel_Click" />
+                <Button x:Name="SaveButton" Content="Kaydet" Style="{StaticResource SettingsAccentButton}" Margin="8,0,0,0"
+                        Click="Save_Click" />
+            </StackPanel>
+        </StackPanel>
+    </StackPanel>
+</UserControl>
