@@ -136,6 +136,11 @@ sealed class PinDialog
             _error.Text = "";
         }
         UpdateAccept();
+        if (PinRules.IsComplete(_pin.Pin))
+        {
+            // The 6th digit moves on by itself, as on the lock screen (after the last dot is drawn).
+            _dialog.Dispatcher.BeginInvoke(DispatcherPriority.Background, Next);
+        }
     }
 
     void UpdateAccept() => _accept.IsEnabled = PinRules.IsComplete(_pin.Pin) && !_busy;

@@ -214,7 +214,7 @@ public partial class MainWindow
     /// <summary>"Sil" after a short question; deleting the group on screen shows "Tüm kameralar".</summary>
     void DeleteGroup(CameraGroup group)
     {
-        if (!ConfirmDialog.Show(this, $"“{group.Name}” grubu silinsin mi? Kameralar ve kayıtlar etkilenmez.", "Sil", "İptal"))
+        if (!ConfirmDialog.Show(this, $"“{group.Name}” grubu silinsin mi? Kameralar ve kayıtlar etkilenmez.", "Sil", "İptal", danger: true))
         {
             return;
         }

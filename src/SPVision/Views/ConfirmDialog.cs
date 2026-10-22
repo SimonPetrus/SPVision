@@ -10,15 +10,16 @@ namespace SPVision.Views;
 /// </summary>
 static class ConfirmDialog
 {
-    public static bool Show(Window? owner, string text, string accept, string cancel) =>
-        Show(owner, text, null, accept, cancel);
+    /// <summary><paramref name="danger"/>: the accept button is red-filled (deleting something, like Bakım › Tam sıfırla…).</summary>
+    public static bool Show(Window? owner, string text, string accept, string cancel, bool danger = false) =>
+        Show(owner, text, null, accept, cancel, danger);
 
     /// <summary>
     /// <paramref name="sections"/>: optional captioned lists ("UYGULANDI", "UYGULANMADI"…); a null caption shows the
     /// lines without one. <paramref name="cancel"/> null = a single (accept) button, for results.
     /// </summary>
     public static bool Show(Window? owner, string text, IReadOnlyList<(string? Caption, IReadOnlyList<string> Lines)>? sections,
-        string accept, string? cancel)
+        string accept, string? cancel, bool danger = false)
     {
         var dialog = new Window
         {
@@ -74,7 +75,14 @@ static class ConfirmDialog
 
         var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
         var acceptButton = new Button { Content = accept, IsDefault = true };
-        acceptButton.SetResourceReference(FrameworkElement.StyleProperty, "SettingsAccentButton");
+        if (danger)
+        {
+            dialog.Resources.MergedDictionaries.Add(new ResourceDictionary
+            {
+                Source = new Uri("/SPVision;component/Themes/RecorderControls.xaml", UriKind.Relative),
+            });
+        }
+        acceptButton.SetResourceReference(FrameworkElement.StyleProperty, danger ? "SettingsDangerFillButton" : "SettingsAccentButton");
         acceptButton.Click += (_, _) => dialog.DialogResult = true;
         if (cancel is not null)
         {
