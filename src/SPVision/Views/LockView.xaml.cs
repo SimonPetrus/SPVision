@@ -26,8 +26,9 @@ public partial class LockView : UserControl
         Pin.PinChanged += Pin_Changed;
         Pin.Submitted += Submit;
         _countdown.Tick += (_, _) => UpdateLockout();
-        // A click anywhere (card, background, a button) gives the keyboard back to the PIN input; buttons still get their click.
-        PreviewMouseDown += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Input, FocusPin);
+        // A click anywhere (card, background, a button) gives the keyboard back to the PIN input. On mouse-up, not down: a
+        // button that loses the keyboard focus while pressed releases the mouse and never raises Click.
+        PreviewMouseUp += (_, _) => Dispatcher.BeginInvoke(DispatcherPriority.Input, FocusPin);
         IsVisibleChanged += (_, _) => FocusPin();
         Loaded += (_, _) =>
         {
