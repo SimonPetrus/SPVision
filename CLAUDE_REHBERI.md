@@ -3,7 +3,8 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 1530/1530 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 1607/1607 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> (Olay bildirimleri: zil, OLAYLAR paneli, açılır pencere — §17 — kod + testlerle hazır; olay akışı cihazda salt okuma GET sondasıyla doğrulandı, arayüz elle denenmedi.)
 > (Uygulama kilidi / 6 haneli PIN — §16 — kod + testlerle hazır, arayüz elle denenmedi.)
 > (Canlı izlemede kamera grupları — §15 — kod + testlerle hazır, arayüz elle denenmedi.)
 > (Tek örnek, `logs\crash.log` + "Sorunu bildir…" zip'i ve durum çubuğundaki disk uyarısı — §14 — kod + testlerle hazır, uygulamada elle denenmedi.)
@@ -37,7 +38,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
 | `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SPVision.Core.Tests/` | 1530 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
+| `tests/SPVision.Core.Tests/` | 1607 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -51,7 +52,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ```powershell
 cd SPVision
 dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1530/1530 geçer
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1607/1607 geçer
 dotnet run --project src\SPVision
 ```
 
@@ -1344,3 +1345,61 @@ Cihaza hiçbir istek gitmez; gruplar yalnız ayarlardadır.
 - **Testler** (+71, `AppLockTests`): PIN biçimi ve rakam süzme, kolay PIN kategorileri + geçenler, özet biçimi / doğrulama / rastgele tuz / bozuk ya
   da zayıflatılmış kayıt, bekleme çizelgesi, sayaç + bitiş, saat geri alma, geri sayım metni, boşta kalma sarması ve seçenekler, varsayılanlar,
   eski ayar dosyası, DPAPI'li saklama + yeniden başlatmada bekleme, okunamayan özet, sıfırlamanın sildikleri / bıraktıkları.
+
+## 17. Olay bildirimleri: zil, OLAYLAR paneli, açılır pencere (22.10.2026 — kod + testler hazır, arayüz elle denenmedi)
+
+**Kesin kural: olaylar SALT OKUNUR.** Kayıt cihazına yalnız `GET ISAPI/Event/notification/alertStream` (uzun ömürlü abonelik) ve isteğe bağlı
+küçük resim için `GET ISAPI/Streaming/channels/{n}01/picture` (3 sn) gider. Hareket algılama / tetik / olay ayarı **açılmaz, değiştirilmez**;
+hareket ve akıllı olaylar yalnız kamerada algılama zaten açıksa gelir (panelin notu bunu söyler).
+
+- **Kaynaklar:** (1) Kayıt cihazının olay akışı — [`AlertStreamMonitor`](src/SPVision/AlertStreamMonitor.cs): cihaz başına **tek** akış
+  (yeniden başlatmada eski döngü bitmeden yenisi bağlanmaz), `IsapiClient.OpenAlertStreamAsync` ile (Digest, yönlendirme yok, sertifika pini —
+  `SendOnceAsync` artık `HttpCompletionOption` alır; yalnız bu istek başlıkları bekler), gövde UI dışında okunur; 60 sn hiç bayt gelmezse
+  (kalp atışı ~10 sn) ya da akış koparsa 5/10/30/60/120 sn sonra yeniden bağlanır (1 dk süren akıştan sonra 5 sn'ye döner, `AlertBackoff`).
+  Cihaz kaldırılınca, hiçbir tür açık değilken ve kapanışta durur; kilit açılışı tutuyorsa PIN'den sonra başlar (`StartApp`).
+  (2) Canlı kare: oynayan bir kare akışını kaybedip yeniden bağlanmayı beklerse (`Failed` + `IsReconnecting`) — Core `TileDropWatch`;
+  sayfa değişimi, durdurma, kalite/çözücü değişimiyle yeniden açma kopma sayılmaz. (3) Disk denetimi (`DiskMonitor.DisksRead`, §14): bir
+  kayıt cihazı "sorun yok (ya da bu çalışmada henüz okunmadı)" → "sorun" olunca **bir kez** (Core `DiskEventWatch`; 5 dk'lık her okumada değil).
+- **Cihazın gönderdiği (DS-8632NI-I8, 22.10.2026, salt okuma GET sondaları, 8–30 sn, uygulamanın `IsapiClient`'ıyla):** 200,
+  `multipart/mixed; boundary=boundary`; her parça `--boundary`, `Content-Type: application/xml; charset="UTF-8"`, `Content-Length: 490`, boş satır,
+  `EventNotificationAlert` (ad alanı `http://www.isapi.org/ver20/XMLSchema`, `version="2.0"`). Olay yokken yalnız kalp atışı: `eventType`
+  **videoloss**, `eventState` **inactive**, boş `channelID`/`dynChannelID`, ~9,3 sn'de bir. Sondada etkin (active) olay gelmedi (kameralarda
+  hareket algılama kapalı olabilir; açılmadı). Kanal eşlemesi bu yüzden gerçek etkin olayla doğrulanmadı: `channelID` (yoksa `dynChannelID`)
+  ISAPI kanal numarası sayılır ve cihazın kamerasının adıyla eşlenir; bilinmeyen kanal "Kanal n" (satırda düğme yok).
+- **Ayrıştırıcı** Core [`AlertStreamParser`](src/SPVision.Core/Events/AlertStream.cs): parça `Content-Length` (yoksa kapanış etiketi) dolunca **hemen**
+  döner — ilk sürüm bir sonraki sınırı bekliyordu ve olay 10 sn gecikiyordu (sondada bulundu). Parça başına en çok 64 KB tamponlanır; resim
+  (`image/*`) ya da büyük parça uzunluğuyla ya da sonraki sınıra kadar **tamponlanmadan** atlanır; XML yalnız `IsapiXml.Parse` ile (DTD yok); bozuk
+  parça sayılır, istisna atılmaz; sınırsız akış (belge belge) de desteklenir.
+- **Eşleme** (`AlertMapping`, büyük/küçük harf duyarsız; `inactive` her zaman yok sayılır): VMD → Hareket; linedetection / fielddetection /
+  regionEntrance / regionExiting → Çizgi geçme / alan ihlali ("Çizgi geçildi", "Alan ihlali", "Alana girildi", "Alandan çıkıldı"); shelteralarm /
+  tamper / tamperdetection → Görüntü kapatma; videoloss / IPCDisconnect / ipcOffline… → Kamera bağlantısı koptu; disk… / hdd… (diskfull → "disk
+  dolu", diğerleri "disk hatası") → Disk sorunu (kayıt cihazının, kanal yok). IO, nicbroken, ipconflict, illaccess vb. yok sayılır.
+- **Core [`EventCenter`](src/SPVision.Core/Events/DeviceEvents.cs)** (bellekte, son **200**, en yeni üstte): kapalı tür tutulmaz; cihaz etkin bir olayı
+  sürdükçe tekrarlar → aynı kamera + tür + başlık 10 sn içinde = aynı satır (`LastSeen`); kopan kamera (cihaz + kare) 2 dk, disk (cihaz + denetim)
+  10 dk içinde tek olay. Açılır pencere: aynı kamera (disk: cihaz) + tür için seçilen aralıkta (30 sn / 1 dk / 5 dk) en çok bir; aradakiler listeye
+  girer, açılmaz. Cihaz kaldırılınca satırları silinir. Olay zamanı: cihazın olaylarında cihazın saati (oynatma onu arar), diğerlerinde PC'nin.
+  Not: `AlertKind` (bu özellik) ile Cihaz ayarları › Olaylar'ın `EventKind`'i farklı türlerdir.
+- **Arayüz:** üst çubukta Ayarlar'dan önceki ayracın solunda 36×36 **zil** (`EventsButton`, `IconToggleButton`; her görünümde; ayraç artık tek ve
+  zille dişlinin arasında), köşesinde okunmamış sayısı (18 px kırmızı `DangerIcon`, 2 px `BarBg` halka, "99+"). Zil sağda 320 px **OLAYLAR**
+  sütununu açar/kapatır ([`EventPanel`](src/SPVision/Views/EventPanel.xaml); gerçek düzen sütunu, video üstüne çizim yok; tam ekranda gizli): başlık
+  44 + 1 px (30×30 "Bildirim ayarları" + kapat), 4 eşit segment Tümü / Hareket (hareket + akıllı + görüntü kapatma) / Bağlantı / Disk, satırlar
+  (28 px simge kutusu: kopma/disk `DangerSoftBg`/`DangerText`, akıllı/kapatma `WarningSoftBg`/`WarningText`, hareket `HoverBg`/`IconFg`; başlık +
+  saat, kamera ya da "Kayıt cihazı · ad", bilinen kamerada iki eşit 24 px "Canlı izle" / "Kaydı oynat"; okunmamış = SemiBold + yeni tema
+  anahtarı `UnreadRowBg` — açık #FFFFFF, koyu #333333), altta 160×28 "Tümünü okundu say". Ayarlar görünümü (başlık "BİLDİRİM AYARLARI"):
+  HANGİ OLAYLAR 5 anahtar (kopma açık, disk açık, hareket, akıllı, kapatma kapalı), NASIL (Windows bildirimi açık, Ses çal kapalı), "Aynı kameradan
+  en sık" 30 sn / **1 dk** / 5 dk, not metni; hepsi anında `AppSettings.Notifications`'a (`EventNotificationSettings`) yazılır. Stil ve ikonlar
+  `Themes/EventControls.xaml`.
+- **Açılır pencere** ([`EventToast`](src/SPVision/Views/EventToast.xaml) + `EventToasts`): kenarlıksız, en üstte, **odak almaz** (`ShowActivated=false`,
+  `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`: görev çubuğu/Alt+Tab yok), uygulama küçültülmüşken de çıkar. 364 px kart, birincil ekranın çalışma
+  alanının sağ altından 16 px içeride; en yeni altta, üstte 8 px arayla en çok 3 (dördüncü en eskiyi kapatır); 8 sn sonra kapanır, fare üstündeyken
+  beklemez. Simge · "SPVision" · kapat; 96×54 küçük resim (hareket/akıllı/kapatmada, gelirse; yoksa türün simgesi) · başlık · "kamera · ss:dd:sn";
+  iki eşit 30 px düğme "Canlı izle" (accent) / "Kaydı oynat". Ses: `SystemSounds.Exclamation`. NuGet ya da AUMID yok.
+- **Düğmeler:** "Canlı izle" → pencere öne (küçültülmüşse geri), Canlı İzleme, kamera kenar çubuğundaki çift tık gibi gösterilir ve karesi
+  büyütülür (`LiveView.ShowCameraAlone`). "Kaydı oynat" → Kayıt Oynatma, kamera karelere eklenir (yoksa) ve odaklanır, olay günü seçilir, tüm
+  kareler **olay − 10 sn**'den oynar (`PlaybackView.ShowEventRecording`; görünüm kapalıyken `Activate` oraya arar). Satır okundu olur.
+- **Kilit (§16):** kilitliyken açılır pencere ve ses **yok**, açık olanlar `AppLock.LockedChanged`'de kapanır; olaylar listeye ve sayıya girer, kilit
+  açılınca kaçanlar yeniden gösterilmez.
+- **Testler** (+77, `EventTests`): cihazın çerçevesiyle parçalar (bayt bayt, uzunluksuz, başlıksız, LF, kapanış sınırı, ön metin), resim / büyük /
+  bozuk / DTD'li parçalar ve tampon sınırı, sınırsız akış, tür eşlemesi + başlıklar, kanal → kamera adı / dynChannelID / bilinmeyen kanal, kalp atışı,
+  disk olayı, birleştirme (tekrar, iki kaynak), açılır pencere aralığı (30 sn / 1 dk / 5 dk), 200 sınırı, okundu, filtreler, varsayılanlar + eski
+  ayar dosyası, kare kopması kuralları, disk geçişi, geri çekilme, loopback üzerinden Digest GET + 403 + yönlendirme izlenmez.
