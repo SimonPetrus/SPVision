@@ -3,7 +3,8 @@
 > **Bu belgeye ek olarak `PROJE_DURUMU.md`, `GELISTIRICI_GOREVI.md`, `README.md` ve
 > `reversing/BULGULAR.md` de klasördedir.** Bu dosya hepsinin özetidir; ayrıntı için
 > ilgili belgeye bak. Kodun tamamı bu klasörde çalışır durumdadır: 0 derleme hatası,
-> 1459/1459 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> 1530/1530 birim testi geçer, **gerçek cihazda (Hikvision DS-8632NI-I8) test edilmiştir.**
+> (Uygulama kilidi / 6 haneli PIN — §16 — kod + testlerle hazır, arayüz elle denenmedi.)
 > (Canlı izlemede kamera grupları — §15 — kod + testlerle hazır, arayüz elle denenmedi.)
 > (Tek örnek, `logs\crash.log` + "Sorunu bildir…" zip'i ve durum çubuğundaki disk uyarısı — §14 — kod + testlerle hazır, uygulamada elle denenmedi.)
 > (Çevrim içi cihazlar / SADP keşfi ve yeni ilk açılış ekranı — §13 — kod + testlerle hazır; ayrıştırma gerçek ağda iki salt okuma
@@ -36,7 +37,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 | `SPVision.slnx` | Çözüm dosyası (`.NET 10` SDK formatı). `dotnet build SPVision.slnx` |
 | `src/SPVision.Core/` | Cihazdan bağımsız kütüphane: ISAPI istemcisi, modeller, DPAPI ayar deposu, RTSP adresleri |
 | `src/SPVision/` | WPF uygulaması (canlı izleme, oynatma, SDK video katmanı) |
-| `tests/SPVision.Core.Tests/` | 1459 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
+| `tests/SPVision.Core.Tests/` | 1530 xUnit testi (`dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj`) |
 | `sdk/EN-HCNetSDKV6.1.11.40_build20260922_win64/` | **Hikvision resmi SDK (lisanslı, repoya konmaz)** — DLL'ler `lib/`, başlıklar `incEn/`, resmi C# örnekleri `C# demo/`, C++ örnekleri `ClientDemo/`, kılavuzlar `doc/` |
 | `ffmpeg/` | FFmpeg 9 paylaşımlı DLL'leri (FlyleafLib bunları kullanır) — `tools/get-ffmpeg.ps1` ile yeniden indirilebilir |
 | `reversing/` | Eski iVMS'in tersine mühendislik bulguları (`BULGULAR.md` — CPU sorununun kökeni) |
@@ -50,7 +51,7 @@ HCNetSDK + PlayCtrl entegrasyonu içerir.
 ```powershell
 cd SPVision
 dotnet build SPVision.slnx          # 0 hata / 0 uyarı beklenir
-dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1459/1459 geçer
+dotnet test tests\SPVision.Core.Tests\SPVision.Core.Tests.csproj   # 1530/1530 geçer
 dotnet run --project src\SPVision
 ```
 
@@ -520,7 +521,7 @@ dotnet run --project src\SPVision
 | `DarkTitleBar.cs` | DWM yerel başlık çubuğu: koyu temada 1, açıkta 0; geçişte tüm pencerelere yeniden uygulanır |
 | `WindowsStartup.cs` | "Windows ile birlikte başlat": `HKCU\…\Run` altında `SPVision` = tırnaklı exe yolu |
 | `Controls/GlyphIcon.cs` | 24×24 çizgi ikonları (`Icon*` geometrileri) ön plan rengiyle çizer; emoji kullanılmaz |
-| `MainWindow.xaml(.cs)` | Üç görünüm (`MainSection`: Canlı İzleme, Kayıt Oynatma, Ayarlar). Üst çubuk (SPVision yazısı, sekmeler, düzen seçici (`LayoutPicker`; oynatmada ≤16 kareli ikinci seçici), kalite Oto/HD/SD, hareket kutuları, anlık görüntü/kayıt/tam ekran (F11), Ayarlar dişlisi = seçili durumlu ToggleButton), kenar çubuğu (arama, cihaz satırı, kamera listesi — "listede göster" kapalı kameralar hariç — + kare no, sürükle-bırak), durum çubuğu. Kök `RootGrid` = `AppShell` (uygulama) + cihaz yoksa ilk açılışta üstünde `FirstRunView` (§13; bu sırada `AppShell` gizli, F11 çalışmaz) |
+| `MainWindow.xaml(.cs)` | Üç görünüm (`MainSection`: Canlı İzleme, Kayıt Oynatma, Ayarlar). Üst çubuk (SPVision yazısı, sekmeler, düzen seçici (`LayoutPicker`; oynatmada ≤16 kareli ikinci seçici), kalite Oto/HD/SD, hareket kutuları, anlık görüntü/kayıt/tam ekran (F11), Ayarlar dişlisi = seçili durumlu ToggleButton), kenar çubuğu (arama, cihaz satırı, kamera listesi — "listede göster" kapalı kameralar hariç — + kare no, sürükle-bırak), durum çubuğu. Kök `RootGrid` = `AppShell` (uygulama) + cihaz yoksa ilk açılışta üstünde `FirstRunView` (§13; bu sırada `AppShell` gizli, F11 çalışmaz) + kilitliyken en üstte `LockView` (§16) |
 | `Views/SettingsView.xaml(.cs)` | **Ayarlar**: sol menü (260 px, kenar çubuğuyla aynı). *Cihaz yönetimi*: cihaz listesi (DURUM, CİHAZ ADI, ADRES, TÜR, KAMERA; durum için sayfa açılınca ISAPI deviceInfo GET), satır tıklanınca / Enter / Boşluk ile altında düzenleme paneli açılır (akordeon, bir seferde bir tane); "Cihaz ekle" listenin altında vurgu çerçeveli **Yeni cihaz** kartını açar (`AddDevicePanel`, §13; satır açılınca kapanır). *Uygulama ayarları*: tema, hareket kutuları, varsayılan kalite, **Donanım hızlandırma** (`HardwareDecodingToggle`; §12 — anında uygulanır, açık akışlar yeniden açılır), klasörler (`OpenFolderDialog`), son görünüm, Windows ile başlat, tam ekranda aç. *Cihaz ayarları*: [`RecorderSettingsView`](src/SPVision/Views/RecorderSettingsView.xaml.cs) (§9) |
 | `Views/RecorderSettingsView.xaml(.cs)`, `Themes/RecorderControls.xaml` | **Cihaz ayarları** sayfası (§9): cihaz seçici + "Web arayüzünü aç" (180×32), 9 eşit sekme; kartlar (başlık + açıklama · Geri al / Cihaza uygula), satırlar (etiket + yardım · 240 px denetim). Sayfanın kendi stilleri (temalı ComboBox, `SettingsToggleButton`, sekme şeridi, rozet) `RecorderControls.xaml`'da, yalnız bu sayfada birleştirilir. Rozet zeminleri `OnlineSoftBg` / `WarningSoftBg` (Light/Dark) |
 | `Views/ConfirmDialog.cs` | Adlandırılmış düğmeli tema uyumlu soru; liste aşırı yüklemesi değişiklikleri satır satır (başlıklı bölümler: UYGULANDI / UYGULANMADI) kaydırmalı kutuda gösterir; `cancel` null = tek düğme |
@@ -1303,3 +1304,43 @@ Cihaza hiçbir istek gitmez; gruplar yalnız ayarlardadır.
   yeniden adlandırmada kendi adı), varsayılan adın sayması, yakalama (delikler, kare sayısı, tekrar), güncellemede Id/ad korunur,
   eksik kamera = boş kare, eski/bilinmeyen düzen, grup kipindeki sayfalar (delik kalır, yeni kamera katılmaz, kapatılan kare boş kalır,
   bırak/takas, `Reset`/normal `Load` kipten çıkar, düzen değişimi), ayarlara yazılıp okunma, eski ayar dosyası.
+
+## 16. Uygulama kilidi: 6 haneli PIN (22.10.2026 — kod + testler hazır, arayüz elle denenmedi)
+
+> **Bu bir arayüz engelidir, şifreleme değildir.** Aynı Windows oturumunu kullanan başkalarının kameraları izlemesini önler;
+> `settings.json`'daki verileri ya da kayıtları şifrelemez. Oturumda dosya yazabilen biri ayarı kapatabilir. Kayıt cihazına hiçbir şey gitmez.
+
+- **Ayarlar › Uygulama ayarları › Güvenlik** kartı (`Views/SettingsView.Security.cs`): "Uygulama kilidi" anahtarı (varsayılan kapalı; açınca
+  "PIN belirle", iptal = kapalı kalır; kapatmak mevcut PIN'i ister) · "İşlem yapılmazsa kilitle" Kapalı / 5 / 10 (varsayılan) / 30 dk
+  (4 × 57 px segment, 240 px sütunu tam doldurur) · "PIN'i değiştir" `Değiştir…` (mevcut PIN, sonra yeni PIN iki kez). Kilit kapalıyken son iki
+  satır soluk (0,4) ve devre dışı. AutomationId: `AppLockToggle`, `IdleOff`/`Idle5`/`Idle10`/`Idle30`, `ChangePinButton`.
+- **PIN kutuları** ([`PinBox`](src/SPVision/Controls/PinBox.cs)): altı 40×48 kutu, 8 px ara (280 px), nokta + yanıp sönen imleç; ekran tuş takımı yok.
+  Üstlerinde **tek, görünmez `PasswordBox`** odağı tutar (isabet testi kapalı, imleç hep sonda; ok/Home/End/Space/Ctrl+A engelli; yalnız rakam,
+  en çok 6; yapıştırma rakamlara süzülür; ekran okuyucu parola alanı görür). Pencere etkinleşince ve karta her tıklamada odak ona döner.
+  PIN pencereleri ([`PinDialog`](src/SPVision/Views/PinDialog.cs), 400 px): başlık, ipucu, kutular, 16 px hata satırı, eşit İptal · Devam/Kaydet.
+  Kolay PIN reddi (Core `PinRules.IsTrivial`): tek rakam tekrarı, artan/azalan dizi (9→0 / 0→9 sarması dahil: 890123, 210987), 2 ya da 3 haneli
+  desen tekrarı (121212, 147147), çift çiftler (112233), ayna yarılar (123321) → "Çok kolay bir PIN; başka bir PIN seçin."; iki giriş farklıysa
+  "PIN'ler aynı değil." ve iki giriş baştan.
+- **Kilit ekranı** ([`LockView`](src/SPVision/Views/LockView.xaml.cs)): 400 px kart (logo 56, "SPVision kilitli", ipucu, kutular, hata, "Kilidi aç"
+  160×30, "PIN'i unuttum"). 6. rakamda kendiliğinden denetlenir (Enter ve düğme de). Açılışta kilit açıksa `MainWindow` kurucusunda gösterilir;
+  `LiveView.StartHeld` yerleşimi geri yüklemez, disk denetimi / ilk açılış / tam ekran `StartApp`'e kadar bekler → PIN'den önce **hiçbir cihaza
+  bağlanılmaz**. Boşta kalma: 1 sn'lik zamanlayıcı `GetLastInputInfo` (sistem geneli; Core `IdleLock`, 49,7 günlük sarma testli).
+- **Video nasıl gizlenir:** kilitliyken `AppShell` (ve varsa `FirstRunView`) **Collapsed** — ilk açılış ekranındaki gibi; `HikVideoHost` ve
+  Flyleaf yüzey pencereleri görünmez olur. Açık akışlar, kayıtlar ve indirmeler arkada sürer. Açık Popup'lar (düzen seçici, "Saate git", oynatma
+  araç şeridi) kapatılır; F11/Esc/PageUp/PageDown kapalı. Açık bir modal pencere (onay vb.) kilidin üstünde kalır; kapanınca odak PIN'e döner.
+  Tek örnek devri pencereyi öne getirir, kilit ekranı yerinde kalır.
+- **Yanlış PIN:** kutular kırmızı, "Yanlış PIN, tekrar deneyin.", giriş temizlenir. 3. yanlışta 30 sn, 4.'de 1 dk, sonrakilerde 5 dk bekleme
+  ("Yanlış PIN. N saniye bekleyin.", canlı geri sayım, giriş yok sayılır). Sayaç ve bitiş zamanı ayarlarda — **yeniden başlatma sıfırlamaz**;
+  doğru PIN sıfırlar; geri alınan saat beklemeyi uzatamaz (`PinLockout.Remaining` üst sınırı). Ayarlar'daki mevcut-PIN adımı aynı sayacı kullanır.
+- **PIN'i unuttum › Sıfırla** (`MainWindow.ResetApp`, Core `AppReset.ForgetDevices`): kayıtlı cihazlar (şifre, akış anahtarı, sertifika pini),
+  kayıtlı görünümler, kamera grupları ve PIN/kilit ayarları silinir; tema, kalite, donanım hızlandırma, klasörler, başlangıç seçenekleri,
+  güncelleyici durumu kalır. Akışlar bırakılır, SDK oturumları kapanır, indirmeler sürer; sonra `FirstRunView`. Yalnız ayar modeli + `SettingsStore`.
+- **Saklama** (`AppSettings.AppLock` = Core `AppLockSettings`): `Enabled`, `PinHash`, `IdleMinutes`, `FailedAttempts`, `LockedOutUntilUtc`.
+  PIN **hiç saklanmaz**; `PinHash` = `pbkdf2-sha256$600000$<16 bayt tuz base64>$<32 bayt özet base64>` (`PinHasher`, sabit zamanlı karşılaştırma,
+  600 000'den az yinelemeli kayıt reddedilir) ve diskte ayrıca **DPAPI** ile (`dpapi:` öneki, şifrelerle aynı) korunur. Başka hesaptan kopyalanan
+  ayarda özet okunamaz → kilit açık kalır, yalnız Sıfırla açar. Sorun raporu zip'i `settings.json`'ı zaten almaz (§14); PIN/özet hiçbir loga yazılmaz.
+- **Bildirimler için kanca:** `AppLock.IsLocked` + `AppLock.LockedChanged` (UI iş parçacığında). Kendiliğinden bir şey gösteren her özellik
+  (olay açılır pencereleri vb.) kilitliyken göstermemeli.
+- **Testler** (+71, `AppLockTests`): PIN biçimi ve rakam süzme, kolay PIN kategorileri + geçenler, özet biçimi / doğrulama / rastgele tuz / bozuk ya
+  da zayıflatılmış kayıt, bekleme çizelgesi, sayaç + bitiş, saat geri alma, geri sayım metni, boşta kalma sarması ve seçenekler, varsayılanlar,
+  eski ayar dosyası, DPAPI'li saklama + yeniden başlatmada bekleme, okunamayan özet, sıfırlamanın sildikleri / bıraktıkları.

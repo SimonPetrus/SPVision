@@ -370,6 +370,7 @@ public class AppLockTests
             Views = [view],
             LastView = view,
             LastPlaybackView = view,
+            Groups = [new CameraGroup { Name = "GIRIS-GRUBU", Layout = 4, Tiles = [new CameraRef(device.Id, 1)] }],
             Theme = AppTheme.Dark,
             HardwareDecoding = false,
             LiveQuality = StreamQuality.Sub,
@@ -381,6 +382,7 @@ public class AppLockTests
             SdkLogLevel = 3,
             Update = new UpdateState { LatestManifest = "m" },
         };
+        settings.ActiveGroup = settings.Groups[0].Id;
         settings.AppLock = new AppLockSettings
         {
             Enabled = true, PinHash = "x", IdleMinutes = 30, FailedAttempts = 7, LockedOutUntilUtc = Now,
@@ -392,6 +394,8 @@ public class AppLockTests
         Assert.Empty(settings.Views);
         Assert.Null(settings.LastView);
         Assert.Null(settings.LastPlaybackView);
+        Assert.Empty(settings.Groups);
+        Assert.Null(settings.ActiveGroup);
         Assert.False(settings.AppLock.Enabled);
         Assert.Null(settings.AppLock.PinHash);
         Assert.Equal(10, settings.AppLock.IdleMinutes);
@@ -419,6 +423,7 @@ public class AppLockTests
             var settings = new AppSettings
             {
                 Devices = [new Device { Name = "NVR-ADI", Host = "10.1.2.3", UserName = "kullanici", Password = "secret", StreamKey = "ABCDEF" }],
+                Groups = [new CameraGroup { Name = "GIRIS-GRUBU", Layout = 1 }],
             };
             settings.AppLock = new AppLockSettings { Enabled = true, PinHash = Stored.Value };
 
@@ -427,6 +432,7 @@ public class AppLockTests
             var json = File.ReadAllText(path);
 
             Assert.DoesNotContain("NVR-ADI", json);
+            Assert.DoesNotContain("GIRIS-GRUBU", json);
             Assert.DoesNotContain("10.1.2.3", json);
             Assert.DoesNotContain("kullanici", json);
             Assert.DoesNotContain("dpapi:", json);

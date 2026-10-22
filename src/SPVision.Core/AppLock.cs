@@ -243,7 +243,8 @@ public static class AppReset
         settings.Views = [];
         settings.LastView = null;
         settings.LastPlaybackView = null;
-        // Camera groups belong to the devices too: cleared here once they are part of AppSettings.
+        settings.Groups = []; // camera groups name device cameras too
+        settings.ActiveGroup = null;
         settings.AppLock = new AppLockSettings();
     }
 }

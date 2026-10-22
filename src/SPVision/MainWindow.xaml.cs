@@ -677,9 +677,11 @@ public partial class MainWindow : Window
         {
             DeviceRemoved(device); // tiles release their streams, SDK session closed, disk checks stop
         }
+        Live.ShowGroup(null); // out of a camera group on screen: "Tüm kameralar", now empty
         // Removing the devices saved the (now empty) live and playback views again: forget those too.
         AppReset.ForgetDevices(App.Settings);
         App.SaveSettings();
+        DevicesChanged(); // camera and group lists of the sidebar
         SettingsPanel.RefreshAppSettings();
 
         RootGrid.Children.Remove(_lock);
