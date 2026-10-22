@@ -113,7 +113,7 @@ sealed class PinDialog
         (_title.Text, _hint.Text) = step switch
         {
             Step.Current => ("Mevcut PIN'i girin", _currentHint),
-            Step.New => (_mode == Mode.Change ? "Yeni PIN belirle" : "PIN belirle", "Klavyeden 6 haneli, yalnızca rakamlardan oluşan bir PIN yazın."),
+            Step.New => (_mode == Mode.Change ? "Yeni PIN belirle" : "PIN belirle", "Yalnızca rakamlardan oluşan 6 haneli bir PIN yazın."),
             _ => ("PIN'i tekrar girin", "Onaylamak için aynı PIN'i bir kez daha girin."),
         };
         var label = step == Step.Repeat ? "Kaydet" : step == Step.Current && _mode == Mode.Confirm ? "Onayla" : "Devam";

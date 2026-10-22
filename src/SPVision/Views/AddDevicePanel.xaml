@@ -40,13 +40,13 @@
         </Grid>
 
         <!-- ===== List: MODEL 210 | IP ADRESİ 150 | PORT (HTTP / SDK) 170 | YAZILIM * | DURUM 120, 12 px side insets;
-             five 36 px rows visible (184 px), then it scrolls ===== -->
+             four 36 px rows visible (148 px), then it scrolls ===== -->
         <Border Margin="0,8,0,0" BorderBrush="{DynamicResource Border}" BorderThickness="1" CornerRadius="6" SnapsToDevicePixels="True"
                 Background="{DynamicResource CardBg}">
             <StackPanel c:RoundedClip.Radius="5">
                 <Border x:Name="ListHeader" Height="32" Padding="12,0" Background="{DynamicResource SubtleBg}"
                         BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1" />
-                <Grid Height="184">
+                <Grid Height="148">
                     <ScrollViewer x:Name="RowsScroller" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled"
                                   Focusable="False" PreviewMouseWheel="Rows_PreviewMouseWheel">
                         <StackPanel x:Name="Rows" AutomationProperties.Name="Çevrim içi cihazlar" />
@@ -67,7 +67,7 @@
         </Border>
         <TextBlock x:Name="ListHint" Margin="0,8,0,0" FontSize="{StaticResource FontSizeStatus}" Foreground="{DynamicResource TextSecondary}"
                    TextWrapping="Wrap"
-                   Text="Aynı yerel ağdaki Hikvision cihazları listelenir; bir satıra tıklayınca adres ve portlar aşağıya yazılır. Uzaktaki cihazlar için bilgileri elle girin." />
+                   Text="Bir satıra tıklayınca adres ve portlar forma yazılır; uzaktaki cihazlar için bilgileri elle girin." />
 
         <Border Height="1" Margin="0,16" Background="{DynamicResource Divider}" SnapsToDevicePixels="True" />
 

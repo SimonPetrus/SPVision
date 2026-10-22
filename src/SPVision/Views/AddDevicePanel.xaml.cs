@@ -73,7 +73,7 @@ public partial class AddDevicePanel : UserControl, IDeviceFormHost
         if (mode == AddDeviceMode.FirstRun)
         {
             FormColumn.HorizontalAlignment = HorizontalAlignment.Center;
-            ListHint.Text += " Kameralarınız kayıt cihazına bağlıysa yalnızca kayıt cihazını eklemeniz yeterli.";
+            ListHint.Text = "Bir satıra tıklayınca bilgiler forma yazılır. Kameralar kayıt cihazına bağlıysa yalnızca kayıt cihazını eklemeniz yeterli.";
             CancelButton.Content = "Sonra ekle";
             SaveButton.Content = "Bağlan ve devam et";
             CancelButton.Width = SaveButton.Width = 160;

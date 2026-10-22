@@ -965,7 +965,8 @@
     <Style x:Key="InputPlaceholder" TargetType="TextBlock">
         <Setter Property="FontSize" Value="{StaticResource FontSizeBase}" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondary}" />
-        <Setter Property="Margin" Value="9,0" />
+        <!-- Where typed text starts: border 1 + Padding 8 (Border) + 8 (the content host gets the Padding again) + 2 (text view). -->
+        <Setter Property="Margin" Value="19,0" />
         <Setter Property="VerticalAlignment" Value="Center" />
         <Setter Property="IsHitTestVisible" Value="False" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
