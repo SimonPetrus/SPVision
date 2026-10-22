@@ -61,7 +61,7 @@ jobs:
         run: |
           [xml]$project = Get-Content -Raw src/SPVision/SPVision.csproj
           $version = @($project.Project.PropertyGroup | ForEach-Object { $_.Version } | Where-Object { $_ })[0]
-          if ("v$version" -ne $env:TAG) { Write-Error "Etiket $env:TAG, SPVision.csproj sürümü $version: eşleşmiyor."; exit 1 }
+          if ("v$version" -ne $env:TAG) { Write-Error "Etiket $env:TAG, SPVision.csproj sürümü ${version}: eşleşmiyor."; exit 1 }
           if (-not (Test-Path "release-notes/$env:TAG.md")) { Write-Error "release-notes/$env:TAG.md yok."; exit 1 }
           if ((Get-Content -Raw src/SPVision.Core/Updates/UpdateTrust.cs) -notmatch '-----BEGIN PUBLIC KEY-----') { Write-Error "Uygulamada açık anahtar yok (new-signing-key.ps1)."; exit 1 }
           if ((Get-Content -Raw src/SPVision/Updates/UpdateService.cs) -match 'UpdateProxyBaseUrl = "[^"]*<') { Write-Error "UpdateProxyBaseUrl yer tutucu."; exit 1 }
