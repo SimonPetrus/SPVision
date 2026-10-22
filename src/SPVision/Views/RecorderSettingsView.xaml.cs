@@ -202,6 +202,30 @@ public partial class RecorderSettingsView : UserControl
         _clockTimer.Start();
     }
 
+    /// <summary>
+    /// Status bar disk warning: this recorder's Sistem tab (Diskler card). Called before the page opens (it then reads this
+    /// device first) or while it is open (same question about unapplied changes as the device selector). Reads only.
+    /// </summary>
+    public void ShowDisks(Device device)
+    {
+        if (_writing || _firmwareBusy)
+        {
+            return; // the page is locked to its device and tab
+        }
+        if (!_open)
+        {
+            _device = device; // Open → FillDevices keeps the previous selection and renders the tab
+            _tab = Tab.System;
+            UpdateTabButtons();
+            return;
+        }
+        if (DeviceCombo.Items.Cast<DeviceChoice>().FirstOrDefault(c => c.Device.Id == device.Id) is { } choice)
+        {
+            DeviceCombo.SelectedItem = choice; // DeviceCombo_SelectionChanged: asks about pending changes, loads the device
+        }
+        SelectTab(Tab.System);
+    }
+
     /// <summary>The page was hidden: stops reading; unsaved form values are dropped.</summary>
     public void Close()
     {

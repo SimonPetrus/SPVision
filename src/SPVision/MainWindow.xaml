@@ -134,17 +134,29 @@
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
+                <!-- Items are centred vertically: the disk warning button is 23 px tall, the texts keep one baseline. -->
                 <DockPanel VerticalAlignment="Center" ClipToBounds="True">
-                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal">
+                    <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
                         <Ellipse x:Name="ConnectionDot" Style="{StaticResource StatusDot}" Fill="{DynamicResource Offline}" Margin="0,0,6,0" />
                         <TextBlock x:Name="ConnectionText" Foreground="{DynamicResource TextSecondary}" />
                     </StackPanel>
-                    <TextBlock x:Name="OnScreenText" DockPanel.Dock="Left" Margin="18,0,0,0" Foreground="{DynamicResource TextSecondary}" />
-                    <StackPanel x:Name="ReconnectPanel" DockPanel.Dock="Left" Orientation="Horizontal" Margin="18,0,0,0" Visibility="Collapsed">
+                    <TextBlock x:Name="OnScreenText" DockPanel.Dock="Left" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}" />
+                    <StackPanel x:Name="ReconnectPanel" DockPanel.Dock="Left" Orientation="Horizontal" Margin="18,0,0,0" VerticalAlignment="Center" Visibility="Collapsed">
                         <Ellipse Style="{StaticResource StatusDot}" Fill="{DynamicResource Warning}" Margin="0,0,6,0" />
                         <TextBlock x:Name="ReconnectText" Foreground="{DynamicResource WarningText}" />
                     </StackPanel>
-                    <TextBlock x:Name="VideoPathText" Margin="18,0,0,0" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" />
+                    <!-- Disk warning (DiskMonitor), in every view: a recorder without disks or with a disk that is not healthy.
+                         12 px margin + 6 px button padding = the same 18 px gap as the other items. Click: Ayarlar ›
+                         Cihaz ayarları › Sistem (Diskler) of that recorder. -->
+                    <Button x:Name="DiskWarningButton" DockPanel.Dock="Left" Style="{StaticResource StatusTextButton}" Margin="12,0,0,0"
+                            Visibility="Collapsed" Click="DiskWarning_Click" AutomationProperties.AutomationId="DiskWarning"
+                            AutomationProperties.Name="Disk sorunu — kayıt yapılmıyor olabilir">
+                        <StackPanel Orientation="Horizontal">
+                            <Ellipse Style="{StaticResource StatusDot}" Fill="{DynamicResource Danger}" Margin="0,0,6,0" />
+                            <TextBlock x:Name="DiskWarningText" Foreground="{DynamicResource DangerText}" VerticalAlignment="Center" />
+                        </StackPanel>
+                    </Button>
+                    <TextBlock x:Name="VideoPathText" Margin="18,0,0,0" VerticalAlignment="Center" Foreground="{DynamicResource TextSecondary}" TextTrimming="CharacterEllipsis" />
                 </DockPanel>
                 <!-- Live view only, from 2 pages on: ‹ Sayfa 1 / 3 ›. Two equal 23×23 buttons around a fixed 88 px text
                      (fits "Sayfa 10 / 10"), so the arrows never move when the numbers change. -->

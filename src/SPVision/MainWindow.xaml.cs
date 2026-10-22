@@ -46,6 +46,9 @@ public partial class MainWindow : Window
     /// <summary>"Video indir" downloads: the app's, not Kayıt Oynatma's — they go on across pages and playback changes.</summary>
     readonly DownloadManager _downloads;
 
+    /// <summary>Recorder disk check (read only) behind the status bar's red disk warning.</summary>
+    readonly DiskMonitor _disks = new();
+
     public MainWindow()
     {
         InitializeComponent();
@@ -72,6 +75,7 @@ public partial class MainWindow : Window
         SettingsPanel.MotionBoxesChanged += SetMotionBoxes;
         SettingsPanel.QualitySelected += quality => Live.SelectQuality(quality);
         SettingsPanel.HardwareDecodingChanged += SetHardwareDecoding;
+        _disks.Changed += UpdateDiskWarning;
         MotionToggle.IsChecked = App.Settings.ShowMotionBoxes;
         UpdateController.Changed += UpdateBannerState;
         UpdateController.Message += ShowMessage;
@@ -103,6 +107,7 @@ public partial class MainWindow : Window
                 ToggleFullScreen();
             }
             UpdateController.Start(); // remembered mandatory update now, automatic check after 15 s
+            _disks.Start(App.Settings.Devices); // first disk read after 5 s, then every 5 min
         };
     }
 
@@ -138,6 +143,7 @@ public partial class MainWindow : Window
             return; // stays open; the upgrade goes on
         }
         _closeStarted = true;
+        _disks.Stop();
         App.StartExitWatchdog();
         App.LogShutdown("Kapanış başladı");
         _statusTimer.Stop();
@@ -561,6 +567,7 @@ public partial class MainWindow : Window
         DevicesChanged();
         Live.ReloadDevice(device);
         Playback.ReloadDevice(device);
+        _disks.Restart(device); // address or login may have changed: read its disks again now
         if (App.Settings.Devices.Count == 1 && wallWasEmpty)
         {
             ShowLive(device); // first device (e.g. first run): show its cameras right away
@@ -572,6 +579,7 @@ public partial class MainWindow : Window
         Live.RemoveDevice(device.Id);
         Playback.RemoveDevice(device.Id);
         HikSession.Find(device.Id)?.Dispose();
+        _disks.Remove(device.Id);
         DevicesChanged();
     }
 
@@ -647,6 +655,11 @@ public partial class MainWindow : Window
         UpdateCameraRows();
         UpdateStatusBar();
         UpdatePageControl();
+        foreach (var id in Live.VisibleTiles.Where(t => t.State == TileState.Playing && t.Device is not null)
+                     .Select(t => t.Device!.Id).Distinct())
+        {
+            _disks.Connected(id); // first disk read right after the recorder connects, if the startup read failed
+        }
     }
 
     void PlaybackStateChanged()
@@ -724,6 +737,35 @@ public partial class MainWindow : Window
         // Video path actually in use, and the decoder each player reports (GPU only when confirmed).
         VideoPathText.Text = Core.VideoPathText.Describe(tiles.Select(t => new Core.VideoPathText.Tile(t.UsesSdk, t.Gpu)));
         VideoPathText.ToolTip = string.IsNullOrEmpty(VideoPathText.Text) ? null : VideoPathText.Text;
+    }
+
+    /// <summary>
+    /// Red "Disk sorunu — kayıt yapılmıyor olabilir" (every view): a recorder whose last successful disk read showed no disk or
+    /// a disk that is not healthy; the tool tip lists recorder, disk and status. Hidden again when all are healthy.
+    /// </summary>
+    void UpdateDiskWarning()
+    {
+        var watch = _disks.Watch;
+        DiskWarningButton.Visibility = watch.HasProblem ? Visibility.Visible : Visibility.Collapsed;
+        DiskWarningText.Text = DiskWatch.WarningText;
+        DiskWarningButton.ToolTip = watch.HasProblem ? watch.ToolTip : null;
+        AutomationPropertiesName(DiskWarningButton, watch.HasProblem
+            ? DiskWatch.WarningText + ": " + string.Join(", ", watch.Problems.Select(p => p.Text))
+            : DiskWatch.WarningText);
+    }
+
+    /// <summary>Disk warning clicked: Ayarlar › Cihaz ayarları › Sistem (Diskler card) of the first recorder with a problem.</summary>
+    void DiskWarning_Click(object sender, RoutedEventArgs e)
+    {
+        if (_disks.Watch.FirstProblemDevice is not { } id || App.Settings.Devices.FirstOrDefault(d => d.Id == id) is not { } device)
+        {
+            return;
+        }
+        SettingsPanel.ShowRecorderDisks(device); // before the view opens, so its first read is this recorder
+        if (_section != MainSection.Settings)
+        {
+            SelectSection(MainSection.Settings);
+        }
     }
 
     /// <summary>Status bar centre: "‹ Sayfa 1 / 3 ›" of the live view; hidden with a single page and outside the live view.</summary>
@@ -857,6 +899,28 @@ public partial class MainWindow : Window
         }
         Live.StepPage(e.Key == Key.PageDown ? 1 : -1);
         e.Handled = true;
+    }
+
+    /// <summary>
+    /// A second SPVision was started (App, Core SingleInstance): this window comes to the front, restored if minimized
+    /// (to maximized if it was). False while closing, so the newcomer waits for this process to end and takes over.
+    /// </summary>
+    public bool BringToFront()
+    {
+        if (_closeStarted)
+        {
+            return false;
+        }
+        if (!IsVisible)
+        {
+            Show();
+        }
+        if (WindowState == WindowState.Minimized)
+        {
+            SystemCommands.RestoreWindow(this);
+        }
+        Activate();
+        return true;
     }
 
     // ---- Helpers ----

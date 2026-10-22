@@ -333,6 +333,33 @@
                             </Border>
                         </StackPanel>
                     </Border>
+
+                    <!-- Destek: "Sorunu bildir…" writes a zip of the app's own logs (scrubbed) + sistem.txt (ProblemReportExport).
+                         Same row as above: *,240 grid, 120×30 button right-aligned. -->
+                    <Border Style="{StaticResource Card}" Margin="0,16,0,0" AutomationProperties.AutomationId="SupportCard">
+                        <StackPanel>
+                            <Border Padding="16,14" BorderBrush="{DynamicResource Border}" BorderThickness="0,0,0,1">
+                                <TextBlock Text="Destek" Style="{StaticResource CardTitle}" />
+                            </Border>
+                            <Border Padding="16,10" MinHeight="60">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="240" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Margin="0,0,24,0" VerticalAlignment="Center">
+                                        <TextBlock Text="Sorun raporu" Style="{StaticResource RowLabel}" />
+                                        <TextBlock Style="{StaticResource RowHelp}"
+                                                   Text="Hata günlüklerini ve sistem bilgisini bir zip dosyasına kaydeder. Şifre, adres, kullanıcı adı ve ayar dosyası eklenmez." />
+                                    </StackPanel>
+                                    <Button x:Name="ReportButton" Grid.Column="1" Content="Sorunu bildir…" Style="{StaticResource SettingsButton}"
+                                            HorizontalAlignment="Right" VerticalAlignment="Center" Click="Report_Click"
+                                            ToolTip="Günlükleri ve sistem bilgisini bir zip dosyasına kaydeder; hiçbir şey gönderilmez"
+                                            AutomationProperties.AutomationId="ProblemReportButton" AutomationProperties.Name="Sorunu bildir" />
+                                </Grid>
+                            </Border>
+                        </StackPanel>
+                    </Border>
                 </StackPanel>
             </ScrollViewer>
 
