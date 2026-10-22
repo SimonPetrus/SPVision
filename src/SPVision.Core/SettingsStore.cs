@@ -44,6 +44,10 @@ public sealed class SettingsStore(string? path = null)
                 camera.StreamKey = Unprotect(camera.StreamKey);
             }
         }
+        // The PIN hash is DPAPI protected too: a copied settings.json gives no hash to guess against. Unreadable (another
+        // Windows account) = null, and the lock stays on: only "PIN'i unuttum" › Sıfırla opens it.
+        settings.AppLock ??= new AppLockSettings();
+        settings.AppLock.PinHash = Unprotect(settings.AppLock.PinHash);
         return settings;
     }
 
@@ -60,6 +64,10 @@ public sealed class SettingsStore(string? path = null)
             {
                 camera.StreamKey = Protect(camera.StreamKey);
             }
+        }
+        if (copy.AppLock is { } appLock)
+        {
+            appLock.PinHash = Protect(appLock.PinHash);
         }
         Directory.CreateDirectory(System.IO.Path.GetDirectoryName(Path)!);
         var temp = Path + ".tmp";

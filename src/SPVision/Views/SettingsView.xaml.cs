@@ -557,6 +557,7 @@ public partial class SettingsView : UserControl
             RestoreSwitch.IsChecked = settings.RestoreLastView;
             AutoStartSwitch.IsChecked = WindowsStartup.IsEnabled();
             FullScreenSwitch.IsChecked = settings.StartFullScreen;
+            LoadSecurity();
         }
         finally
         {

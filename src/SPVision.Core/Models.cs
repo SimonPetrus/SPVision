@@ -147,6 +147,9 @@ public sealed class AppSettings
     /// (fallback if a graphics driver misbehaves; no UI yet, settings.json only).
     /// </summary>
     public bool HardwareDecoding { get; set; } = true;
+
+    /// <summary>Ayarlar › Güvenlik › "Uygulama kilidi": PIN hash (DPAPI on disk), idle minutes, wrong-PIN count and lockout.</summary>
+    public AppLockSettings AppLock { get; set; } = new();
 }
 
 /// <summary>HCNetSDK log level rule (NET_DVR_SetLogToFile: 0 off, 1 errors, 2 errors + debug, 3 all).</summary>

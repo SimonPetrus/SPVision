@@ -56,7 +56,33 @@ public partial class LiveView : UserControl
             _qualityTimer.Stop();
             UpdateAutoQuality();
         };
-        Loaded += (_, _) => RestoreLayout();
+        Loaded += (_, _) =>
+        {
+            if (!StartHeld)
+            {
+                RestoreLayout();
+            }
+        };
+    }
+
+    /// <summary>
+    /// "Uygulama kilidi" at startup: the saved layout is not restored — no stream opens — until <see cref="Start"/> (the
+    /// lock screen comes before any device connection).
+    /// </summary>
+    public bool StartHeld { get; set; }
+
+    /// <summary>The PIN was typed (or the app was reset): restore the saved layout and open its streams now.</summary>
+    public void Start()
+    {
+        if (!StartHeld)
+        {
+            return;
+        }
+        StartHeld = false;
+        if (IsLoaded)
+        {
+            RestoreLayout();
+        }
     }
 
     /// <summary>Short feedback for the user ("Kaydedildi: …"); the main window shows it in the status bar.</summary>
